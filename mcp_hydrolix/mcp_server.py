@@ -10,7 +10,7 @@ from mcp.server.fastmcp import FastMCP
 
 from mcp_clickhouse.mcp_env import config
 
-MCP_SERVER_NAME = "mcp-clickhouse"
+MCP_SERVER_NAME = "mcp-hydrolix"
 
 # Configure logging
 logging.basicConfig(
@@ -36,9 +36,9 @@ mcp = FastMCP(MCP_SERVER_NAME, dependencies=deps)
 
 @mcp.tool()
 def list_databases():
-    """List available ClickHouse databases"""
+    """List available Hydrolix databases"""
     logger.info("Listing all databases")
-    client = create_clickhouse_client()
+    client = create_hydrolix_client()
     result = client.command("SHOW DATABASES")
     logger.info(f"Found {len(result) if isinstance(result, list) else 1} databases")
     return result
@@ -46,9 +46,9 @@ def list_databases():
 
 @mcp.tool()
 def list_tables(database: str, like: str = None):
-    """List available ClickHouse tables in a database"""
+    """List available Hydrolix tables in a database"""
     logger.info(f"Listing tables in database '{database}'")
-    client = create_clickhouse_client()
+    client = create_hydrolix_client()
     query = f"SHOW TABLES FROM {quote_identifier(database)}"
     if like:
         query += f" LIKE {format_query_value(like)}"
@@ -135,7 +135,7 @@ def execute_query(query: str):
 
 @mcp.tool()
 def run_select_query(query: str):
-    """Run a SELECT query in a ClickHouse database"""
+    """Run a SELECT query in a Hydrolix database"""
     logger.info(f"Executing SELECT query: {query}")
     try:
         future = QUERY_EXECUTOR.submit(execute_query, query)
@@ -160,10 +160,10 @@ def run_select_query(query: str):
         return {"status": "error", "message": f"Unexpected error: {str(e)}"}
 
 
-def create_clickhouse_client():
+def create_hydrolix_client():
     client_config = config.get_client_config()
     logger.info(
-        f"Creating ClickHouse client connection to {client_config['host']}:{client_config['port']} "
+        f"Creating Hydrolix client connection to {client_config['host']}:{client_config['port']} "
         f"as {client_config['username']} "
         f"(secure={client_config['secure']}, verify={client_config['verify']}, "
         f"connect_timeout={client_config['connect_timeout']}s, "
@@ -174,8 +174,8 @@ def create_clickhouse_client():
         client = clickhouse_connect.get_client(**client_config)
         # Test the connection
         version = client.server_version
-        logger.info(f"Successfully connected to ClickHouse server version {version}")
+        logger.info(f"Successfully connected to Hydrolix server version {version}")
         return client
     except Exception as e:
-        logger.error(f"Failed to connect to ClickHouse: {str(e)}")
+        logger.error(f"Failed to connect to Hydrolix: {str(e)}")
         raise
