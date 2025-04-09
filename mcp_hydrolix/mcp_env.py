@@ -22,7 +22,7 @@ class HydrolixConfig:
         HYDROLIX_PASSWORD: The password for authentication
 
     Optional environment variables (with defaults):
-        HYDROLIX_PORT: The port number (default: 8443 if secure=True, 8123 if secure=False)
+        HYDROLIX_PORT: The port number (default: 8088 if secure=True, 8123 if secure=False)
         HYDROLIX_SECURE: Enable HTTPS (default: true)
         HYDROLIX_VERIFY: Verify SSL certificates (default: true)
         HYDROLIX_CONNECT_TIMEOUT: Connection timeout in seconds (default: 30)
@@ -43,12 +43,12 @@ class HydrolixConfig:
     def port(self) -> int:
         """Get the Hydrolix port.
 
-        Defaults to 8443 if secure=True, 8123 if secure=False.
+        Defaults to 8088 if secure=True, 8123 if secure=False.
         Can be overridden by HYDROLIX_PORT environment variable.
         """
         if "HYDROLIX_PORT" in os.environ:
             return int(os.environ["HYDROLIX_PORT"])
-        return 8443 if self.secure else 8123
+        return 8088 if self.secure else 8123
 
     @property
     def username(self) -> str:
