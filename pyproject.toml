@@ -1,7 +1,7 @@
 [project]
-name = "mcp-clickhouse"
-version = "0.1.5"
-description = "An MCP server for ClickHouse."
+name = "mcp-hydrolix"
+version = "0.1.0"
+description = "An MCP server for Hydrolix."
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
@@ -15,10 +15,10 @@ dependencies = [
 ]
 
 [project.scripts]
-mcp-clickhouse = "mcp_clickhouse.main:main"
+mcp-hydrolix = "mcp_hydrolix.main:main"
 
 [project.urls]
-Home = "https://github.com/ClickHouse/mcp-clickhouse"
+Home = "https://github.com/hydrolix/mcp-hydrolix"
 
 [project.optional-dependencies]
 dev = [
@@ -27,7 +27,7 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["mcp_clickhouse"]
+packages = ["mcp_hydrolix"]
 
 [tool.ruff]
 line-length = 100

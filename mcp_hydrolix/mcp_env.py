@@ -1,4 +1,4 @@
-"""Environment configuration for the MCP ClickHouse server.
+"""Environment configuration for the MCP Hydrolix server.
 
 This module handles all environment variable configuration with sensible defaults
 and type conversion.
@@ -10,24 +10,24 @@ from typing import Optional
 
 
 @dataclass
-class ClickHouseConfig:
-    """Configuration for ClickHouse connection settings.
+class HydrolixConfig:
+    """Configuration for Hydrolix connection settings.
 
     This class handles all environment variable configuration with sensible defaults
     and type conversion. It provides typed methods for accessing each configuration value.
 
     Required environment variables:
-        CLICKHOUSE_HOST: The hostname of the ClickHouse server
-        CLICKHOUSE_USER: The username for authentication
-        CLICKHOUSE_PASSWORD: The password for authentication
+        HYDROLIX_HOST: The hostname of the Hydrolix server
+        HYDROLIX_USER: The username for authentication
+        HYDROLIX_PASSWORD: The password for authentication
 
     Optional environment variables (with defaults):
-        CLICKHOUSE_PORT: The port number (default: 8443 if secure=True, 8123 if secure=False)
-        CLICKHOUSE_SECURE: Enable HTTPS (default: true)
-        CLICKHOUSE_VERIFY: Verify SSL certificates (default: true)
-        CLICKHOUSE_CONNECT_TIMEOUT: Connection timeout in seconds (default: 30)
-        CLICKHOUSE_SEND_RECEIVE_TIMEOUT: Send/receive timeout in seconds (default: 300)
-        CLICKHOUSE_DATABASE: Default database to use (default: None)
+        HYDROLIX_PORT: The port number (default: 8443 if secure=True, 8123 if secure=False)
+        HYDROLIX_SECURE: Enable HTTPS (default: true)
+        HYDROLIX_VERIFY: Verify SSL certificates (default: true)
+        HYDROLIX_CONNECT_TIMEOUT: Connection timeout in seconds (default: 30)
+        HYDROLIX_SEND_RECEIVE_TIMEOUT: Send/receive timeout in seconds (default: 300)
+        HYDROLIX_DATABASE: Default database to use (default: None)
     """
 
     def __init__(self):
@@ -36,34 +36,34 @@ class ClickHouseConfig:
 
     @property
     def host(self) -> str:
-        """Get the ClickHouse host."""
-        return os.environ["CLICKHOUSE_HOST"]
+        """Get the Hydrolix host."""
+        return os.environ["HYDROLIX_HOST"]
 
     @property
     def port(self) -> int:
-        """Get the ClickHouse port.
+        """Get the Hydrolix port.
 
         Defaults to 8443 if secure=True, 8123 if secure=False.
-        Can be overridden by CLICKHOUSE_PORT environment variable.
+        Can be overridden by HYDROLIX_PORT environment variable.
         """
-        if "CLICKHOUSE_PORT" in os.environ:
-            return int(os.environ["CLICKHOUSE_PORT"])
+        if "HYDROLIX_PORT" in os.environ:
+            return int(os.environ["HYDROLIX_PORT"])
         return 8443 if self.secure else 8123
 
     @property
     def username(self) -> str:
-        """Get the ClickHouse username."""
-        return os.environ["CLICKHOUSE_USER"]
+        """Get the Hydrolix username."""
+        return os.environ["HYDROLIX_USER"]
 
     @property
     def password(self) -> str:
-        """Get the ClickHouse password."""
-        return os.environ["CLICKHOUSE_PASSWORD"]
+        """Get the Hydrolix password."""
+        return os.environ["HYDROLIX_PASSWORD"]
 
     @property
     def database(self) -> Optional[str]:
         """Get the default database name if set."""
-        return os.getenv("CLICKHOUSE_DATABASE")
+        return os.getenv("HYDROLIX_DATABASE")
 
     @property
     def secure(self) -> bool:
@@ -71,7 +71,7 @@ class ClickHouseConfig:
 
         Default: True
         """
-        return os.getenv("CLICKHOUSE_SECURE", "true").lower() == "true"
+        return os.getenv("HYDROLIX_SECURE", "true").lower() == "true"
 
     @property
     def verify(self) -> bool:
@@ -79,7 +79,7 @@ class ClickHouseConfig:
 
         Default: True
         """
-        return os.getenv("CLICKHOUSE_VERIFY", "true").lower() == "true"
+        return os.getenv("HYDROLIX_VERIFY", "true").lower() == "true"
 
     @property
     def connect_timeout(self) -> int:
@@ -87,15 +87,15 @@ class ClickHouseConfig:
 
         Default: 30
         """
-        return int(os.getenv("CLICKHOUSE_CONNECT_TIMEOUT", "30"))
+        return int(os.getenv("HYDROLIX_CONNECT_TIMEOUT", "30"))
 
     @property
     def send_receive_timeout(self) -> int:
         """Get the send/receive timeout in seconds.
 
-        Default: 300 (ClickHouse default)
+        Default: 300 (Hydrolix default)
         """
-        return int(os.getenv("CLICKHOUSE_SEND_RECEIVE_TIMEOUT", "300"))
+        return int(os.getenv("HYDROLIX_SEND_RECEIVE_TIMEOUT", "300"))
 
     def get_client_config(self) -> dict:
         """Get the configuration dictionary for clickhouse_connect client.
@@ -112,7 +112,7 @@ class ClickHouseConfig:
             "verify": self.verify,
             "connect_timeout": self.connect_timeout,
             "send_receive_timeout": self.send_receive_timeout,
-            "client_name": "mcp_clickhouse",
+            "client_name": "mcp_hydrolix",
         }
 
         # Add optional database if set
@@ -128,7 +128,7 @@ class ClickHouseConfig:
             ValueError: If any required environment variable is missing.
         """
         missing_vars = []
-        for var in ["CLICKHOUSE_HOST", "CLICKHOUSE_USER", "CLICKHOUSE_PASSWORD"]:
+        for var in ["HYDROLIX_HOST", "HYDROLIX_USER", "HYDROLIX_PASSWORD"]:
             if var not in os.environ:
                 missing_vars.append(var)
 
@@ -139,4 +139,4 @@ class ClickHouseConfig:
 
 
 # Global instance for easy access
-config = ClickHouseConfig()
+config = HydrolixConfig()

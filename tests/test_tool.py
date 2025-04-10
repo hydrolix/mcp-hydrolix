@@ -2,16 +2,16 @@ import unittest
 
 from dotenv import load_dotenv
 
-from mcp_clickhouse import create_clickhouse_client, list_databases, list_tables, run_select_query
+from mcp_hydrolix import create_hydrolix_client, list_databases, list_tables, run_select_query
 
 load_dotenv()
 
 
-class TestClickhouseTools(unittest.TestCase):
+class TestHydrolixTools(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         """Set up the environment before tests."""
-        cls.client = create_clickhouse_client()
+        cls.client = create_hydrolix_client()
 
         # Prepare test database and table
         cls.test_db = "test_tool_db"
