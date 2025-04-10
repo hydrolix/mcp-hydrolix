@@ -3,8 +3,6 @@
 
 An MCP server for Hydrolix.
 
-<a href="https://glama.ai/mcp/servers/yvjy4csvo1"><img width="380" height="200" src="https://glama.ai/mcp/servers/yvjy4csvo1/badge" alt="mcp-hydrolix MCP server" /></a>
-
 ## Features
 
 ### Tools

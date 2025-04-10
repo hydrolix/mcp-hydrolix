@@ -18,7 +18,7 @@ dependencies = [
 mcp-hydrolix = "mcp_hydrolix.main:main"
 
 [project.urls]
-Home = "https://github.com/Hydrolix/mcp-hydrolix"
+Home = "https://github.com/hydrolix/mcp-hydrolix"
 
 [project.optional-dependencies]
 dev = [
