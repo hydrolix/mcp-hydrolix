@@ -55,7 +55,9 @@ def list_tables(database: str, like: str = None):
     result = client.command(query)
 
     # Get all table comments in one query
-    table_comments_query = f"SELECT name, comment FROM system.tables WHERE database = {format_query_value(database)}"
+    table_comments_query = (
+        f"SELECT name, comment FROM system.tables WHERE database = {format_query_value(database)}"
+    )
     table_comments_result = client.query(table_comments_query)
     table_comments = {row[0]: row[1] for row in table_comments_result.result_rows}
 
@@ -81,10 +83,10 @@ def list_tables(database: str, like: str = None):
             for i, col_name in enumerate(column_names):
                 column_dict[col_name] = row[i]
             # Add comment from our pre-fetched comments
-            if table in column_comments and column_dict['name'] in column_comments[table]:
-                column_dict['comment'] = column_comments[table][column_dict['name']]
+            if table in column_comments and column_dict["name"] in column_comments[table]:
+                column_dict["comment"] = column_comments[table][column_dict["name"]]
             else:
-                column_dict['comment'] = None
+                column_dict["comment"] = None
             columns.append(column_dict)
 
         create_table_query = f"SHOW CREATE TABLE {database}.`{table}`"
@@ -152,7 +154,10 @@ def run_select_query(query: str):
             logger.warning(f"Query timed out after {SELECT_QUERY_TIMEOUT_SECS} seconds: {query}")
             future.cancel()
             # Return a properly structured response for timeout errors
-            return {"status": "error", "message": f"Query timed out after {SELECT_QUERY_TIMEOUT_SECS} seconds"}
+            return {
+                "status": "error",
+                "message": f"Query timed out after {SELECT_QUERY_TIMEOUT_SECS} seconds",
+            }
     except Exception as e:
         logger.error(f"Unexpected error in run_select_query: {str(e)}")
         # Catch all other exceptions and return them in a structured format
