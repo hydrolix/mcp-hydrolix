@@ -118,7 +118,17 @@ def list_tables(database: str, like: str = None):
 def execute_query(query: str):
     client = create_hydrolix_client()
     try:
-        res = client.query(query, settings={"readonly": 1})
+        res = client.query(
+            query,
+            settings={
+                "readonly": 1,
+                "hdx_query_max_execution_time": SELECT_QUERY_TIMEOUT_SECS,
+                "hdx_query_max_attempts": 1,
+                "hdx_query_max_result_rows": 100_000,
+                "hdx_query_max_memory_usage": 2 * 1024 * 1024 * 1024,  # 2GiB
+                "hdx_query_admin_comment": f"User: {MCP_SERVER_NAME}",
+            },
+        )
         column_names = res.column_names
         rows = []
         for row in res.result_rows:
