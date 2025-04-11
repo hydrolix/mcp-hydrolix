@@ -8,7 +8,7 @@ from clickhouse_connect.driver.binding import quote_identifier, format_query_val
 from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
 
-from mcp_clickhouse.mcp_env import config
+from mcp_hydrolix.mcp_env import config
 
 MCP_SERVER_NAME = "mcp-hydrolix"
 
