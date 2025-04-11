@@ -114,7 +114,7 @@ def list_tables(database: str, like: str = None):
 
 
 def execute_query(query: str):
-    client = create_clickhouse_client()
+    client = create_hydrolix_client()
     try:
         res = client.query(query, settings={"readonly": 1})
         column_names = res.column_names
