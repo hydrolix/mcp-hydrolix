@@ -72,7 +72,7 @@ The following environment variables are used to configure the Hydrolix connectio
 
 #### Optional Variables
 * `HYDROLIX_PORT`: The port number of your Hydrolix server
-  - Default: `8443` if HTTPS is enabled, `8088` if disabled
+  - Default: `8088`
   - Usually doesn't need to be set unless using a non-standard port
 * `HYDROLIX_VERIFY`: Enable/disable SSL certificate verification
   - Default: `"true"`
