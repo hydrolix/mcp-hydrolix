@@ -22,8 +22,7 @@ class HydrolixConfig:
         HYDROLIX_PASSWORD: The password for authentication
 
     Optional environment variables (with defaults):
-        HYDROLIX_PORT: The port number (default: 8443 if secure=True, 8123 if secure=False)
-        HYDROLIX_SECURE: Enable HTTPS (default: true)
+        HYDROLIX_PORT: The port number (default: 8088)
         HYDROLIX_VERIFY: Verify SSL certificates (default: true)
         HYDROLIX_CONNECT_TIMEOUT: Connection timeout in seconds (default: 30)
         HYDROLIX_SEND_RECEIVE_TIMEOUT: Send/receive timeout in seconds (default: 300)
@@ -43,12 +42,12 @@ class HydrolixConfig:
     def port(self) -> int:
         """Get the Hydrolix port.
 
-        Defaults to 8443 if secure=True, 8123 if secure=False.
+        Defaults to 8088.
         Can be overridden by HYDROLIX_PORT environment variable.
         """
         if "HYDROLIX_PORT" in os.environ:
             return int(os.environ["HYDROLIX_PORT"])
-        return 8443 if self.secure else 8123
+        return 8088
 
     @property
     def username(self) -> str:
@@ -64,14 +63,6 @@ class HydrolixConfig:
     def database(self) -> Optional[str]:
         """Get the default database name if set."""
         return os.getenv("HYDROLIX_DATABASE")
-
-    @property
-    def secure(self) -> bool:
-        """Get whether HTTPS is enabled.
-
-        Default: True
-        """
-        return os.getenv("HYDROLIX_SECURE", "true").lower() == "true"
 
     @property
     def verify(self) -> bool:
@@ -108,7 +99,7 @@ class HydrolixConfig:
             "port": self.port,
             "username": self.username,
             "password": self.password,
-            "secure": self.secure,
+            "secure": True,
             "verify": self.verify,
             "connect_timeout": self.connect_timeout,
             "send_receive_timeout": self.send_receive_timeout,
