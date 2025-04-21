@@ -127,5 +127,17 @@ class HydrolixConfig:
             raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
 
 
-# Global instance for easy access
-config = HydrolixConfig()
+# Global instance placeholder for the singleton pattern
+_CONFIG_INSTANCE = None
+
+
+def get_config():
+    """
+    Gets the singleton instance of HydrolixConfig.
+    Instantiates it on the first call.
+    """
+    global _CONFIG_INSTANCE
+    if _CONFIG_INSTANCE is None:
+        # Instantiate the config object here, ensuring load_dotenv() has likely run
+        _CONFIG_INSTANCE = HydrolixConfig()
+    return _CONFIG_INSTANCE

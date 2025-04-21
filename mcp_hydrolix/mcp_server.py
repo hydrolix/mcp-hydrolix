@@ -8,7 +8,7 @@ from clickhouse_connect.driver.binding import quote_identifier, format_query_val
 from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
 
-from mcp_hydrolix.mcp_env import config
+from mcp_hydrolix.mcp_env import get_config
 
 MCP_SERVER_NAME = "mcp-hydrolix"
 
@@ -212,7 +212,7 @@ def run_select_query(query: str):
 
 
 def create_hydrolix_client():
-    client_config = config.get_client_config()
+    client_config = get_config().get_client_config()
     logger.info(
         f"Creating Hydrolix client connection to {client_config['host']}:{client_config['port']} "
         f"as {client_config['username']} "
