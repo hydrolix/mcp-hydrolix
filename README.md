@@ -70,7 +70,7 @@ env:
   HYDROLIX_PASSWORD: <hydrolix-password>
 ```
 
-## Configuration Example (Claude Desktop)
+### Configuration Example (Claude Desktop)
 
 1. Open the Claude Desktop configuration file located at:
    - On macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
