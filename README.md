@@ -48,7 +48,7 @@ MCP Server definition (JSON):
   "env": {
     "HYDROLIX_HOST": "<hydrolix-host>",
     "HYDROLIX_USER": "<hydrolix-user>",
-    "HYDROLIX_PASSWORD": "<hydrolix-password>",
+    "HYDROLIX_PASSWORD": "<hydrolix-password>"
   }
 }
 ```
@@ -94,7 +94,7 @@ env:
       "env": {
         "HYDROLIX_HOST": "<hydrolix-host>",
         "HYDROLIX_USER": "<hydrolix-user>",
-        "HYDROLIX_PASSWORD": "<hydrolix-password>",
+        "HYDROLIX_PASSWORD": "<hydrolix-password>"
       }
     }
   }
