@@ -1,4 +1,5 @@
 # Hydrolix MCP Server
+
 [![PyPI - Version](https://img.shields.io/pypi/v/mcp-hydrolix)](https://pypi.org/project/mcp-hydrolix)
 
 An MCP server for Hydrolix.
@@ -6,16 +7,16 @@ An MCP server for Hydrolix.
 ## Tools
 
 * `run_select_query`
-  - Execute SQL queries on your Hydrolix cluster.
-  - Input: `sql` (string): The SQL query to execute.
-  - All Hydrolix queries are run with `readonly = 1` to ensure they are safe.
+  * Execute SQL queries on your Hydrolix cluster.
+  * Input: `sql` (string): The SQL query to execute.
+  * All Hydrolix queries are run with `readonly = 1` to ensure they are safe.
 
 * `list_databases`
-  - List all databases on your Hydrolix cluster.
+  * List all databases on your Hydrolix cluster.
 
 * `list_tables`
-  - List all tables in a database.
-  - Input: `database` (string): The name of the database.
+  * List all tables in a database.
+  * Input: `database` (string): The name of the database.
 
 ## Effective Usage
 
