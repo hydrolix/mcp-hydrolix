@@ -27,6 +27,7 @@ class HydrolixConfig:
         HYDROLIX_CONNECT_TIMEOUT: Connection timeout in seconds (default: 30)
         HYDROLIX_SEND_RECEIVE_TIMEOUT: Send/receive timeout in seconds (default: 300)
         HYDROLIX_DATABASE: Default database to use (default: None)
+        HYDROLIX_PROXY_PATH: Path to be added to the host URL. For instance, for servers behind an HTTP proxy (default: None)
     """
 
     def __init__(self):
@@ -88,6 +89,10 @@ class HydrolixConfig:
         """
         return int(os.getenv("HYDROLIX_SEND_RECEIVE_TIMEOUT", "300"))
 
+    @property
+    def proxy_path(self) -> str:
+        return os.getenv("HYDROLIX_PROXY_PATH")
+
     def get_client_config(self) -> dict:
         """Get the configuration dictionary for clickhouse_connect client.
 
@@ -109,6 +114,9 @@ class HydrolixConfig:
         # Add optional database if set
         if self.database:
             config["database"] = self.database
+
+        if self.proxy_path:
+            config["proxy_path"] = self.proxy_path
 
         return config
 
