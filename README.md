@@ -119,11 +119,14 @@ The following variables are used to configure the Hydrolix connection. These var
 
 #### Optional Variables
 * `HYDROLIX_PORT`: The port number of your Hydrolix server
-  - Default: `8088`
-  - Usually doesn't need to be set unless using a non-standard port
+  * Default: `8088`
+  * Usually doesn't need to be set unless using a non-standard port
 * `HYDROLIX_VERIFY`: Enable/disable SSL certificate verification
-  - Default: `"true"`
-  - Set to `"false"` to disable certificate verification (not recommended for production)
+  * Default: `"true"`
+  * Set to `"false"` to disable certificate verification (not recommended for production)
 * `HYDROLIX_DATABASE`: Default database to use
-  - Default: None (uses server default)
-  - Set this to automatically connect to a specific database
+  *Default: None (uses server default)
+  * Set this to automatically connect to a specific database
+* `HYDROLIX_MCP_SERVER_TRANSPORT`: Sets the transport method for the MCP server.
+  * Default: `"stdio"`
+  * Valid options: `"stdio"`, `"http"`, `"streamable-http"`, `"sse"`. This is useful for local development with tools like MCP Inspector.
