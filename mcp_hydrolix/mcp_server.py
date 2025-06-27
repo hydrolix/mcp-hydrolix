@@ -56,7 +56,7 @@ def list_tables(database: str, like: str = None):
 
     # Get all table comments in one query
     table_comments_query = (
-        f"SELECT name, comment FROM system.tables WHERE database = {format_query_value(database)}"
+        f"SELECT name, comment FROM system.tables WHERE database = {format_query_value(database)} and engine = 'TurbineStorage' and total_rows > 0"
     )
     table_comments_result = client.query(table_comments_query)
     table_comments = {row[0]: row[1] for row in table_comments_result.result_rows}
@@ -92,12 +92,16 @@ def list_tables(database: str, like: str = None):
         create_table_query = f"SHOW CREATE TABLE {database}.`{table}`"
         create_table_result = client.command(create_table_query)
 
+        primary_key_query = f"SELECT primary_key FROM system.tables WHERE database = {format_query_value(database)} and table = {format_query_value(table)}"
+        primary_key_result = client.command(primary_key_query)
+
         return {
             "database": database,
             "name": table,
             "comment": table_comments.get(table),
             "columns": columns,
             "create_table_query": create_table_result,
+            "primary_key": primary_key_result
         }
 
     tables = []
