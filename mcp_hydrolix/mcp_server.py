@@ -8,7 +8,10 @@ import clickhouse_connect
 from clickhouse_connect.driver.binding import format_query_value
 from dotenv import load_dotenv
 from fastmcp import FastMCP
+from fastmcp.exceptions import ToolError
 from dataclasses import dataclass, field, asdict, is_dataclass
+from starlette.requests import Request
+from starlette.responses import PlainTextResponse
 
 from mcp_hydrolix.mcp_env import get_config
 
@@ -67,6 +70,22 @@ mcp = FastMCP(
         "pip-system-certs",
     ],
 )
+
+
+@mcp.custom_route("/health", methods=["GET"])
+async def health_check(request: Request) -> PlainTextResponse:
+    """Health check endpoint for monitoring server status.
+
+    Returns OK if the server is running and can connect to Hydrolix.
+    """
+    try:
+        # Try to create a client connection to verify query-head connectivity
+        client = create_hydrolix_client()
+        version = client.server_version
+        return PlainTextResponse(f"OK - Connected to Hydrolix compatible with ClickHouse {version}")
+    except Exception as e:
+        # Return 503 Service Unavailable if we can't connect to Hydrolix
+        return PlainTextResponse(f"ERROR - Cannot connect to Hydrolix: {str(e)}", status_code=503)
 
 
 def result_to_table(query_columns, result) -> List[Table]:
@@ -155,9 +174,7 @@ def execute_query(query: str):
         return {"columns": res.column_names, "rows": res.result_rows}
     except Exception as err:
         logger.error(f"Error executing query: {err}")
-        # Return a structured dictionary rather than a string to ensure proper serialization
-        # by the MCP protocol. String responses for errors can cause BrokenResourceError.
-        return {"error": str(err)}
+        raise ToolError(f"Query execution failed: {str(err)}")
 
 
 @mcp.tool()
@@ -217,16 +234,12 @@ def run_select_query(query: str):
         except concurrent.futures.TimeoutError:
             logger.warning(f"Query timed out after {SELECT_QUERY_TIMEOUT_SECS} seconds: {query}")
             future.cancel()
-            # Return a properly structured response for timeout errors
-            return {
-                "status": "error",
-                "message": f"Query timed out after {SELECT_QUERY_TIMEOUT_SECS} seconds",
-            }
+            raise ToolError(f"Query timed out after {SELECT_QUERY_TIMEOUT_SECS} seconds")
+    except ToolError:
+        raise
     except Exception as e:
         logger.error(f"Unexpected error in run_select_query: {str(e)}")
-        # Catch all other exceptions and return them in a structured format
-        # to prevent MCP serialization failures
-        return {"status": "error", "message": f"Unexpected error: {str(e)}"}
+        raise RuntimeError(f"Unexpected error during query execution: {str(e)}")
 
 
 def create_hydrolix_client():
@@ -243,7 +256,7 @@ def create_hydrolix_client():
         client = clickhouse_connect.get_client(**client_config)
         # Test the connection
         version = client.server_version
-        logger.info(f"Successfully connected to Hydrolix server version {version}")
+        logger.info(f"Successfully connected to Hydrolix compatible with ClickHouse {version}")
         return client
     except Exception as e:
         logger.error(f"Failed to connect to Hydrolix: {str(e)}")

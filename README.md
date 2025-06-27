@@ -27,6 +27,18 @@ Due to the wide variety in LLM architectures, not all models will proactively us
 * Include time ranges in your prompts (e.g., "Between December 5 2023 and January 18 2024, ...") and specifically request that the output be ordered by timestamp.
   - This prompts the model to write more efficient queries that take advantage of [primary key optimizations](https://hydrolix.io/blog/optimizing-latest-n-row-queries/)
 
+### Health Check Endpoint
+
+When running with HTTP or SSE transport, a health check endpoint is available at `/health`. This endpoint:
+- Returns `200 OK` with the Hydrolix query-head's Clickhouse version if the server is healthy and can connect to Hydrolix
+- Returns `503 Service Unavailable` if the server cannot connect to the Hydrolix query-head
+
+Example:
+```bash
+curl http://localhost:8000/health
+# Response: OK - Connected to Hydrolix compatible with ClickHouse 24.3.1
+```
+
 ## Configuration
 
 The Hydrolix MCP server is configured using a standard MCP server entry. Consult your client's documentation for specific instructions on where to find or declare MCP servers. An example setup using Claude Desktop is documented below.
@@ -129,4 +141,29 @@ The following variables are used to configure the Hydrolix connection. These var
   * Set this to automatically connect to a specific database
 * `HYDROLIX_MCP_SERVER_TRANSPORT`: Sets the transport method for the MCP server.
   * Default: `"stdio"`
-  * Valid options: `"stdio"`, `"http"`, `"streamable-http"`, `"sse"`. This is useful for local development with tools like MCP Inspector.
+  * Valid options: `"stdio"`, `"http"`, `"sse"`. This is useful for local development with tools like MCP Inspector.
+* `HYDROLIX_MCP_BIND_HOST`: Host to bind the MCP server to when using HTTP or SSE transport
+  * Default: `"127.0.0.1"`
+  * Set to `"0.0.0.0"` to bind to all network interfaces (useful for Docker or remote access)
+  * Only used when transport is `"http"` or `"sse"`
+* `HYDROLIX_MCP_BIND_PORT`: Port to bind the MCP server to when using HTTP or SSE transport
+  * Default: `"8000"`
+  * Only used when transport is `"http"` or `"sse"`
+
+
+For MCP Inspector or remote access with HTTP transport:
+
+```env
+HYDROLIX_HOST=localhost
+HYDROLIX_USER=default
+HYDROLIX_PASSWORD=myPassword
+HYDROLIX_MCP_SERVER_TRANSPORT=http
+HYDROLIX_MCP_BIND_HOST=0.0.0.0  # Bind to all interfaces
+HYDROLIX_MCP_BIND_PORT=4200  # Custom port (default: 8000)
+```
+
+When using HTTP transport, the server will run on the configured port (default 8000). For example, with the above configuration:
+- MCP endpoint: `http://localhost:4200/mcp`
+- Health check: `http://localhost:4200/health`
+
+Note: The bind host and port settings are only used when transport is set to "http" or "sse".
