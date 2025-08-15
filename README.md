@@ -1,6 +1,8 @@
 # Hydrolix MCP Server
 [![PyPI - Version](https://img.shields.io/pypi/v/mcp-hydrolix)](https://pypi.org/project/mcp-hydrolix)
 
+[![Trust Score](https://archestra.ai/mcp-catalog/api/badge/quality/hydrolix/mcp-hydrolix)](https://archestra.ai/mcp-catalog/hydrolix__mcp-hydrolix)
+
 An MCP server for Hydrolix.
 
 ## Tools
