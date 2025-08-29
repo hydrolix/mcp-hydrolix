@@ -23,7 +23,8 @@ Home = "https://github.com/hydrolix/mcp-hydrolix"
 [project.optional-dependencies]
 dev = [
     "ruff",
-    "pytest"
+    "pytest",
+    "pre-commit"
 ]
 
 [tool.hatch.build.targets.wheel]
