@@ -7,9 +7,8 @@ license = "Apache-2.0"
 license-files = ["LICENSE"]
 requires-python = ">=3.13"
 dependencies = [
-     "mcp[cli]>=1.3.0",
+     "fastmcp>=2.0.0",
      "python-dotenv>=1.0.1",
-     "uvicorn>=0.34.0",
      "clickhouse-connect>=0.8.16",
      "pip-system-certs>=4.0",
 ]
@@ -24,6 +23,7 @@ Home = "https://github.com/hydrolix/mcp-hydrolix"
 dev = [
     "ruff",
     "pytest",
+    "pytest-asyncio",
     "pre-commit"
 ]
 

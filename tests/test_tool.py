@@ -1,6 +1,8 @@
 import unittest
+import json
 
 from dotenv import load_dotenv
+from fastmcp.exceptions import ToolError
 
 from mcp_hydrolix import create_hydrolix_client, list_databases, list_tables, run_select_query
 
@@ -41,19 +43,21 @@ class TestHydrolixTools(unittest.TestCase):
 
     def test_list_databases(self):
         """Test listing databases."""
-        result = list_databases()
-        self.assertIn(self.test_db, result)
+        result = list_databases.fn()
+        # Parse JSON response
+        databases = json.loads(result)
+        self.assertIn(self.test_db, databases)
 
     def test_list_tables_without_like(self):
         """Test listing tables without a 'LIKE' filter."""
-        result = list_tables(self.test_db)
+        result = list_tables.fn(self.test_db)
         self.assertIsInstance(result, list)
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0]["name"], self.test_table)
 
     def test_list_tables_with_like(self):
         """Test listing tables with a 'LIKE' filter."""
-        result = list_tables(self.test_db, like=f"{self.test_table}%")
+        result = list_tables.fn(self.test_db, like=f"{self.test_table}%")
         self.assertIsInstance(result, list)
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0]["name"], self.test_table)
@@ -61,23 +65,25 @@ class TestHydrolixTools(unittest.TestCase):
     def test_run_select_query_success(self):
         """Test running a SELECT query successfully."""
         query = f"SELECT * FROM {self.test_db}.{self.test_table}"
-        result = run_select_query(query)
-        self.assertIsInstance(result, list)
-        self.assertEqual(len(result), 2)
-        self.assertEqual(result[0]["id"], 1)
-        self.assertEqual(result[0]["name"], "Alice")
+        result = run_select_query.fn(query)
+        self.assertIsInstance(result, dict)
+        self.assertEqual(len(result["rows"]), 2)
+        self.assertEqual(result["rows"][0][0], 1)
+        self.assertEqual(result["rows"][0][1], "Alice")
 
     def test_run_select_query_failure(self):
         """Test running a SELECT query with an error."""
         query = f"SELECT * FROM {self.test_db}.non_existent_table"
-        result = run_select_query(query)
-        self.assertIsInstance(result, dict)
-        self.assertEqual(result["status"], "error")
-        self.assertIn("Query failed", result["message"])
+
+        # Should raise ToolError
+        with self.assertRaises(ToolError) as context:
+            run_select_query.fn(query)
+
+        self.assertIn("Query execution failed", str(context.exception))
 
     def test_table_and_column_comments(self):
         """Test that table and column comments are correctly retrieved."""
-        result = list_tables(self.test_db)
+        result = list_tables.fn(self.test_db)
         self.assertIsInstance(result, list)
         self.assertEqual(len(result), 1)
 
