@@ -186,6 +186,8 @@ The following variables are used to configure the Hydrolix connection. These var
 
 #### Required Variables
 * `HYDROLIX_HOST`: The hostname of your Hydrolix server
+* `HYDROLIX_TOKEN`: The Hydrolix service account token
+  ##### OR
 * `HYDROLIX_USER`: The username for authentication
 * `HYDROLIX_PASSWORD`: The password for authentication
 
