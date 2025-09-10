@@ -45,7 +45,7 @@ The Hydrolix MCP server is configured using a standard MCP server entry. Consult
 
 The recommended way to launch the Hydrolix MCP server is via the [`uv` project manager](https://github.com/astral-sh/uv), which will manage installing all other dependencies in an isolated environment.
 
-MCP Server definition (JSON):
+MCP Server definition using username and password (JSON):
 
 ```json
 {
@@ -66,7 +66,27 @@ MCP Server definition (JSON):
 }
 ```
 
-MCP Server definition (YAML):
+MCP Server definition using service account token (JSON):
+
+```json
+{
+  "command": "uv",
+  "args": [
+    "run",
+    "--with",
+    "mcp-hydrolix",
+    "--python",
+    "3.13",
+    "mcp-hydrolix"
+  ],
+  "env": {
+    "HYDROLIX_HOST": "<hydrolix-host>",
+    "HYDROLIX_TOKEN": "<hydrolix-service-account-token>"
+  }
+}
+```
+
+MCP Server definition using username and password (YAML):
 
 ```yaml
 command: uv
@@ -83,13 +103,29 @@ env:
   HYDROLIX_PASSWORD: <hydrolix-password>
 ```
 
+MCP Server definition using service account token (YAML):
+
+```yaml
+command: uv
+args:
+- run
+- --with
+- mcp-hydrolix
+- --python
+- "3.13"
+- mcp-hydrolix
+env:
+  HYDROLIX_HOST: <hydrolix-host>
+  HYDROLIX_TOKEN: <hydrolix-service-account-token>
+```
+
 ### Configuration Example (Claude Desktop)
 
 1. Open the Claude Desktop configuration file located at:
    - On macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
    - On Windows: `%APPDATA%/Claude/claude_desktop_config.json`
 
-2. Add a `mcp-hydrolix` server entry to the `mcpServers` config block:
+2. Add a `mcp-hydrolix` server entry to the `mcpServers` config block to use username and password:
 
 ```json
 {
@@ -108,6 +144,30 @@ env:
         "HYDROLIX_HOST": "<hydrolix-host>",
         "HYDROLIX_USER": "<hydrolix-user>",
         "HYDROLIX_PASSWORD": "<hydrolix-password>"
+      }
+    }
+  }
+}
+```
+
+To leverage service account use the following config block:
+
+```json
+{
+  "mcpServers": {
+    "mcp-hydrolix": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--with",
+        "mcp-hydrolix",
+        "--python",
+        "3.13",
+        "mcp-hydrolix"
+      ],
+      "env": {
+        "HYDROLIX_HOST": "<hydrolix-host>",
+        "HYDROLIX_TOKEN": "<hydrolix-service-account-token>"
       }
     }
   }
