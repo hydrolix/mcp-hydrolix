@@ -34,9 +34,9 @@ class HydrolixConfig:
         HYDROLIX_HOST: The hostname of the Hydrolix server
 
     Optional environment variables (with defaults):
-        HYDROLIX_TOKEN: Service account token to the Hydrolix Server
-        HYDROLIX_USER: The username for authentication
-        HYDROLIX_PASSWORD: The password for authentication
+        HYDROLIX_TOKEN: Service account token to the Hydrolix Server (this or user+password is required)
+        HYDROLIX_USER: The username for authentication (this or token is required)
+        HYDROLIX_PASSWORD: The password for authentication (this or token is required)
         HYDROLIX_PORT: The port number (default: 8088)
         HYDROLIX_VERIFY: Verify SSL certificates (default: true)
         HYDROLIX_CONNECT_TIMEOUT: Connection timeout in seconds (default: 30)
@@ -213,9 +213,9 @@ class HydrolixConfig:
             required_vars = ["HYDROLIX_HOST", "HYDROLIX_TOKEN"]
         else:
             required_vars = ["HYDROLIX_HOST", "HYDROLIX_USER", "HYDROLIX_PASSWORD"]
-            for var in required_vars:
-                if var not in os.environ:
-                    missing_vars.append(var)
+        for var in required_vars:
+            if var not in os.environ:
+                missing_vars.append(var)
 
         if missing_vars:
             raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")

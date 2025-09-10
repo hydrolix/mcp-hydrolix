@@ -1,6 +1,6 @@
 [project]
 name = "mcp-hydrolix"
-version = "0.1.5"
+version = "0.1.4"
 description = "An MCP server for Hydrolix."
 readme = "README.md"
 license = "Apache-2.0"
