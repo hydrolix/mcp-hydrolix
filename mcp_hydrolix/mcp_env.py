@@ -32,10 +32,11 @@ class HydrolixConfig:
 
     Required environment variables:
         HYDROLIX_HOST: The hostname of the Hydrolix server
-        HYDROLIX_USER: The username for authentication
-        HYDROLIX_PASSWORD: The password for authentication
 
     Optional environment variables (with defaults):
+        HYDROLIX_TOKEN: Service account token to the Hydrolix Server
+        HYDROLIX_USER: The username for authentication
+        HYDROLIX_PASSWORD: The password for authentication
         HYDROLIX_PORT: The port number (default: 8088)
         HYDROLIX_VERIFY: Verify SSL certificates (default: true)
         HYDROLIX_CONNECT_TIMEOUT: Connection timeout in seconds (default: 30)
@@ -66,16 +67,42 @@ class HydrolixConfig:
         if "HYDROLIX_PORT" in os.environ:
             return int(os.environ["HYDROLIX_PORT"])
         return 8088
+        
+    @property
+    def service_account(self) -> bool:
+        """Determine if service account is enabled
+
+        Defaults to false.
+        Can be overridden if HYDROLIX_TOKEN environment variable.
+        """
+        if "HYDROLIX_TOKEN" in os.environ:
+            return True
+        return False
+
+    @property
+    def service_account_token(self) -> str:
+        """Get the service account token
+
+        Defaults to None.
+        Can be overridden if HYDROLIX_TOKEN environment variable.
+        """
+        if "HYDROLIX_TOKEN" in os.environ:
+            return os.environ["HYDROLIX_TOKEN"]
+        return None
 
     @property
     def username(self) -> str:
         """Get the Hydrolix username."""
-        return os.environ["HYDROLIX_USER"]
+        if "HYDROLIX_USER" in os.environ:
+            return os.environ["HYDROLIX_USER"]
+        return None
 
     @property
     def password(self) -> str:
         """Get the Hydrolix password."""
-        return os.environ["HYDROLIX_PASSWORD"]
+        if "HYDROLIX_PASSWORD" in os.environ:
+            return os.environ["HYDROLIX_PASSWORD"]
+        return None
 
     @property
     def database(self) -> Optional[str]:
@@ -152,8 +179,6 @@ class HydrolixConfig:
         config = {
             "host": self.host,
             "port": self.port,
-            "username": self.username,
-            "password": self.password,
             "secure": True,
             "verify": self.verify,
             "connect_timeout": self.connect_timeout,
@@ -167,6 +192,13 @@ class HydrolixConfig:
 
         if self.proxy_path:
             config["proxy_path"] = self.proxy_path
+
+        if self.service_account == True:
+            config["access_token"] = self.service_account_token
+
+        if self.service_account == False:
+            config["username"] = self.username
+            config["password"] = self.password
 
         return config
 
