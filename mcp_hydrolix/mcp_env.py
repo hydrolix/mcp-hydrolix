@@ -67,7 +67,7 @@ class HydrolixConfig:
         if "HYDROLIX_PORT" in os.environ:
             return int(os.environ["HYDROLIX_PORT"])
         return 8088
-        
+
     @property
     def service_account(self) -> bool:
         """Determine if service account is enabled
@@ -75,9 +75,7 @@ class HydrolixConfig:
         Defaults to false.
         Can be overridden if HYDROLIX_TOKEN environment variable.
         """
-        if "HYDROLIX_TOKEN" in os.environ:
-            return True
-        return False
+        return "HYDROLIX_TOKEN" in os.environ
 
     @property
     def service_account_token(self) -> str:
@@ -193,10 +191,9 @@ class HydrolixConfig:
         if self.proxy_path:
             config["proxy_path"] = self.proxy_path
 
-        if self.service_account == True:
+        if self.service_account:
             config["access_token"] = self.service_account_token
-
-        if self.service_account == False:
+        else:
             config["username"] = self.username
             config["password"] = self.password
 

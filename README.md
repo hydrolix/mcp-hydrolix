@@ -190,6 +190,8 @@ The following variables are used to configure the Hydrolix connection. These var
 * `HYDROLIX_USER`: The username for authentication (omit if using service account)
 * `HYDROLIX_PASSWORD`: The password for authentication (omit if using service account)
 
+**Authentication precedence:** If both `HYDROLIX_TOKEN` and `HYDROLIX_USER`/`HYDROLIX_PASSWORD` are provided, the service account token takes precedence and username/password authentication will be ignored.
+
 #### Optional Variables
 * `HYDROLIX_PORT`: The port number of your Hydrolix server
   * Default: `8088`
