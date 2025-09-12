@@ -244,7 +244,11 @@ def run_select_query(query: str):
 
 def create_hydrolix_client():
     client_config = get_config().get_client_config()
-    auth_info = f"as {client_config['username']}" if 'username' in client_config else "using service account token"
+    auth_info = (
+        f"as {client_config['username']}"
+        if "username" in client_config
+        else "using service account token"
+    )
     logger.info(
         f"Creating Hydrolix client connection to {client_config['host']}:{client_config['port']} "
         f"{auth_info} "
