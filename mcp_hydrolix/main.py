@@ -11,6 +11,7 @@ def main():
     if transport in http_transports:
         # Use the configured bind host (defaults to 127.0.0.1, can be set to 0.0.0.0)
         # and bind port (defaults to 8000)
+        # mcp.run(transport="http")
         mcp.run(transport=transport, host=config.mcp_bind_host, port=config.mcp_bind_port, stateless_http=True)
     else:
         # For stdio transport, no host or port is needed
