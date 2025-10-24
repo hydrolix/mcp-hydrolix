@@ -180,6 +180,19 @@ To leverage service account use the following config block:
 
 5. Restart Claude Desktop to apply the changes. If you are using Windows, ensure Claude is stopped completely by closing the client using the system tray icon.
 
+### Configuration Example (Claude Code)
+
+To configure the Hydrolix MCP server for Claude Code, run the following command:
+
+```bash
+claude mcp add --transport stdio hydrolix \
+  --env HYDROLIX_USER=<hydrolix-user> \
+  --env HYDROLIX_PASSWORD=<hydrolix-password> \
+  --env HYDROLIX_HOST=<hydrolix-host> \
+  --env HYDROLIX_MCP_SERVER_TRANSPORT=stdio \
+  -- uv run --with mcp-hydrolix --python 3.13 mcp-hydrolix
+```
+
 ### Environment Variables
 
 The following variables are used to configure the Hydrolix connection. These variables may be provided via the MCP config block (as shown above), a `.env` file, or traditional environment variables.
