@@ -14,6 +14,7 @@ from dataclasses import dataclass, field, asdict, is_dataclass
 from starlette.requests import Request
 from starlette.responses import PlainTextResponse
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware import Middleware
 
 from mcp_hydrolix.mcp_env import get_config
 
@@ -67,15 +68,6 @@ SELECT_QUERY_TIMEOUT_SECS = 30
 
 load_dotenv()
 
-mcp = FastMCP(
-    name=MCP_SERVER_NAME,
-    dependencies=[
-        "clickhouse-connect",
-        "python-dotenv",
-        "pip-system-certs",
-    ],
-)
-
 
 class BearerTokenMiddleware(BaseHTTPMiddleware):
     """Middleware to extract Bearer token from Authorization header and store in context."""
@@ -99,8 +91,16 @@ class BearerTokenMiddleware(BaseHTTPMiddleware):
         return response
 
 
-# Add the middleware to the FastMCP app
-mcp.app.add_middleware(BearerTokenMiddleware)
+# Initialize FastMCP with Bearer token middleware
+mcp = FastMCP(
+    name=MCP_SERVER_NAME,
+    dependencies=[
+        "clickhouse-connect",
+        "python-dotenv",
+        "pip-system-certs",
+    ],
+    middleware=[Middleware(BearerTokenMiddleware)],
+)
 
 
 @mcp.custom_route("/health", methods=["GET"])
