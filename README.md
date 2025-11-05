@@ -27,6 +27,26 @@ Due to the wide variety in LLM architectures, not all models will proactively us
 * Include time ranges in your prompts (e.g., "Between December 5 2023 and January 18 2024, ...") and specifically request that the output be ordered by timestamp.
   - This prompts the model to write more efficient queries that take advantage of [primary key optimizations](https://hydrolix.io/blog/optimizing-latest-n-row-queries/)
 
+### OAuth Bearer Token Authentication
+
+When running with HTTP or SSE transport, the server supports OAuth Bearer token authentication via the `Authorization` header. This allows clients to provide authentication tokens dynamically with each request, rather than configuring them in environment variables.
+
+To use Bearer token authentication:
+
+1. Set `HYDROLIX_MCP_SERVER_TRANSPORT=http` (or `sse`)
+2. Configure only the `HYDROLIX_HOST` environment variable (no `HYDROLIX_TOKEN`, `HYDROLIX_USER`, or `HYDROLIX_PASSWORD` required)
+3. Include the Bearer token in the `Authorization` header with each request:
+   ```
+   Authorization: Bearer <your-oauth-token>
+   ```
+
+The server will extract the token from the request and use it to authenticate with Hydrolix. This is particularly useful for:
+- Multi-tenant applications where different users have different tokens
+- OAuth/OIDC flows where tokens are obtained dynamically
+- Applications that need to rotate tokens without restarting the server
+
+**Note:** Bearer token authentication is only supported with HTTP or SSE transport. For stdio transport, you must configure authentication in environment variables.
+
 ### Health Check Endpoint
 
 When running with HTTP or SSE transport, a health check endpoint is available at `/health`. This endpoint:
@@ -37,6 +57,11 @@ Example:
 ```bash
 curl http://localhost:8000/health
 # Response: OK - Connected to Hydrolix compatible with ClickHouse 24.3.1
+```
+
+Example with Bearer token:
+```bash
+curl -H "Authorization: Bearer <your-token>" http://localhost:8000/mcp
 ```
 
 ## Configuration
@@ -199,11 +224,18 @@ The following variables are used to configure the Hydrolix connection. These var
 
 #### Required Variables
 * `HYDROLIX_HOST`: The hostname of your Hydrolix server
-* `HYDROLIX_TOKEN`: The Hydrolix service account token (omit if using username/password)
-* `HYDROLIX_USER`: The username for authentication (omit if using service account)
-* `HYDROLIX_PASSWORD`: The password for authentication (omit if using service account)
 
-**Authentication precedence:** If both `HYDROLIX_TOKEN` and `HYDROLIX_USER`/`HYDROLIX_PASSWORD` are provided, the service account token takes precedence and username/password authentication will be ignored.
+#### Authentication Variables (Required for stdio transport, optional for HTTP/SSE)
+* `HYDROLIX_TOKEN`: The Hydrolix service account token (omit if using username/password or Bearer token authentication)
+* `HYDROLIX_USER`: The username for authentication (omit if using service account or Bearer token authentication)
+* `HYDROLIX_PASSWORD`: The password for authentication (omit if using service account or Bearer token authentication)
+
+**Authentication precedence:**
+1. Bearer token from `Authorization` header (HTTP/SSE transport only)
+2. `HYDROLIX_TOKEN` from environment
+3. `HYDROLIX_USER`/`HYDROLIX_PASSWORD` from environment
+
+**Note:** When using HTTP or SSE transport with Bearer token authentication, you only need to set `HYDROLIX_HOST`. Authentication will be provided dynamically via the `Authorization: Bearer <token>` header in each request.
 
 #### Optional Variables
 * `HYDROLIX_PORT`: The port number of your Hydrolix server
@@ -236,6 +268,17 @@ HYDROLIX_PASSWORD=myPassword
 HYDROLIX_MCP_SERVER_TRANSPORT=http
 HYDROLIX_MCP_BIND_HOST=0.0.0.0  # Bind to all interfaces
 HYDROLIX_MCP_BIND_PORT=4200  # Custom port (default: 8000)
+```
+
+For HTTP transport with OAuth Bearer token authentication:
+
+```env
+HYDROLIX_HOST=localhost
+HYDROLIX_MCP_SERVER_TRANSPORT=http
+HYDROLIX_MCP_BIND_HOST=0.0.0.0  # Bind to all interfaces
+HYDROLIX_MCP_BIND_PORT=4200  # Custom port (default: 8000)
+# No HYDROLIX_TOKEN, HYDROLIX_USER, or HYDROLIX_PASSWORD needed
+# Authentication will be provided via Authorization header
 ```
 
 When using HTTP transport, the server will run on the configured port (default 8000). For example, with the above configuration:

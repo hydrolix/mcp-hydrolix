@@ -3,6 +3,7 @@ import json
 from typing import Optional, List, Any
 import concurrent.futures
 import atexit
+from contextvars import ContextVar
 
 import clickhouse_connect
 from clickhouse_connect.driver.binding import format_query_value
@@ -12,8 +13,12 @@ from fastmcp.exceptions import ToolError
 from dataclasses import dataclass, field, asdict, is_dataclass
 from starlette.requests import Request
 from starlette.responses import PlainTextResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from mcp_hydrolix.mcp_env import get_config
+
+# Context variable to store the Bearer token from the request
+_bearer_token: ContextVar[Optional[str]] = ContextVar("bearer_token", default=None)
 
 
 @dataclass
@@ -70,6 +75,32 @@ mcp = FastMCP(
         "pip-system-certs",
     ],
 )
+
+
+class BearerTokenMiddleware(BaseHTTPMiddleware):
+    """Middleware to extract Bearer token from Authorization header and store in context."""
+
+    async def dispatch(self, request: Request, call_next):
+        # Extract Bearer token from Authorization header
+        auth_header = request.headers.get("Authorization", "")
+        token = None
+
+        if auth_header.startswith("Bearer "):
+            token = auth_header[7:]  # Remove "Bearer " prefix
+            logger.info("Bearer token extracted from Authorization header")
+        else:
+            logger.debug("No Bearer token found in Authorization header")
+
+        # Set the token in context
+        _bearer_token.set(token)
+
+        # Process the request
+        response = await call_next(request)
+        return response
+
+
+# Add the middleware to the FastMCP app
+mcp.app.add_middleware(BearerTokenMiddleware)
 
 
 @mcp.custom_route("/health", methods=["GET"])
@@ -243,12 +274,20 @@ def run_select_query(query: str):
 
 
 def create_hydrolix_client():
-    client_config = get_config().get_client_config()
-    auth_info = (
-        f"as {client_config['username']}"
-        if "username" in client_config
-        else "using service account token"
-    )
+    # Get the bearer token from the request context (if available)
+    bearer_token = _bearer_token.get()
+
+    # Get client config, passing the bearer token if available
+    client_config = get_config().get_client_config(access_token=bearer_token)
+
+    # Determine auth method for logging
+    if bearer_token:
+        auth_info = "using Bearer token from request"
+    elif "username" in client_config:
+        auth_info = f"as {client_config['username']}"
+    else:
+        auth_info = "using service account token from environment"
+
     logger.info(
         f"Creating Hydrolix client connection to {client_config['host']}:{client_config['port']} "
         f"{auth_info} "

@@ -34,9 +34,9 @@ class HydrolixConfig:
         HYDROLIX_HOST: The hostname of the Hydrolix server
 
     Optional environment variables (with defaults):
-        HYDROLIX_TOKEN: Service account token to the Hydrolix Server (this or user+password is required)
-        HYDROLIX_USER: The username for authentication (this or token is required)
-        HYDROLIX_PASSWORD: The password for authentication (this or token is required)
+        HYDROLIX_TOKEN: Service account token to the Hydrolix Server (optional, can be provided via Bearer token in HTTP requests)
+        HYDROLIX_USER: The username for authentication (required if not using token-based auth)
+        HYDROLIX_PASSWORD: The password for authentication (required if not using token-based auth)
         HYDROLIX_PORT: The port number (default: 8088)
         HYDROLIX_VERIFY: Verify SSL certificates (default: true)
         HYDROLIX_CONNECT_TIMEOUT: Connection timeout in seconds (default: 30)
@@ -168,8 +168,12 @@ class HydrolixConfig:
         """
         return int(os.getenv("HYDROLIX_MCP_BIND_PORT", "8000"))
 
-    def get_client_config(self) -> dict:
+    def get_client_config(self, access_token: Optional[str] = None) -> dict:
         """Get the configuration dictionary for clickhouse_connect client.
+
+        Args:
+            access_token: Optional OAuth Bearer token to use for authentication.
+                         If provided, this overrides HYDROLIX_TOKEN from environment.
 
         Returns:
             dict: Configuration ready to be passed to clickhouse_connect.get_client()
@@ -191,7 +195,10 @@ class HydrolixConfig:
         if self.proxy_path:
             config["proxy_path"] = self.proxy_path
 
-        if self.service_account:
+        # Priority: provided access_token > environment HYDROLIX_TOKEN > username/password
+        if access_token:
+            config["access_token"] = access_token
+        elif self.service_account:
             config["access_token"] = self.service_account_token
         else:
             config["username"] = self.username
@@ -205,17 +212,33 @@ class HydrolixConfig:
         Raises:
             ValueError: If any required environment variable is missing.
         """
+        # HYDROLIX_HOST is always required
+        if "HYDROLIX_HOST" not in os.environ:
+            raise ValueError("Missing required environment variable: HYDROLIX_HOST")
+
+        # For HTTP/SSE transport, authentication can be provided via Bearer token in requests
+        # So we don't require HYDROLIX_TOKEN or HYDROLIX_USER/HYDROLIX_PASSWORD upfront
+        transport = os.getenv("HYDROLIX_MCP_SERVER_TRANSPORT", TransportType.STDIO.value).lower()
+        if transport in [TransportType.HTTP.value, TransportType.SSE.value]:
+            # Authentication will be provided via Authorization header
+            return
+
+        # For stdio transport, we need authentication configured in environment
         missing_vars = []
         if self.service_account:
-            required_vars = ["HYDROLIX_HOST", "HYDROLIX_TOKEN"]
+            if "HYDROLIX_TOKEN" not in os.environ:
+                missing_vars.append("HYDROLIX_TOKEN")
         else:
-            required_vars = ["HYDROLIX_HOST", "HYDROLIX_USER", "HYDROLIX_PASSWORD"]
-        for var in required_vars:
-            if var not in os.environ:
-                missing_vars.append(var)
+            if "HYDROLIX_USER" not in os.environ:
+                missing_vars.append("HYDROLIX_USER")
+            if "HYDROLIX_PASSWORD" not in os.environ:
+                missing_vars.append("HYDROLIX_PASSWORD")
 
         if missing_vars:
-            raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
+            raise ValueError(
+                f"Missing required environment variables for stdio transport: {', '.join(missing_vars)}. "
+                f"For HTTP/SSE transport, authentication can be provided via Bearer token in requests."
+            )
 
 
 # Global instance placeholder for the singleton pattern
