@@ -1,6 +1,7 @@
 import logging
 import json
-from typing import Optional, List, Any
+import time
+from typing import Optional, List, Any, Final, cast, ClassVar
 import concurrent.futures
 import atexit
 
@@ -10,10 +11,22 @@ from dotenv import load_dotenv
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from dataclasses import dataclass, field, asdict, is_dataclass
-from starlette.requests import Request
-from starlette.responses import PlainTextResponse
 
-from mcp_hydrolix.mcp_env import get_config
+from fastmcp.server.auth import AuthProvider, AccessToken
+from fastmcp.server.dependencies import get_access_token
+from mcp.server.auth.middleware.auth_context import AuthContextMiddleware as McpAuthContextMiddleware
+from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser as McpAuthenticatedUser, BearerAuthBackend
+from mcp.server.auth.provider import TokenVerifier as McpTokenVerifier
+from starlette.authentication import AuthenticationBackend, AuthCredentials, BaseUser
+from starlette.middleware import Middleware
+from starlette.middleware.authentication import AuthenticationMiddleware
+from starlette.requests import Request, HTTPConnection
+from starlette.responses import PlainTextResponse
+from starlette.types import Scope, Receive, Send, ASGIApp
+from uvicorn._types import HTTPScope
+from uvicorn.middleware.asgi2 import ASGI2Middleware
+
+from mcp_hydrolix.mcp_env import get_config, HydrolixConfig
 
 
 @dataclass
@@ -62,6 +75,70 @@ SELECT_QUERY_TIMEOUT_SECS = 30
 
 load_dotenv()
 
+
+class GetParamAuthBackend(AuthenticationBackend):
+    """
+    Authentication backend that validates tokens from an HTTP GET parameter
+    """
+
+    def __init__(self, token_verifier: McpTokenVerifier, token_get_param: str):
+        self.token_verifier = token_verifier
+        self.token_get_param = token_get_param
+
+    async def authenticate(self, conn: HTTPConnection):
+        token = Request(conn.scope).query_params.get(self.token_get_param)
+
+        if token is None:
+            return None
+
+        # Validate the token with the verifier
+        auth_info = await self.token_verifier.verify_token(token)
+
+        if not auth_info:
+            return None
+
+        if auth_info.expires_at and auth_info.expires_at < int(time.time()):
+            return None
+
+        return AuthCredentials(auth_info.scopes), McpAuthenticatedUser(auth_info)
+
+
+class ServiceAccountAuthProvider(AuthProvider):
+    class ServiceAccountAccess(AccessToken):
+        FAKE_CLIENT_ID: ClassVar[Final[str]] = "MCP_CLIENT_VIA_SERVICE_ACCOUNT"
+        FAKE_SCOPE: ClassVar[Final[str]] = "MCP_SERVICE_ACCOUNT_SCOPE"
+
+    def __init__(self, connection_settings: HydrolixConfig):
+        super().__init__()
+        self.connection_settings = connection_settings
+
+    async def verify_token(self, token: str) -> ServiceAccountAccess | None:
+        # TODO actually check the service acct token
+        logger.error(f"Accepted token: {token}\n")
+        return ServiceAccountAuthProvider.ServiceAccountAccess(
+            token=token,
+            client_id=ServiceAccountAuthProvider.ServiceAccountAccess.FAKE_CLIENT_ID,
+            scopes=[
+                ServiceAccountAuthProvider.ServiceAccountAccess.FAKE_SCOPE],
+            expires_at=None,
+            resource=None,
+            claims={}
+        )
+
+    def get_middleware(self) -> list:
+        return [
+            Middleware(
+                AuthenticationMiddleware,
+                backend=BearerAuthBackend(self),
+            ),
+            Middleware(
+                AuthenticationMiddleware,
+                backend=GetParamAuthBackend(self, "token"),
+            ),
+            Middleware(McpAuthContextMiddleware),
+        ]
+
+
 mcp = FastMCP(
     name=MCP_SERVER_NAME,
     dependencies=[
@@ -69,6 +146,7 @@ mcp = FastMCP(
         "python-dotenv",
         "pip-system-certs",
     ],
+    auth=ServiceAccountAuthProvider(get_config())
 )
 
 
@@ -78,6 +156,7 @@ async def health_check(request: Request) -> PlainTextResponse:
 
     Returns OK if the server is running and can connect to Hydrolix.
     """
+    logger.warning(get_access_token()) # FIXME debug only
     try:
         # Try to create a client connection to verify query-head connectivity
         client = create_hydrolix_client()
