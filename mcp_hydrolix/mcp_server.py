@@ -76,6 +76,27 @@ SELECT_QUERY_TIMEOUT_SECS = 30
 load_dotenv()
 
 
+class ChainedAuthBackend(AuthenticationBackend):
+    """
+    Generic authentication backend that tries multiple backends in order. Returns the first successful
+    authentication result. Only tries an auth method once all previous auth methods have failed.
+    """
+
+    def __init__(self, backends: List[AuthenticationBackend]):
+        self.backends = backends
+
+    async def authenticate(self, conn: HTTPConnection):
+        # due to a very strange quirk of python syntax, this CANNOT be an anonymous async generator. The quirk is
+        # that async generator expressions aren't allowed to have `await` in their if conditions (though async
+        # generators have no such restriction on their if statements)
+        async def successful_results():
+            for backend in self.backends:
+                if (result := await backend.authenticate(conn)) is not None:
+                    yield result
+
+        return await anext(successful_results(), None)
+
+
 class GetParamAuthBackend(AuthenticationBackend):
     """
     Authentication backend that validates tokens from an HTTP GET parameter
@@ -103,7 +124,15 @@ class GetParamAuthBackend(AuthenticationBackend):
         return AuthCredentials(auth_info.scopes), McpAuthenticatedUser(auth_info)
 
 
-class ServiceAccountAuthProvider(AuthProvider):
+class HydrolixCredentialChain(AuthProvider):
+    """
+    AuthProvider that authenticates with the following precedence:
+
+    - MCP-standard oAuth (not implemented!)
+    - Hydrolix service account via the "token" GET parameter
+    - Hydrolix service account via the Bearer token
+    """
+
     class ServiceAccountAccess(AccessToken):
         FAKE_CLIENT_ID: ClassVar[Final[str]] = "MCP_CLIENT_VIA_SERVICE_ACCOUNT"
         FAKE_SCOPE: ClassVar[Final[str]] = "MCP_SERVICE_ACCOUNT_SCOPE"
@@ -113,13 +142,12 @@ class ServiceAccountAuthProvider(AuthProvider):
         self.connection_settings = connection_settings
 
     async def verify_token(self, token: str) -> ServiceAccountAccess | None:
-        # TODO actually check the service acct token
-        logger.error(f"Accepted token: {token}\n")
-        return ServiceAccountAuthProvider.ServiceAccountAccess(
+        # FIXME actually check the service acct token
+        return HydrolixCredentialChain.ServiceAccountAccess(
             token=token,
-            client_id=ServiceAccountAuthProvider.ServiceAccountAccess.FAKE_CLIENT_ID,
+            client_id=HydrolixCredentialChain.ServiceAccountAccess.FAKE_CLIENT_ID,
             scopes=[
-                ServiceAccountAuthProvider.ServiceAccountAccess.FAKE_SCOPE],
+                HydrolixCredentialChain.ServiceAccountAccess.FAKE_SCOPE],
             expires_at=None,
             resource=None,
             claims={}
@@ -129,11 +157,10 @@ class ServiceAccountAuthProvider(AuthProvider):
         return [
             Middleware(
                 AuthenticationMiddleware,
-                backend=BearerAuthBackend(self),
-            ),
-            Middleware(
-                AuthenticationMiddleware,
-                backend=GetParamAuthBackend(self, "token"),
+                backend=ChainedAuthBackend([
+                    BearerAuthBackend(self),
+                    GetParamAuthBackend(self, "token"),
+                ]),
             ),
             Middleware(McpAuthContextMiddleware),
         ]
@@ -146,7 +173,7 @@ mcp = FastMCP(
         "python-dotenv",
         "pip-system-certs",
     ],
-    auth=ServiceAccountAuthProvider(get_config())
+    auth=HydrolixCredentialChain(get_config())
 )
 
 
@@ -156,7 +183,7 @@ async def health_check(request: Request) -> PlainTextResponse:
 
     Returns OK if the server is running and can connect to Hydrolix.
     """
-    logger.warning(get_access_token()) # FIXME debug only
+    logger.warning(get_access_token())  # FIXME debug only
     try:
         # Try to create a client connection to verify query-head connectivity
         client = create_hydrolix_client()
