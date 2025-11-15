@@ -141,8 +141,8 @@ class HydrolixCredentialChain(AuthProvider):
         FAKE_CLIENT_ID: ClassVar[Final[str]] = "MCP_CLIENT_VIA_SERVICE_ACCOUNT"
         FAKE_SCOPE: ClassVar[Final[str]] = "MCP_SERVICE_ACCOUNT_SCOPE"
 
-        def as_credential(self):
-            ServiceAccountToken(self.token)
+        def as_credential(self) -> ServiceAccountToken:
+            return ServiceAccountToken(self.token)
 
     def __init__(self, connection_settings: HydrolixConfig):
         super().__init__()
@@ -367,17 +367,15 @@ def create_hydrolix_client(request_credential: Optional[HydrolixCredential]):
     """
     client_config = get_config()
     creds = client_config.creds_with(request_credential)
-    logger.error(creds)
     auth_info = (
         f"as {creds.username}" if isinstance(creds, UsernamePassword)
         else f"using service account {creds.service_account_id}"
     )
     logger.info(
-        f"Creating Hydrolix client connection to {client_config['host']}:{client_config['port']} "
+        f"Creating Hydrolix client connection to {client_config.host}:{client_config.port} "
         f"{auth_info} "
-        f"(secure={client_config['secure']}, verify={client_config['verify']}, "
-        f"connect_timeout={client_config['connect_timeout']}s, "
-        f"send_receive_timeout={client_config['send_receive_timeout']}s)"
+        f"(connect_timeout={client_config.connect_timeout}s, "
+        f"send_receive_timeout={client_config.send_receive_timeout}s)"
     )
 
     try:

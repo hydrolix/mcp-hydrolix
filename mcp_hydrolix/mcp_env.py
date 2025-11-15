@@ -52,12 +52,10 @@ class ServiceAccountToken(HydrolixCredential):
                             options={
                                 "verify_signature": False,
                                 "verify_iss": True,
-                                "verify_aud": True,
                                 "verify_iat": True,
                                 "verify_exp": True,
                             },
-                            issuer="config-api",
-                            audience="hydrolix",
+                            issuer=f"https://{get_config().host}/config",
                             )
         self.token = token
         self.service_account_id = claims["sub"]
@@ -128,7 +126,7 @@ class HydrolixConfig:
             # from the environment, if available
             self._default_credential = UsernamePassword(global_username, global_password)
 
-    def creds_with(self, request_credential: Optional[HydrolixCredential] = None) -> HydrolixCredential:
+    def creds_with(self, request_credential: Optional[HydrolixCredential]) -> HydrolixCredential:
         if request_credential is not None:
             return request_credential
         elif self._default_credential is not None:
@@ -223,7 +221,7 @@ class HydrolixConfig:
         """
         return int(os.getenv("HYDROLIX_MCP_BIND_PORT", "8000"))
 
-    def get_client_config(self, request_credential: Optional[HydrolixCredential] = None) -> dict:
+    def get_client_config(self, request_credential: Optional[HydrolixCredential]) -> dict:
         """
         Get the configuration dictionary for clickhouse_connect client.
 
