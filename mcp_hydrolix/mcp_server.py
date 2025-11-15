@@ -12,7 +12,7 @@ from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from dataclasses import dataclass, field, asdict, is_dataclass
 
-from fastmcp.server.auth import AuthProvider, AccessToken
+from fastmcp.server.auth import AuthProvider, AccessToken as FastMCPAccessToken
 from fastmcp.server.dependencies import get_access_token
 from mcp.server.auth.middleware.auth_context import AuthContextMiddleware as McpAuthContextMiddleware
 from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser as McpAuthenticatedUser, BearerAuthBackend
@@ -26,7 +26,7 @@ from starlette.types import Scope, Receive, Send, ASGIApp
 from uvicorn._types import HTTPScope
 from uvicorn.middleware.asgi2 import ASGI2Middleware
 
-from mcp_hydrolix.mcp_env import get_config, HydrolixConfig
+from mcp_hydrolix.mcp_env import get_config, HydrolixConfig, HydrolixCredential, ServiceAccountToken, UsernamePassword
 
 
 @dataclass
@@ -124,6 +124,10 @@ class GetParamAuthBackend(AuthenticationBackend):
         return AuthCredentials(auth_info.scopes), McpAuthenticatedUser(auth_info)
 
 
+class AccessToken(FastMCPAccessToken):
+    def as_credential(self) -> HydrolixCredential: ...
+
+
 class HydrolixCredentialChain(AuthProvider):
     """
     AuthProvider that authenticates with the following precedence:
@@ -137,12 +141,19 @@ class HydrolixCredentialChain(AuthProvider):
         FAKE_CLIENT_ID: ClassVar[Final[str]] = "MCP_CLIENT_VIA_SERVICE_ACCOUNT"
         FAKE_SCOPE: ClassVar[Final[str]] = "MCP_SERVICE_ACCOUNT_SCOPE"
 
+        def as_credential(self):
+            ServiceAccountToken(self.token)
+
     def __init__(self, connection_settings: HydrolixConfig):
         super().__init__()
         self.connection_settings = connection_settings
 
-    async def verify_token(self, token: str) -> ServiceAccountAccess | None:
-        # FIXME actually check the service acct token
+    async def verify_token(self, token: str) -> AccessToken | None:
+        """
+        This is responsible for validating and authenticating the `token`.
+        See ChainedAuthBackend for how the token is obtained in the first place.
+        Authorization is performed by individual endpoints via `fastmcp.server.dependencies.get_access_token`
+        """
         return HydrolixCredentialChain.ServiceAccountAccess(
             token=token,
             client_id=HydrolixCredentialChain.ServiceAccountAccess.FAKE_CLIENT_ID,
@@ -183,10 +194,9 @@ async def health_check(request: Request) -> PlainTextResponse:
 
     Returns OK if the server is running and can connect to Hydrolix.
     """
-    logger.warning(get_access_token())  # FIXME debug only
     try:
         # Try to create a client connection to verify query-head connectivity
-        client = create_hydrolix_client()
+        client = create_hydrolix_client(get_request_credential())
         version = client.server_version
         return PlainTextResponse(f"OK - Connected to Hydrolix compatible with ClickHouse {version}")
     except Exception as e:
@@ -216,7 +226,7 @@ def to_json(obj: Any) -> str:
 def list_databases():
     """List available Hydrolix databases"""
     logger.info("Listing all databases")
-    client = create_hydrolix_client()
+    client = create_hydrolix_client(get_request_credential())
     result = client.command("SHOW DATABASES")
 
     # Convert newline-separated string to list and trim whitespace
@@ -234,7 +244,7 @@ def list_tables(database: str, like: Optional[str] = None, not_like: Optional[st
     """List available Hydrolix tables in a database, including schema, comment,
     row count, and column count."""
     logger.info(f"Listing tables in database '{database}'")
-    client = create_hydrolix_client()
+    client = create_hydrolix_client(get_request_credential())
     query = f"SELECT database, name, engine, create_table_query, dependencies_database, dependencies_table, engine_full, sorting_key, primary_key, total_rows, total_bytes, total_bytes_uncompressed, parts, active_parts, total_marks, comment FROM system.tables WHERE database = {format_query_value(database)}"
     if like:
         query += f" AND name LIKE {format_query_value(like)}"
@@ -262,8 +272,8 @@ def list_tables(database: str, like: Optional[str] = None, not_like: Optional[st
     return [asdict(table) for table in tables]
 
 
-def execute_query(query: str):
-    client = create_hydrolix_client()
+def execute_query(query: str, request_credential: Optional[HydrolixCredential]):
+    client = create_hydrolix_client(request_credential)
     try:
         res = client.query(
             query,
@@ -324,7 +334,7 @@ def run_select_query(query: str):
     """
     logger.info(f"Executing SELECT query: {query}")
     try:
-        future = QUERY_EXECUTOR.submit(execute_query, query)
+        future = QUERY_EXECUTOR.submit(execute_query, query, get_request_credential())
         try:
             result = future.result(timeout=SELECT_QUERY_TIMEOUT_SECS)
             # Check if we received an error structure from execute_query
@@ -348,12 +358,19 @@ def run_select_query(query: str):
         raise RuntimeError(f"Unexpected error during query execution: {str(e)}")
 
 
-def create_hydrolix_client():
-    client_config = get_config().get_client_config()
+def create_hydrolix_client(request_credential: Optional[HydrolixCredential]):
+    """
+    Create a client for operations against query-head. Note that this eagerly issues requests for initialization
+    of properties like `server_version`, and so may throw exceptions.
+    INV: clients returned by this method MUST NOT be reused across sessions, because they can close over per-session
+    credentials.
+    """
+    client_config = get_config()
+    creds = client_config.creds_with(request_credential)
+    logger.error(creds)
     auth_info = (
-        f"as {client_config['username']}"
-        if "username" in client_config
-        else "using service account token"
+        f"as {creds.username}" if isinstance(creds, UsernamePassword)
+        else f"using service account {creds.service_account_id}"
     )
     logger.info(
         f"Creating Hydrolix client connection to {client_config['host']}:{client_config['port']} "
@@ -364,7 +381,7 @@ def create_hydrolix_client():
     )
 
     try:
-        client = clickhouse_connect.get_client(**client_config)
+        client = clickhouse_connect.get_client(**client_config.get_client_config(request_credential))
         # Test the connection
         version = client.server_version
         logger.info(f"Successfully connected to Hydrolix compatible with ClickHouse {version}")
@@ -372,3 +389,12 @@ def create_hydrolix_client():
     except Exception as e:
         logger.error(f"Failed to connect to Hydrolix: {str(e)}")
         raise
+
+
+def get_request_credential() -> HydrolixCredential | None:
+    if (token := get_access_token()) is not None:
+        if isinstance(token, AccessToken):
+            return cast(AccessToken, token).as_credential()
+        else:
+            raise ValueError("Found non-hydrolix access token on request -- this should be impossible!")
+    return None

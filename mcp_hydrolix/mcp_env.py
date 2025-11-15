@@ -3,11 +3,14 @@
 This module handles all environment variable configuration with sensible defaults
 and type conversion.
 """
-
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 import os
-from typing import Optional
+import time
+from typing import Optional, Union, Protocol
 from enum import Enum
+import jwt
+from jwt import PyJWT
 
 
 class TransportType(str, Enum):
@@ -21,6 +24,64 @@ class TransportType(str, Enum):
     def values(cls) -> list[str]:
         """Get all valid transport values."""
         return [transport.value for transport in cls]
+
+
+class HydrolixCredential(ABC):
+    @abstractmethod
+    def clickhouse_config_entries(self) -> dict:
+        """
+        Returns the entries needed for a ClickHouse client config to use this credential.
+        This will typically add `access_token` or (`username` and `password`)
+        """
+        ...
+
+
+@dataclass
+class ServiceAccountToken(HydrolixCredential):
+    """Hydrolix credentials using a service account token."""
+
+    def __init__(self, token: str):
+        """
+        Initialize a ServiceAccountToken from a token JWT (or raise an error if the claims are invalid).
+        NB the claims' signatures are NOT checked by this function -- these validations MUST NOT be considered
+        authoritative.
+        """
+        import jwt
+        claims = jwt.decode(token,
+                            key="",  # NB service account signing key is not publicly-hosted
+                            options={
+                                "verify_signature": False,
+                                "verify_iss": True,
+                                "verify_aud": True,
+                                "verify_iat": True,
+                                "verify_exp": True,
+                            },
+                            issuer="config-api",
+                            audience="hydrolix",
+                            )
+        self.token = token
+        self.service_account_id = claims["sub"]
+        self.issued_at = claims["iss"]
+        self.expires_at = claims["exp"]
+
+    def clickhouse_config_entries(self) -> dict:
+        return {"access_token": self.token}
+
+    token: str
+    service_account_id: str
+    issued_at: int
+    expires_at: int
+
+
+@dataclass
+class UsernamePassword(HydrolixCredential):
+    """Hydrolix credentials using username and password."""
+
+    def clickhouse_config_entries(self) -> dict:
+        return {"username": self.username, "password": self.password}
+
+    username: str
+    password: str
 
 
 @dataclass
@@ -51,6 +112,34 @@ class HydrolixConfig:
     def __init__(self):
         """Initialize the configuration from environment variables."""
         self._validate_required_vars()
+        # Credential to use for clickhouse connections when no per-request credential is provided
+        self._default_credential: Optional[HydrolixCredential] = None
+
+        # Set the default credential to the service account from the environment, if available
+        if (global_service_account := os.environ.get("HYDROLIX_TOKEN")) is not None:
+            self._default_credential = ServiceAccountToken(global_service_account)
+        elif ((
+                      global_username := os.environ.get("HYDROLIX_USER")
+              ) is not None
+              and (
+                      global_password := os.environ.get("HYDROLIX_PASSWORD")
+              ) is not None):
+            # No global service account available. Set the default credential to the username/password
+            # from the environment, if available
+            self._default_credential = UsernamePassword(global_username, global_password)
+
+    def creds_with(self, request_credential: Optional[HydrolixCredential] = None) -> HydrolixCredential:
+        if request_credential is not None:
+            return request_credential
+        elif self._default_credential is not None:
+            return self._default_credential
+        else:
+            raise ValueError(
+                "No credentials available for Hydrolix connection. "
+                "Please provide credentials either through HYDROLIX_TOKEN or "
+                "HYDROLIX_USER/HYDROLIX_PASSWORD environment variables, "
+                "or pass credentials explicitly via the creds parameter."
+            )
 
     @property
     def host(self) -> str:
@@ -67,40 +156,6 @@ class HydrolixConfig:
         if "HYDROLIX_PORT" in os.environ:
             return int(os.environ["HYDROLIX_PORT"])
         return 8088
-
-    @property
-    def service_account(self) -> bool:
-        """Determine if service account is enabled
-
-        Defaults to false.
-        Can be overridden if HYDROLIX_TOKEN environment variable.
-        """
-        return "HYDROLIX_TOKEN" in os.environ
-
-    @property
-    def service_account_token(self) -> str:
-        """Get the service account token
-
-        Defaults to None.
-        Can be overridden if HYDROLIX_TOKEN environment variable.
-        """
-        if "HYDROLIX_TOKEN" in os.environ:
-            return os.environ["HYDROLIX_TOKEN"]
-        return None
-
-    @property
-    def username(self) -> str:
-        """Get the Hydrolix username."""
-        if "HYDROLIX_USER" in os.environ:
-            return os.environ["HYDROLIX_USER"]
-        return None
-
-    @property
-    def password(self) -> str:
-        """Get the Hydrolix password."""
-        if "HYDROLIX_PASSWORD" in os.environ:
-            return os.environ["HYDROLIX_PASSWORD"]
-        return None
 
     @property
     def database(self) -> Optional[str]:
@@ -168,11 +223,20 @@ class HydrolixConfig:
         """
         return int(os.getenv("HYDROLIX_MCP_BIND_PORT", "8000"))
 
-    def get_client_config(self) -> dict:
-        """Get the configuration dictionary for clickhouse_connect client.
+    def get_client_config(self, request_credential: Optional[HydrolixCredential] = None) -> dict:
+        """
+        Get the configuration dictionary for clickhouse_connect client.
+
+        Args:
+            request_credential: Optional credentials to use for this request. If not provided,
+                   falls back to the default credential for this HydrolixConfig
 
         Returns:
             dict: Configuration ready to be passed to clickhouse_connect.get_client()
+
+        Raises:
+            ValueError: If no credentials could be inferred for the request (either from
+                       the startup environment or provided in the request)
         """
         config = {
             "host": self.host,
@@ -191,11 +255,8 @@ class HydrolixConfig:
         if self.proxy_path:
             config["proxy_path"] = self.proxy_path
 
-        if self.service_account:
-            config["access_token"] = self.service_account_token
-        else:
-            config["username"] = self.username
-            config["password"] = self.password
+        # Add credentials
+        config |= self.creds_with(request_credential).clickhouse_config_entries()
 
         return config
 
@@ -206,13 +267,13 @@ class HydrolixConfig:
             ValueError: If any required environment variable is missing.
         """
         missing_vars = []
-        if self.service_account:
-            required_vars = ["HYDROLIX_HOST", "HYDROLIX_TOKEN"]
-        else:
-            required_vars = ["HYDROLIX_HOST", "HYDROLIX_USER", "HYDROLIX_PASSWORD"]
-        for var in required_vars:
-            if var not in os.environ:
-                missing_vars.append(var)
+        # if self.service_account:
+        #     required_vars = ["HYDROLIX_HOST", "HYDROLIX_TOKEN"]
+        # else:
+        #     required_vars = ["HYDROLIX_HOST", "HYDROLIX_USER", "HYDROLIX_PASSWORD"]
+        # for var in required_vars:
+        #     if var not in os.environ:
+        #         missing_vars.append(var)
 
         if missing_vars:
             raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
