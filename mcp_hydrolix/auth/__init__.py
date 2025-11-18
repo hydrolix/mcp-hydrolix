@@ -3,16 +3,18 @@
 This package contains authentication-related types used to define hydrolix auth
 in terms of FastMCP infrastructure
 """
-from mcp_hydrolix.auth.credentials import (
+
+from .credentials import (
     HydrolixCredential,
     ServiceAccountToken,
     UsernamePassword,
 )
-from mcp_hydrolix.auth.mcp_providers import (
+from .mcp_providers import (
     AccessToken,
     ChainedAuthBackend,
     GetParamAuthBackend,
     HydrolixCredentialChain,
+    TOKEN_PARAM,
 )
 
 __all__ = [
@@ -23,4 +25,5 @@ __all__ = [
     "ChainedAuthBackend",
     "GetParamAuthBackend",
     "HydrolixCredentialChain",
+    "TOKEN_PARAM",
 ]

@@ -15,14 +15,15 @@ from fastmcp.server.dependencies import get_access_token
 from starlette.requests import Request
 from starlette.responses import PlainTextResponse
 
-from mcp_hydrolix.auth.credentials import ServiceAccountToken
-from mcp_hydrolix.mcp_env import HydrolixConfig, get_config
-from mcp_hydrolix.auth import (
+from .mcp_env import HydrolixConfig, get_config
+from .auth import (
     HydrolixCredential,
     UsernamePassword,
     AccessToken,
     HydrolixCredentialChain,
+    ServiceAccountToken,
 )
+from .logging_utils import AccessLogTokenRedactingFilter
 
 
 @dataclass
@@ -64,6 +65,10 @@ logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(MCP_SERVER_NAME)
+
+# Add token redaction filter to uvicorn access logs
+uvicorn_access_logger = logging.getLogger("uvicorn.access")
+uvicorn_access_logger.addFilter(AccessLogTokenRedactingFilter())
 
 QUERY_EXECUTOR = concurrent.futures.ThreadPoolExecutor(max_workers=10)
 atexit.register(lambda: QUERY_EXECUTOR.shutdown(wait=True))

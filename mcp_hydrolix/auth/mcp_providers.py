@@ -18,8 +18,9 @@ from starlette.middleware import Middleware
 from starlette.middleware.authentication import AuthenticationMiddleware
 from starlette.requests import Request, HTTPConnection
 
-from mcp_hydrolix.auth.credentials import HydrolixCredential, ServiceAccountToken
+from .credentials import HydrolixCredential, ServiceAccountToken
 
+TOKEN_PARAM: Final[str] = "token"
 
 class ChainedAuthBackend(AuthenticationBackend):
     """
@@ -79,7 +80,7 @@ class HydrolixCredentialChain(AuthProvider):
     AuthProvider that authenticates with the following precedence:
 
     - MCP-standard oAuth (not implemented!)
-    - Hydrolix service account via the "token" GET parameter
+    - Hydrolix service account via the TOKEN_PARAM GET parameter
     - Hydrolix service account via the Bearer token
     """
 
@@ -125,7 +126,7 @@ class HydrolixCredentialChain(AuthProvider):
                 backend=ChainedAuthBackend(
                     [
                         BearerAuthBackend(self),
-                        GetParamAuthBackend(self, "token"),
+                        GetParamAuthBackend(self, TOKEN_PARAM),
                     ]
                 ),
             ),
