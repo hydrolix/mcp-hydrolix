@@ -3,14 +3,13 @@
 This module handles all environment variable configuration with sensible defaults
 and type conversion.
 """
-from abc import ABC, abstractmethod
+
 from dataclasses import dataclass
 import os
-import time
-from typing import Optional, Union, Protocol
+from typing import Optional
 from enum import Enum
-import jwt
-from jwt import PyJWT
+
+from mcp_hydrolix.auth.credentials import HydrolixCredential, ServiceAccountToken, UsernamePassword
 
 
 class TransportType(str, Enum):
@@ -24,62 +23,6 @@ class TransportType(str, Enum):
     def values(cls) -> list[str]:
         """Get all valid transport values."""
         return [transport.value for transport in cls]
-
-
-class HydrolixCredential(ABC):
-    @abstractmethod
-    def clickhouse_config_entries(self) -> dict:
-        """
-        Returns the entries needed for a ClickHouse client config to use this credential.
-        This will typically add `access_token` or (`username` and `password`)
-        """
-        ...
-
-
-@dataclass
-class ServiceAccountToken(HydrolixCredential):
-    """Hydrolix credentials using a service account token."""
-
-    def __init__(self, token: str):
-        """
-        Initialize a ServiceAccountToken from a token JWT (or raise an error if the claims are invalid).
-        NB the claims' signatures are NOT checked by this function -- these validations MUST NOT be considered
-        authoritative.
-        """
-        import jwt
-        claims = jwt.decode(token,
-                            key="",  # NB service account signing key is not publicly-hosted
-                            options={
-                                "verify_signature": False,
-                                "verify_iss": True,
-                                "verify_iat": True,
-                                "verify_exp": True,
-                            },
-                            issuer=f"https://{get_config().host}/config",
-                            )
-        self.token = token
-        self.service_account_id = claims["sub"]
-        self.issued_at = claims["iss"]
-        self.expires_at = claims["exp"]
-
-    def clickhouse_config_entries(self) -> dict:
-        return {"access_token": self.token}
-
-    token: str
-    service_account_id: str
-    issued_at: int
-    expires_at: int
-
-
-@dataclass
-class UsernamePassword(HydrolixCredential):
-    """Hydrolix credentials using username and password."""
-
-    def clickhouse_config_entries(self) -> dict:
-        return {"username": self.username, "password": self.password}
-
-    username: str
-    password: str
 
 
 @dataclass
@@ -116,12 +59,9 @@ class HydrolixConfig:
         # Set the default credential to the service account from the environment, if available
         if (global_service_account := os.environ.get("HYDROLIX_TOKEN")) is not None:
             self._default_credential = ServiceAccountToken(global_service_account)
-        elif ((
-                      global_username := os.environ.get("HYDROLIX_USER")
-              ) is not None
-              and (
-                      global_password := os.environ.get("HYDROLIX_PASSWORD")
-              ) is not None):
+        elif (global_username := os.environ.get("HYDROLIX_USER")) is not None and (
+            global_password := os.environ.get("HYDROLIX_PASSWORD")
+        ) is not None:
             # No global service account available. Set the default credential to the username/password
             # from the environment, if available
             self._default_credential = UsernamePassword(global_username, global_password)
@@ -185,7 +125,7 @@ class HydrolixConfig:
         return int(os.getenv("HYDROLIX_SEND_RECEIVE_TIMEOUT", "300"))
 
     @property
-    def proxy_path(self) -> str:
+    def proxy_path(self) -> Optional[str]:
         return os.getenv("HYDROLIX_PROXY_PATH")
 
     @property
@@ -265,13 +205,16 @@ class HydrolixConfig:
             ValueError: If any required environment variable is missing.
         """
         missing_vars = []
-        # if self.service_account:
-        #     required_vars = ["HYDROLIX_HOST", "HYDROLIX_TOKEN"]
-        # else:
-        #     required_vars = ["HYDROLIX_HOST", "HYDROLIX_USER", "HYDROLIX_PASSWORD"]
-        # for var in required_vars:
-        #     if var not in os.environ:
-        #         missing_vars.append(var)
+        required_vars = ["HYDROLIX_HOST"]
+        for var in required_vars:
+            if var not in os.environ:
+                missing_vars.append(var)
+
+        # HYDROLIX_USER and HYDROLIX_PASSWORD must either be both present or both absent
+        if ("HYDROLIX_USER" in os.environ) != ("HYDROLIX_PASSWORD" in os.environ):
+            raise ValueError(
+                "User/password authentication is only partially configured: pass both HYDROLIX_USER and HYDROLIX_PASSWORD"
+            )
 
         if missing_vars:
             raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")

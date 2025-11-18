@@ -1,7 +1,6 @@
 import logging
 import json
-import time
-from typing import Optional, List, Any, Final, cast, ClassVar
+from typing import Final, Optional, List, Any, cast
 import concurrent.futures
 import atexit
 
@@ -12,21 +11,18 @@ from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from dataclasses import dataclass, field, asdict, is_dataclass
 
-from fastmcp.server.auth import AuthProvider, AccessToken as FastMCPAccessToken
 from fastmcp.server.dependencies import get_access_token
-from mcp.server.auth.middleware.auth_context import AuthContextMiddleware as McpAuthContextMiddleware
-from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser as McpAuthenticatedUser, BearerAuthBackend
-from mcp.server.auth.provider import TokenVerifier as McpTokenVerifier
-from starlette.authentication import AuthenticationBackend, AuthCredentials, BaseUser
-from starlette.middleware import Middleware
-from starlette.middleware.authentication import AuthenticationMiddleware
-from starlette.requests import Request, HTTPConnection
+from starlette.requests import Request
 from starlette.responses import PlainTextResponse
-from starlette.types import Scope, Receive, Send, ASGIApp
-from uvicorn._types import HTTPScope
-from uvicorn.middleware.asgi2 import ASGI2Middleware
 
-from mcp_hydrolix.mcp_env import get_config, HydrolixConfig, HydrolixCredential, ServiceAccountToken, UsernamePassword
+from mcp_hydrolix.auth.credentials import ServiceAccountToken
+from mcp_hydrolix.mcp_env import HydrolixConfig, get_config
+from mcp_hydrolix.auth import (
+    HydrolixCredential,
+    UsernamePassword,
+    AccessToken,
+    HydrolixCredentialChain,
+)
 
 
 @dataclass
@@ -75,107 +71,7 @@ SELECT_QUERY_TIMEOUT_SECS = 30
 
 load_dotenv()
 
-
-class ChainedAuthBackend(AuthenticationBackend):
-    """
-    Generic authentication backend that tries multiple backends in order. Returns the first successful
-    authentication result. Only tries an auth method once all previous auth methods have failed.
-    """
-
-    def __init__(self, backends: List[AuthenticationBackend]):
-        self.backends = backends
-
-    async def authenticate(self, conn: HTTPConnection):
-        # due to a very strange quirk of python syntax, this CANNOT be an anonymous async generator. The quirk is
-        # that async generator expressions aren't allowed to have `await` in their if conditions (though async
-        # generators have no such restriction on their if statements)
-        async def successful_results():
-            for backend in self.backends:
-                if (result := await backend.authenticate(conn)) is not None:
-                    yield result
-
-        return await anext(successful_results(), None)
-
-
-class GetParamAuthBackend(AuthenticationBackend):
-    """
-    Authentication backend that validates tokens from an HTTP GET parameter
-    """
-
-    def __init__(self, token_verifier: McpTokenVerifier, token_get_param: str):
-        self.token_verifier = token_verifier
-        self.token_get_param = token_get_param
-
-    async def authenticate(self, conn: HTTPConnection):
-        token = Request(conn.scope).query_params.get(self.token_get_param)
-
-        if token is None:
-            return None
-
-        # Validate the token with the verifier
-        auth_info = await self.token_verifier.verify_token(token)
-
-        if not auth_info:
-            return None
-
-        if auth_info.expires_at and auth_info.expires_at < int(time.time()):
-            return None
-
-        return AuthCredentials(auth_info.scopes), McpAuthenticatedUser(auth_info)
-
-
-class AccessToken(FastMCPAccessToken):
-    def as_credential(self) -> HydrolixCredential: ...
-
-
-class HydrolixCredentialChain(AuthProvider):
-    """
-    AuthProvider that authenticates with the following precedence:
-
-    - MCP-standard oAuth (not implemented!)
-    - Hydrolix service account via the "token" GET parameter
-    - Hydrolix service account via the Bearer token
-    """
-
-    class ServiceAccountAccess(AccessToken):
-        FAKE_CLIENT_ID: ClassVar[Final[str]] = "MCP_CLIENT_VIA_SERVICE_ACCOUNT"
-        FAKE_SCOPE: ClassVar[Final[str]] = "MCP_SERVICE_ACCOUNT_SCOPE"
-
-        def as_credential(self) -> ServiceAccountToken:
-            return ServiceAccountToken(self.token)
-
-    def __init__(self, connection_settings: HydrolixConfig):
-        super().__init__()
-        self.connection_settings = connection_settings
-
-    async def verify_token(self, token: str) -> AccessToken | None:
-        """
-        This is responsible for validating and authenticating the `token`.
-        See ChainedAuthBackend for how the token is obtained in the first place.
-        Authorization is performed by individual endpoints via `fastmcp.server.dependencies.get_access_token`
-        """
-        return HydrolixCredentialChain.ServiceAccountAccess(
-            token=token,
-            client_id=HydrolixCredentialChain.ServiceAccountAccess.FAKE_CLIENT_ID,
-            scopes=[
-                HydrolixCredentialChain.ServiceAccountAccess.FAKE_SCOPE],
-            expires_at=None,
-            resource=None,
-            claims={}
-        )
-
-    def get_middleware(self) -> list:
-        return [
-            Middleware(
-                AuthenticationMiddleware,
-                backend=ChainedAuthBackend([
-                    BearerAuthBackend(self),
-                    GetParamAuthBackend(self, "token"),
-                ]),
-            ),
-            Middleware(McpAuthContextMiddleware),
-        ]
-
+HYDROLIX_CONFIG: Final[HydrolixConfig] = get_config()
 
 mcp = FastMCP(
     name=MCP_SERVER_NAME,
@@ -184,7 +80,7 @@ mcp = FastMCP(
         "python-dotenv",
         "pip-system-certs",
     ],
-    auth=HydrolixCredentialChain(get_config())
+    auth=HydrolixCredentialChain(f"https://{HYDROLIX_CONFIG.host}/config"),
 )
 
 
@@ -213,13 +109,17 @@ def result_to_column(query_columns, result) -> List[Column]:
 
 
 def to_json(obj: Any) -> str:
+    # This function technically returns different types:
+    # - str for dataclasses (the primary use case)
+    # - list/dict/Any for recursive processing during serialization
+    # Type checking is suppressed for non-str returns as they're only used internally by json.dumps
     if is_dataclass(obj):
         return json.dumps(asdict(obj), default=to_json)
     elif isinstance(obj, list):
-        return [to_json(item) for item in obj]
+        return [to_json(item) for item in obj]  # type: ignore[return-value]
     elif isinstance(obj, dict):
-        return {key: to_json(value) for key, value in obj.items()}
-    return obj
+        return {key: to_json(value) for key, value in obj.items()}  # type: ignore[return-value]
+    return obj  # type: ignore[return-value]
 
 
 @mcp.tool()
@@ -365,21 +265,23 @@ def create_hydrolix_client(request_credential: Optional[HydrolixCredential]):
     INV: clients returned by this method MUST NOT be reused across sessions, because they can close over per-session
     credentials.
     """
-    client_config = get_config()
-    creds = client_config.creds_with(request_credential)
+    creds = HYDROLIX_CONFIG.creds_with(request_credential)
     auth_info = (
-        f"as {creds.username}" if isinstance(creds, UsernamePassword)
-        else f"using service account {creds.service_account_id}"
+        f"as {creds.username}"
+        if isinstance(creds, UsernamePassword)
+        else f"using service account {cast(ServiceAccountToken, creds).service_account_id}"
     )
     logger.info(
-        f"Creating Hydrolix client connection to {client_config.host}:{client_config.port} "
+        f"Creating Hydrolix client connection to {HYDROLIX_CONFIG.host}:{HYDROLIX_CONFIG.port} "
         f"{auth_info} "
-        f"(connect_timeout={client_config.connect_timeout}s, "
-        f"send_receive_timeout={client_config.send_receive_timeout}s)"
+        f"(connect_timeout={HYDROLIX_CONFIG.connect_timeout}s, "
+        f"send_receive_timeout={HYDROLIX_CONFIG.send_receive_timeout}s)"
     )
 
     try:
-        client = clickhouse_connect.get_client(**client_config.get_client_config(request_credential))
+        client = clickhouse_connect.get_client(
+            **HYDROLIX_CONFIG.get_client_config(request_credential)
+        )
         # Test the connection
         version = client.server_version
         logger.info(f"Successfully connected to Hydrolix compatible with ClickHouse {version}")
@@ -394,5 +296,7 @@ def get_request_credential() -> HydrolixCredential | None:
         if isinstance(token, AccessToken):
             return cast(AccessToken, token).as_credential()
         else:
-            raise ValueError("Found non-hydrolix access token on request -- this should be impossible!")
+            raise ValueError(
+                "Found non-hydrolix access token on request -- this should be impossible!"
+            )
     return None
