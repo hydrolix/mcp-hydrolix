@@ -45,6 +45,18 @@ The Hydrolix MCP server is configured using a standard MCP server entry. Consult
 
 The recommended way to launch the Hydrolix MCP server is via the [`uv` project manager](https://github.com/astral-sh/uv), which will manage installing all other dependencies in an isolated environment.
 
+### Authentication
+
+The server supports multiple authentication methods with the following precedence (highest to lowest):
+
+1. **Per-request Bearer token**: Service account token provided via `Authorization: Bearer <token>` header
+2. **Per-request GET parameter**: Service account token provided via `?token=<token>` query parameter
+3. **Environment-based credentials**: Credentials configured via environment variables
+   - Service account token (`HYDROLIX_TOKEN`), or
+   - Username and password (`HYDROLIX_USER` and `HYDROLIX_PASSWORD`)
+
+When multiple authentication methods are configured, the server will use the first available method in the precedence order above. Per-request authentication is only available when using HTTP or SSE transport modes.
+
 MCP Server definition using username and password (JSON):
 
 ```json
@@ -199,11 +211,14 @@ The following variables are used to configure the Hydrolix connection. These var
 
 #### Required Variables
 * `HYDROLIX_HOST`: The hostname of your Hydrolix server
-* `HYDROLIX_TOKEN`: The Hydrolix service account token (omit if using username/password)
-* `HYDROLIX_USER`: The username for authentication (omit if using service account)
-* `HYDROLIX_PASSWORD`: The password for authentication (omit if using service account)
 
-**Authentication precedence:** If both `HYDROLIX_TOKEN` and `HYDROLIX_USER`/`HYDROLIX_PASSWORD` are provided, the service account token takes precedence and username/password authentication will be ignored.
+#### Authentication Variables
+At least one authentication method must be configured when using the stdio transport:
+
+* `HYDROLIX_TOKEN`: Service account token for environment-based authentication
+* `HYDROLIX_USER` and `HYDROLIX_PASSWORD`: Username and password for environment-based authentication (both must be provided together)
+
+If no environment-based credentials are provided, per-request authentication must be used (available only with HTTP or SSE transport).
 
 #### Optional Variables
 * `HYDROLIX_PORT`: The port number of your Hydrolix server
@@ -241,5 +256,30 @@ HYDROLIX_MCP_BIND_PORT=4200  # Custom port (default: 8000)
 When using HTTP transport, the server will run on the configured port (default 8000). For example, with the above configuration:
 - MCP endpoint: `http://localhost:4200/mcp`
 - Health check: `http://localhost:4200/health`
+
+#### Using Per-Request Authentication with HTTP Transport
+
+When using HTTP or SSE transport, you can omit environment-based credentials and instead provide authentication per-request. This is useful for multi-user scenarios or with clients that don't support running MCP servers locally.
+
+Example `mcpServers` configuration connecting to a remote HTTP server with per-request authentication:
+
+```json
+{
+  "mcpServers": {
+    "mcp-hydrolix-remote": {
+      "url": "http://my-hydrolix-mcp.example.com:8000/mcp?token=<service-account-token>"
+    }
+  }
+}
+```
+
+Example minimal `.env` configuration for running your own HTTP server without environment credentials:
+
+```env
+HYDROLIX_HOST=my-cluster.hydrolix.net
+HYDROLIX_MCP_SERVER_TRANSPORT=http
+```
+
+Though not part of the MCP specification, many MCP clients allow adding headers to MCP-issued requests. When this is possible, we recommend configuring the MCP client to pass a service account token via the `Authorization: Bearer <sa-token-here>` header instead of as a URL parameter for greater security.
 
 Note: The bind host and port settings are only used when transport is set to "http" or "sse".
