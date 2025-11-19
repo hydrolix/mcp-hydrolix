@@ -9,6 +9,8 @@ import os
 from typing import Optional
 from enum import Enum
 
+from .auth.credentials import HydrolixCredential, ServiceAccountToken, UsernamePassword
+
 
 class TransportType(str, Enum):
     """Supported MCP server transport types."""
@@ -48,13 +50,40 @@ class HydrolixConfig:
         HYDROLIX_MCP_BIND_PORT: Port to bind the MCP server to when using HTTP or SSE transport (default: 8000)
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the configuration from environment variables."""
         self._validate_required_vars()
+        # Credential to use for clickhouse connections when no per-request credential is provided
+        self._default_credential: Optional[HydrolixCredential] = None
+
+        # Set the default credential to the service account from the environment, if available
+        if (global_service_account := os.environ.get("HYDROLIX_TOKEN")) is not None:
+            self._default_credential = ServiceAccountToken(
+                global_service_account, f"https://{self.host}/config"
+            )
+        elif (global_username := os.environ.get("HYDROLIX_USER")) is not None and (
+            global_password := os.environ.get("HYDROLIX_PASSWORD")
+        ) is not None:
+            # No global service account available. Set the default credential to the username/password
+            # from the environment, if available
+            self._default_credential = UsernamePassword(global_username, global_password)
+
+    def creds_with(self, request_credential: Optional[HydrolixCredential]) -> HydrolixCredential:
+        if request_credential is not None:
+            return request_credential
+        elif self._default_credential is not None:
+            return self._default_credential
+        else:
+            raise ValueError(
+                "No credentials available for Hydrolix connection. "
+                "Please provide credentials either through HYDROLIX_TOKEN or "
+                "HYDROLIX_USER/HYDROLIX_PASSWORD environment variables, "
+                "or pass credentials explicitly via the creds parameter."
+            )
 
     @property
     def host(self) -> str:
-        """Get the Hydrolix host."""
+        """Get the Hydrolix host. Called during __init__"""
         return os.environ["HYDROLIX_HOST"]
 
     @property
@@ -67,40 +96,6 @@ class HydrolixConfig:
         if "HYDROLIX_PORT" in os.environ:
             return int(os.environ["HYDROLIX_PORT"])
         return 8088
-
-    @property
-    def service_account(self) -> bool:
-        """Determine if service account is enabled
-
-        Defaults to false.
-        Can be overridden if HYDROLIX_TOKEN environment variable.
-        """
-        return "HYDROLIX_TOKEN" in os.environ
-
-    @property
-    def service_account_token(self) -> str:
-        """Get the service account token
-
-        Defaults to None.
-        Can be overridden if HYDROLIX_TOKEN environment variable.
-        """
-        if "HYDROLIX_TOKEN" in os.environ:
-            return os.environ["HYDROLIX_TOKEN"]
-        return None
-
-    @property
-    def username(self) -> str:
-        """Get the Hydrolix username."""
-        if "HYDROLIX_USER" in os.environ:
-            return os.environ["HYDROLIX_USER"]
-        return None
-
-    @property
-    def password(self) -> str:
-        """Get the Hydrolix password."""
-        if "HYDROLIX_PASSWORD" in os.environ:
-            return os.environ["HYDROLIX_PASSWORD"]
-        return None
 
     @property
     def database(self) -> Optional[str]:
@@ -132,7 +127,7 @@ class HydrolixConfig:
         return int(os.getenv("HYDROLIX_SEND_RECEIVE_TIMEOUT", "300"))
 
     @property
-    def proxy_path(self) -> str:
+    def proxy_path(self) -> Optional[str]:
         return os.getenv("HYDROLIX_PROXY_PATH")
 
     @property
@@ -168,11 +163,20 @@ class HydrolixConfig:
         """
         return int(os.getenv("HYDROLIX_MCP_BIND_PORT", "8000"))
 
-    def get_client_config(self) -> dict:
-        """Get the configuration dictionary for clickhouse_connect client.
+    def get_client_config(self, request_credential: Optional[HydrolixCredential]) -> dict:
+        """
+        Get the configuration dictionary for clickhouse_connect client.
+
+        Args:
+            request_credential: Optional credentials to use for this request. If not provided,
+                   falls back to the default credential for this HydrolixConfig
 
         Returns:
             dict: Configuration ready to be passed to clickhouse_connect.get_client()
+
+        Raises:
+            ValueError: If no credentials could be inferred for the request (either from
+                       the startup environment or provided in the request)
         """
         config = {
             "host": self.host,
@@ -191,28 +195,28 @@ class HydrolixConfig:
         if self.proxy_path:
             config["proxy_path"] = self.proxy_path
 
-        if self.service_account:
-            config["access_token"] = self.service_account_token
-        else:
-            config["username"] = self.username
-            config["password"] = self.password
+        # Add credentials
+        config |= self.creds_with(request_credential).clickhouse_config_entries()
 
         return config
 
     def _validate_required_vars(self) -> None:
-        """Validate that all required environment variables are set.
+        """Validate that all required environment variables are set. Called during __init__.
 
         Raises:
             ValueError: If any required environment variable is missing.
         """
         missing_vars = []
-        if self.service_account:
-            required_vars = ["HYDROLIX_HOST", "HYDROLIX_TOKEN"]
-        else:
-            required_vars = ["HYDROLIX_HOST", "HYDROLIX_USER", "HYDROLIX_PASSWORD"]
+        required_vars = ["HYDROLIX_HOST"]
         for var in required_vars:
             if var not in os.environ:
                 missing_vars.append(var)
+
+        # HYDROLIX_USER and HYDROLIX_PASSWORD must either be both present or both absent
+        if ("HYDROLIX_USER" in os.environ) != ("HYDROLIX_PASSWORD" in os.environ):
+            raise ValueError(
+                "User/password authentication is only partially configured: set both HYDROLIX_USER and HYDROLIX_PASSWORD"
+            )
 
         if missing_vars:
             raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
