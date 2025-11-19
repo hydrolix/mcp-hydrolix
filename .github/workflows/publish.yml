@@ -1,10 +1,22 @@
 on:
   workflow_dispatch:
+    inputs:
+      publish_pypi:
+        description: "Include a pypi push in this publish"
+        required: true
+        type: boolean
+        default: true
+      publish_docker:
+        description: "Include a docker push in this publish"
+        required: true
+        type: boolean
+        default: true
 
 jobs:
   publish:
     name: Upload release to PyPI
     runs-on: ubuntu-latest
+    if: ${{ inputs.publish_pypi }}
     environment:
       name: pypi
       url: "https://pypi.org/p/mcp-hydrolix"
@@ -19,6 +31,7 @@ jobs:
   publish-docker:
     name: Upload release to GAR
     runs-on: lke
+    if: ${{ inputs.publish_docker }}
     container:
       image: ubuntu:latest
     steps:
