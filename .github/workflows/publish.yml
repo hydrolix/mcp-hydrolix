@@ -30,10 +30,8 @@ jobs:
       - uses: pypa/gh-action-pypi-publish@release/v1
   publish-docker:
     name: Upload release to GAR
-    runs-on: lke
+    runs-on: ubuntu-latest
     if: ${{ inputs.publish_docker }}
-    container:
-      image: ubuntu:latest
     steps:
       - name: Prepare apt
         shell: bash
