@@ -22,6 +22,7 @@ from .credentials import HydrolixCredential, ServiceAccountToken
 
 TOKEN_PARAM: Final[str] = "token"
 
+
 class ChainedAuthBackend(AuthenticationBackend):
     """
     Generic authentication backend that tries multiple backends in order. Returns the first successful
