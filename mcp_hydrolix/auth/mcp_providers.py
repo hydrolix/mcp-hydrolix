@@ -78,11 +78,13 @@ class AccessToken(FastMCPAccessToken):
 
 class HydrolixCredentialChain(AuthProvider):
     """
-    AuthProvider that authenticates with the following precedence:
+    AuthProvider that authenticates with the following precedence (highest to lowest):
 
-    - MCP-standard oAuth (not implemented!)
-    - Hydrolix service account via the TOKEN_PARAM GET parameter
-    - Hydrolix service account via the Bearer token
+    1. Per-request Bearer token: Service account token via Authorization: Bearer <token> header
+    2. Per-request GET parameter: Service account token via ?token=<token> query parameter
+
+    NB MCP-standard oAuth is not currently implemented
+    NB all per-request credentials take precedence over all environment-variable-supplied credentials
     """
 
     class ServiceAccountAccess(AccessToken):
