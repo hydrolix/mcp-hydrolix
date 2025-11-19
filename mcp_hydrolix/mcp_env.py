@@ -50,7 +50,7 @@ class HydrolixConfig:
         HYDROLIX_MCP_BIND_PORT: Port to bind the MCP server to when using HTTP or SSE transport (default: 8000)
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the configuration from environment variables."""
         self._validate_required_vars()
         # Credential to use for clickhouse connections when no per-request credential is provided
@@ -58,7 +58,7 @@ class HydrolixConfig:
 
         # Set the default credential to the service account from the environment, if available
         if (global_service_account := os.environ.get("HYDROLIX_TOKEN")) is not None:
-            self._default_credential = ServiceAccountToken(global_service_account)
+            self._default_credential = ServiceAccountToken(global_service_account, f"https://{self.host}/config")
         elif (global_username := os.environ.get("HYDROLIX_USER")) is not None and (
             global_password := os.environ.get("HYDROLIX_PASSWORD")
         ) is not None:
@@ -81,7 +81,7 @@ class HydrolixConfig:
 
     @property
     def host(self) -> str:
-        """Get the Hydrolix host."""
+        """Get the Hydrolix host. Called during __init__"""
         return os.environ["HYDROLIX_HOST"]
 
     @property
@@ -199,7 +199,7 @@ class HydrolixConfig:
         return config
 
     def _validate_required_vars(self) -> None:
-        """Validate that all required environment variables are set.
+        """Validate that all required environment variables are set. Called during __init__.
 
         Raises:
             ValueError: If any required environment variable is missing.
