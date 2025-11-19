@@ -11,8 +11,61 @@ jobs:
     permissions:
       id-token: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: astral-sh/setup-uv@v5
       - run: uv python install
       - run: uv build
       - uses: pypa/gh-action-pypi-publish@release/v1
+  publish-docker:
+    name: Upload release to GAR
+    runs-on: lke
+    container:
+      image: ubuntu:latest
+    steps:
+      - name: Prepare apt
+        shell: bash
+        run: |
+          apt-get update
+      - name: Install podman
+        shell: bash
+        run: |
+          apt-get -y install podman
+      - name: Install git and coerce repo safety
+        shell: bash
+        run: |
+          apt-get install -y git
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - name: Checkout repository # needs to be done before setting up GAR, but after installing git (otherwise the files are downloaded but it's not technically a git repo)
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # required to accurately fetch tags in case of workflow_dispatch
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+      - name: Authenticate GAR
+        uses: google-github-actions/auth@v3
+        with:
+          # Key ID: 98941823000cead5a61777398bd450e3e19539c3
+          credentials_json: ${{ secrets.GCP_GKE_CI_KEY }}
+      - name: "Set up GCP SDK" # needs to be done after google-github-actions/auth but before `gcloud auth configure-docker`
+        uses: google-github-actions/setup-gcloud@v3
+      - name: Configure GAR for docker
+        run: gcloud auth configure-docker us-docker.pkg.dev --quiet
+      - name: Get tag
+        id: get_tag
+        shell: bash
+        run: |
+          tag="v$(uv version --short)"
+          echo "::notice::Tag is $tag"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      - name: Build docker image for MCP
+        shell: bash
+        run: |
+          podman build \
+            -t us-docker.pkg.dev/hdx-art/t/mcp-hydrolix:${{ steps.get_tag.outputs.tag }} \
+            -t us-docker.pkg.dev/hdx-art/t/mcp-hydrolix:latest \
+            .
+      - name: Push docker image
+        shell: bash
+        run: |
+          podman push us-docker.pkg.dev/hdx-art/t/mcp-hydrolix:${{ steps.get_tag.outputs.tag }}
+          podman push us-docker.pkg.dev/hdx-art/t/mcp-hydrolix:latest
