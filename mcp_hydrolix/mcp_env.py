@@ -215,7 +215,7 @@ class HydrolixConfig:
         # HYDROLIX_USER and HYDROLIX_PASSWORD must either be both present or both absent
         if ("HYDROLIX_USER" in os.environ) != ("HYDROLIX_PASSWORD" in os.environ):
             raise ValueError(
-                "User/password authentication is only partially configured: pass both HYDROLIX_USER and HYDROLIX_PASSWORD"
+                "User/password authentication is only partially configured: set both HYDROLIX_USER and HYDROLIX_PASSWORD"
             )
 
         if missing_vars:

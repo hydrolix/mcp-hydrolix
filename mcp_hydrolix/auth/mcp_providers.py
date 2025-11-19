@@ -46,7 +46,7 @@ class ChainedAuthBackend(AuthenticationBackend):
 
 class GetParamAuthBackend(AuthenticationBackend):
     """
-    Authentication backend that validates tokens from an HTTP GET parameter
+    Authentication backend that validates tokens from a query parameter
     """
 
     def __init__(self, token_verifier: McpTokenVerifier, token_get_param: str):
