@@ -33,20 +33,7 @@ jobs:
     runs-on: ubuntu-latest
     if: ${{ inputs.publish_docker }}
     steps:
-      - name: Prepare apt
-        shell: bash
-        run: |
-          apt-get update
-      - name: Install podman
-        shell: bash
-        run: |
-          apt-get -y install podman
-      - name: Install git and coerce repo safety
-        shell: bash
-        run: |
-          apt-get install -y git
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
-      - name: Checkout repository # needs to be done before setting up GAR, but after installing git (otherwise the files are downloaded but it's not technically a git repo)
+      - name: Checkout repository
         uses: actions/checkout@v5
         with:
           fetch-depth: 0 # required to accurately fetch tags in case of workflow_dispatch
@@ -71,12 +58,12 @@ jobs:
       - name: Build docker image for MCP
         shell: bash
         run: |
-          podman build \
+          docker buildx build \
             -t us-docker.pkg.dev/hdx-art/t/mcp-hydrolix:${{ steps.get_tag.outputs.tag }} \
             -t us-docker.pkg.dev/hdx-art/t/mcp-hydrolix:latest \
             .
       - name: Push docker image
         shell: bash
         run: |
-          podman push us-docker.pkg.dev/hdx-art/t/mcp-hydrolix:${{ steps.get_tag.outputs.tag }}
-          podman push us-docker.pkg.dev/hdx-art/t/mcp-hydrolix:latest
+          docker push us-docker.pkg.dev/hdx-art/t/mcp-hydrolix:${{ steps.get_tag.outputs.tag }}
+          docker push us-docker.pkg.dev/hdx-art/t/mcp-hydrolix:latest
