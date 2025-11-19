@@ -35,8 +35,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
-        with:
-          fetch-depth: 0 # required to accurately fetch tags in case of workflow_dispatch
       - name: Setup uv
         uses: astral-sh/setup-uv@v5
       - name: Authenticate GAR
