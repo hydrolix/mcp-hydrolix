@@ -280,6 +280,6 @@ HYDROLIX_HOST=my-cluster.hydrolix.net
 HYDROLIX_MCP_SERVER_TRANSPORT=http
 ```
 
-Though not part of the MCP specification, many MCP clients allow adding headers to MCP-issued requests. When this is possible, we recommend configuring the MCP client to pass a service account token via the `Authorization: Bearer <sa-token-here>` header instead of as a URL parameter for greater security.
+Though not part of the MCP specification, many MCP clients allow adding headers to MCP-issued requests. When this is possible, we recommend configuring the MCP client to pass a service account token via the `Authorization: Bearer <sa-token-here>` header instead of as a query parameter for greater security.
 
 Note: The bind host and port settings are only used when transport is set to "http" or "sse".
