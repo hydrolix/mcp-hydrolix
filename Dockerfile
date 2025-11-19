@@ -32,7 +32,7 @@ EXPOSE 8000
 
 # Got a health check too
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
-  CMD [ "curl", "--fail", "http://localhost:8000/health"]
+  CMD [ "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:8000/health" ]
 
 RUN addgroup -g 1001 -S appgroup && \
   adduser -u 1001 -S appuser -G appgroup -h /app -s /sbin/nologin
