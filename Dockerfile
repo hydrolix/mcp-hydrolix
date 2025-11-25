@@ -34,8 +34,8 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
   CMD [ "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:8000/health" ]
 
-RUN addgroup -g 1001 -S appgroup && \
-  adduser -u 1001 -S appuser -G appgroup -h /app -s /sbin/nologin
+RUN addgroup -g 1000 -S appgroup && \
+  adduser -u 1000 -S appuser -G appgroup -h /app -s /sbin/nologin
 USER appuser
 
 WORKDIR /app
