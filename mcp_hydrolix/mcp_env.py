@@ -48,6 +48,13 @@ class HydrolixConfig:
         HYDROLIX_MCP_SERVER_TRANSPORT: MCP server transport method - "stdio", "http", or "sse" (default: stdio)
         HYDROLIX_MCP_BIND_HOST: Host to bind the MCP server to when using HTTP or SSE transport (default: 127.0.0.1)
         HYDROLIX_MCP_BIND_PORT: Port to bind the MCP server to when using HTTP or SSE transport (default: 8000)
+        HYDROLIX_QUERIES_POOL_SIZE 10
+        HYDROLIX_MCP_REQUEST_TIMEOUT 120
+        HYDROLIX_MCP_WORKERS 3
+        HYDROLIX_MCP_WORKER_CONNECTIONS 200
+        HYDROLIX_MCP_MAX_REQUESTS 1000
+        HYDROLIX_MCP_MAX_REQUESTS_JITTER 300
+        HYDROLIX_MCP_MAX_KEEPALIVE 10
     """
 
     def __init__(self) -> None:
@@ -111,6 +118,14 @@ class HydrolixConfig:
         return os.getenv("HYDROLIX_VERIFY", "true").lower() == "true"
 
     @property
+    def secure(self) -> bool:
+        """Get whether use secured connection.
+
+        Default: True
+        """
+        return os.getenv("HYDROLIX_SECURE", "true").lower() == "true"
+
+    @property
     def connect_timeout(self) -> int:
         """Get the connection timeout in seconds.
 
@@ -125,6 +140,22 @@ class HydrolixConfig:
         Default: 300 (Hydrolix default)
         """
         return int(os.getenv("HYDROLIX_SEND_RECEIVE_TIMEOUT", "300"))
+
+    @property
+    def query_pool_size(self) -> int:
+        """Get the send/receive timeout in seconds.
+
+        Default: 300 (Hydrolix default)
+        """
+        return int(os.getenv("HYDROLIX_QUERIES_POOL_SIZE", 10))
+
+    @property
+    def query_timeout_sec(self) -> int:
+        """Get the send/receive timeout in seconds.
+
+        Default: 300 (Hydrolix default)
+        """
+        return int(os.getenv("HYDROLIX_QUERY_TIMEOUT_SECS", 30))
 
     @property
     def proxy_path(self) -> Optional[str]:
@@ -150,9 +181,9 @@ class HydrolixConfig:
         """Get the host to bind the MCP server to.
 
         Only used when transport is "http" or "sse".
-        Default: "127.0.0.1"
+        Default: "0.0.0.0"
         """
-        return os.getenv("HYDROLIX_MCP_BIND_HOST", "127.0.0.1")
+        return os.getenv("HYDROLIX_MCP_BIND_HOST", "0.0.0.0")
 
     @property
     def mcp_bind_port(self) -> int:
@@ -162,6 +193,60 @@ class HydrolixConfig:
         Default: 8000
         """
         return int(os.getenv("HYDROLIX_MCP_BIND_PORT", "8000"))
+
+    @property
+    def mcp_timeout(self) -> int:
+        """Get the request timeout secunds.
+
+        Only used when transport is "http" or "sse".
+        Default: 120
+        """
+        return int(os.getenv("HYDROLIX_MCP_REQUEST_TIMEOUT", 120))
+
+    @property
+    def mcp_workers(self) -> int:
+        """Get the number of worker processes.
+
+        Only used when transport is "http" or "sse".
+        Default: 1
+        """
+        return int(os.getenv("HYDROLIX_MCP_WORKERS", 1))
+
+    @property
+    def mcp_worker_connections(self) -> int:
+        """Get the max number of concurrent requests per worker.
+
+        Only used when transport is "http" or "sse".
+        Default: 200
+        """
+        return int(os.getenv("HYDROLIX_MCP_WORKER_CONNECTIONS", 200))
+
+    @property
+    def mcp_max_requests_jitter(self) -> int:
+        """Get the random parameter to randomize time process is reloaded after max_requests.
+
+        Only used when transport is "http" or "sse".
+        Default: 10000
+        """
+        return int(os.getenv("HYDROLIX_MCP_MAX_REQUESTS", 300))
+
+    @property
+    def mcp_max_requests(self) -> int:
+        """Get the max number of requests handled by worker before it is restarted.
+
+        Only used when transport is "http" or "sse".
+        Default: 1000
+        """
+        return int(os.getenv("HYDROLIX_MCP_MAX_REQUESTS_JITTER", 1000))
+
+    @property
+    def mcp_keepalive(self) -> int:
+        """Get a seconds of idle keepalive connections are kept alive.
+
+        Only used when transport is "http" or "sse".
+        Default: 10
+        """
+        return int(os.getenv("HYDROLIX_MCP_MAX_KEEPALIVE", 10))
 
     def get_client_config(self, request_credential: Optional[HydrolixCredential]) -> dict:
         """
@@ -181,10 +266,11 @@ class HydrolixConfig:
         config = {
             "host": self.host,
             "port": self.port,
-            "secure": True,
+            "secure": self.secure,
             "verify": self.verify,
             "connect_timeout": self.connect_timeout,
             "send_receive_timeout": self.send_receive_timeout,
+            "executor_threads": self.query_pool_size,
             "client_name": "mcp_hydrolix",
         }
 

@@ -1,20 +1,29 @@
 import logging
 import json
-from typing import Final, Optional, List, Any, cast
-import concurrent.futures
-import atexit
+from typing import Optional, List, Any, Dict, Tuple, Sequence
 
 import clickhouse_connect
 from clickhouse_connect.driver.binding import format_query_value
+from clickhouse_connect import common
+from clickhouse_connect.driver import AsyncClient
 from dotenv import load_dotenv
-from fastmcp import FastMCP
+from fastmcp import FastMCP, Context
 from fastmcp.exceptions import ToolError
-from dataclasses import dataclass, field, asdict, is_dataclass
+from fastmcp.server.middleware import Middleware, MiddlewareContext
+from fastmcp.server.dependencies import get_http_headers
+from dataclasses import asdict, is_dataclass
 
 from fastmcp.server.dependencies import get_access_token
 from starlette.requests import Request
 from starlette.responses import PlainTextResponse
 
+from mcp_hydrolix.mcp_env import get_config
+from pydantic import Field
+from pydantic.dataclasses import dataclass
+
+from utilities import with_serializer
+from clickhouse_connect.driver import httputil
+import base64
 from .mcp_env import HydrolixConfig, get_config
 from .auth import (
     HydrolixCredential,
@@ -43,38 +52,64 @@ class Table:
     name: str
     engine: str
     create_table_query: str
-    dependencies_database: str
-    dependencies_table: str
+    dependencies_database: List[str]
+    dependencies_table: List[str]
     engine_full: str
     sorting_key: str
     primary_key: str
-    total_rows: int
-    total_bytes: int
-    total_bytes_uncompressed: int
-    parts: int
-    active_parts: int
-    total_marks: int
+    total_rows: Optional[int]
+    total_bytes: Optional[int]
+    total_bytes_uncompressed: Optional[int]
+    parts: Optional[int]
+    active_parts: Optional[int]
+    total_marks: Optional[int]
     comment: Optional[str] = None
-    columns: List[Column] = field(default_factory=list)
+    columns: Optional[List[Column]] = Field([])
 
 
 MCP_SERVER_NAME = "mcp-hydrolix"
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
 logger = logging.getLogger(MCP_SERVER_NAME)
 
 # Add token redaction filter to uvicorn access logs
 uvicorn_access_logger = logging.getLogger("uvicorn.access")
 uvicorn_access_logger.addFilter(AccessLogTokenRedactingFilter())
 
-QUERY_EXECUTOR = concurrent.futures.ThreadPoolExecutor(max_workers=10)
-atexit.register(lambda: QUERY_EXECUTOR.shutdown(wait=True))
-SELECT_QUERY_TIMEOUT_SECS = 30
-
 load_dotenv()
+
+
+class UserAuthMiddleware(Middleware):
+    async def on_request(self, context: MiddlewareContext, call_next):
+        ctx = context.fastmcp_context
+        ctx.set_state("username", None)
+        ctx.set_state("password", "")
+        ctx.set_state("token", None)
+
+        mcp = context.fastmcp_context.fastmcp
+        if hasattr(mcp, "config") and mcp.config.get("test_mode", False):
+            ctx.set_state("username", mcp.config.get("username", ""))
+            ctx.set_state("password", mcp.config.get("password", ""))
+
+        else:
+            headers = get_http_headers()
+            auth_header = headers.get("Authorization", headers.get("authorization", ""))
+            parts = auth_header.split(" ")
+            if len(parts) > 0 and parts[0].lower() == "basic":
+                try:
+                    decoded_credentials = base64.b64decode(parts[1]).decode("utf-8")
+                    username, password = decoded_credentials.split(":", 1)
+                    ctx.set_state("username", username)
+                    ctx.set_state("password", password)
+                except (base64.binascii.Error, ValueError) as e:
+                    ctx.set_state("username", None)
+                    ctx.set_state("password", "")
+                    logger.warning("Failed to decode basic auth credentials", exc_info=e)
+                    pass
+
+            if len(parts) > 0 and parts[0].lower() == "bearer":
+                ctx.set_state("token", parts[1])
+
+        return await call_next(context)
+
 
 HYDROLIX_CONFIG: Final[HydrolixConfig] = get_config()
 
@@ -85,8 +120,100 @@ mcp = FastMCP(
         "python-dotenv",
         "pip-system-certs",
     ],
+    middleware=[UserAuthMiddleware()],
     auth=HydrolixCredentialChain(f"https://{HYDROLIX_CONFIG.host}/config"),
 )
+
+
+async def create_hydrolix_client(pool_mgr, username, password, token) -> AsyncClient:
+    client_config = get_config().get_client_config()
+    auth_info = (
+        f"as {client_config['username']}"
+        if "username" in client_config
+        else "using service account token"
+    )
+    logger.info(
+        f"Creating Hydrolix client connection to {client_config['host']}:{client_config['port']} "
+        f"{auth_info} "
+        f"(secure={client_config['secure']}, verify={client_config['verify']}, "
+        f"connect_timeout={client_config['connect_timeout']}s, "
+        f"send_receive_timeout={client_config['send_receive_timeout']}s)"
+    )
+
+    try:
+        client = await clickhouse_connect.get_async_client(
+            username=username,
+            password=password,
+            access_token=token,
+            pool_mgr=pool_mgr,
+            **client_config,
+        )
+
+        # Test the connection
+        version = client.client.server_version
+        logger.info(f"Successfully connected to Hydrolix compatible with ClickHouse {version}")
+        return client
+    except Exception as e:
+        logger.error(f"Failed to connect to Hydrolix: {str(e)}")
+        raise
+
+
+# allow custom hydrolix settings in CH client
+common.set_setting("invalid_setting_action", "send")
+common.set_setting("autogenerate_session_id", False)
+client_shared_pool = httputil.get_pool_manager(maxsize=get_config().query_pool_size, num_pools=1)
+
+
+async def execute_query(query: str, ctx: Context):
+    try:
+        username = ctx.get_state("username")
+        password = ctx.get_state("password")
+        token = ctx.get_state("token")
+        async with await create_hydrolix_client(
+            client_shared_pool, username, password, token
+        ) as client:
+            res = await client.query(
+                query,
+                settings={
+                    "readonly": 1,
+                    "hdx_query_max_execution_time": get_config().query_timeout_sec,
+                    "hdx_query_max_attempts": 1,
+                    "hdx_query_max_result_rows": 100_000,
+                    "hdx_query_max_memory_usage": 2 * 1024 * 1024 * 1024,  # 2GiB
+                    "hdx_query_admin_comment": f"User: {MCP_SERVER_NAME}",
+                },
+            )
+            logger.info(f"Query returned {len(res.result_rows)} rows")
+            return {"columns": res.column_names, "rows": res.result_rows}
+    except Exception as err:
+        logger.error(f"Error executing query: {err}")
+        raise ToolError(f"Query execution failed: {str(err)}")
+
+
+async def execute_cmd(query: str, ctx: Context):
+    try:
+        username = ctx.get_state("username")
+        password = ctx.get_state("password")
+        token = ctx.get_state("token")
+        async with await create_hydrolix_client(
+            client_shared_pool, username, password, token
+        ) as client:
+            res = await client.command(
+                query,
+                settings={
+                    "readonly": 1,
+                    "hdx_query_max_execution_time": get_config().query_timeout_sec,
+                    "hdx_query_max_attempts": 1,
+                    "hdx_query_max_result_rows": 100_000,
+                    "hdx_query_max_memory_usage": 2 * 1024 * 1024 * 1024,  # 2GiB
+                    "hdx_query_admin_comment": f"User: {MCP_SERVER_NAME}",
+                },
+            )
+            logger.info("Command returned executed.")
+            return res
+    except Exception as err:
+        logger.error(f"Error executing command: {err}")
+        raise ToolError(f"Command execution failed: {str(err)}")
 
 
 @mcp.custom_route("/health", methods=["GET"])
@@ -97,8 +224,8 @@ async def health_check(request: Request) -> PlainTextResponse:
     """
     try:
         # Try to create a client connection to verify query-head connectivity
-        client = create_hydrolix_client(get_request_credential())
-        version = client.server_version
+        client = await create_hydrolix_client(get_request_credential())
+        version = client.client.server_version
         return PlainTextResponse(f"OK - Connected to Hydrolix compatible with ClickHouse {version}")
     except Exception as e:
         # Return 503 Service Unavailable if we can't connect to Hydrolix
@@ -128,11 +255,10 @@ def to_json(obj: Any) -> str:
 
 
 @mcp.tool()
-def list_databases():
+async def list_databases(ctx: Context) -> List[str]:
     """List available Hydrolix databases"""
     logger.info("Listing all databases")
-    client = create_hydrolix_client(get_request_credential())
-    result = client.command("SHOW DATABASES")
+    result = await execute_cmd("SHOW DATABASES", ctx)
 
     # Convert newline-separated string to list and trim whitespace
     if isinstance(result, str):
@@ -141,65 +267,55 @@ def list_databases():
         databases = [result]
 
     logger.info(f"Found {len(databases)} databases")
-    return json.dumps(databases)
+    return databases
 
 
 @mcp.tool()
-def list_tables(database: str, like: Optional[str] = None, not_like: Optional[str] = None):
+async def list_tables(
+    ctx: Context, database: str, like: Optional[str] = None, not_like: Optional[str] = None
+) -> List[Table]:
     """List available Hydrolix tables in a database, including schema, comment,
     row count, and column count."""
     logger.info(f"Listing tables in database '{database}'")
-    client = create_hydrolix_client(get_request_credential())
-    query = f"SELECT database, name, engine, create_table_query, dependencies_database, dependencies_table, engine_full, sorting_key, primary_key, total_rows, total_bytes, total_bytes_uncompressed, parts, active_parts, total_marks, comment FROM system.tables WHERE database = {format_query_value(database)}"
+    query = f"""
+        SELECT database, name, engine, create_table_query, dependencies_database,
+            dependencies_table, engine_full, sorting_key, primary_key, total_rows, total_bytes,
+            total_bytes_uncompressed, parts, active_parts, total_marks, comment
+        FROM system.tables WHERE database = {format_query_value(database)}"""
     if like:
         query += f" AND name LIKE {format_query_value(like)}"
 
     if not_like:
         query += f" AND name NOT LIKE {format_query_value(not_like)}"
 
-    result = client.query(query)
+    result = await execute_query(query, ctx)
 
     # Deserialize result as Table dataclass instances
-    tables = result_to_table(result.column_names, result.result_rows)
+    tables = result_to_table(result["columns"], result["rows"])
 
     for table in tables:
-        column_data_query = f"SELECT database, table, name, type AS column_type, default_kind, default_expression, comment FROM system.columns WHERE database = {format_query_value(database)} AND table = {format_query_value(table.name)}"
-        column_data_query_result = client.query(column_data_query)
+        column_data_query = f"""
+            SELECT database, table, name, type AS column_type, default_kind, default_expression, comment
+            FROM system.columns
+            WHERE database = {format_query_value(database)} AND table = {format_query_value(table.name)}"""
+        column_data_query_result = await execute_query(column_data_query, ctx)
         table.columns = [
             c
             for c in result_to_column(
-                column_data_query_result.column_names,
-                column_data_query_result.result_rows,
+                column_data_query_result["columns"],
+                column_data_query_result["rows"],
             )
         ]
 
     logger.info(f"Found {len(tables)} tables")
-    return [asdict(table) for table in tables]
-
-
-def execute_query(query: str, request_credential: Optional[HydrolixCredential]):
-    client = create_hydrolix_client(request_credential)
-    try:
-        res = client.query(
-            query,
-            settings={
-                "readonly": 1,
-                "hdx_query_max_execution_time": SELECT_QUERY_TIMEOUT_SECS,
-                "hdx_query_max_attempts": 1,
-                "hdx_query_max_result_rows": 100_000,
-                "hdx_query_max_memory_usage": 2 * 1024 * 1024 * 1024,  # 2GiB
-                "hdx_query_admin_comment": f"User: {MCP_SERVER_NAME}",
-            },
-        )
-        logger.info(f"Query returned {len(res.result_rows)} rows")
-        return {"columns": res.column_names, "rows": res.result_rows}
-    except Exception as err:
-        logger.error(f"Error executing query: {err}")
-        raise ToolError(f"Query execution failed: {str(err)}")
+    return tables
 
 
 @mcp.tool()
-def run_select_query(query: str):
+@with_serializer
+async def run_select_query(
+    ctx: Context, query: str
+) -> Dict[str, Tuple | Sequence[str | Sequence[Any]]]:
     """Run a SELECT query in a Hydrolix time-series database using the Clickhouse SQL dialect.
     Queries run using this tool will timeout after 30 seconds.
 
@@ -239,31 +355,14 @@ def run_select_query(query: str):
     """
     logger.info(f"Executing SELECT query: {query}")
     try:
-        future = QUERY_EXECUTOR.submit(execute_query, query, get_request_credential())
-        try:
-            result = future.result(timeout=SELECT_QUERY_TIMEOUT_SECS)
-            # Check if we received an error structure from execute_query
-            if isinstance(result, dict) and "error" in result:
-                logger.warning(f"Query failed: {result['error']}")
-                # MCP requires structured responses; string error messages can cause
-                # serialization issues leading to BrokenResourceError
-                return {
-                    "status": "error",
-                    "message": f"Query failed: {result['error']}",
-                }
-            return result
-        except concurrent.futures.TimeoutError:
-            logger.warning(f"Query timed out after {SELECT_QUERY_TIMEOUT_SECS} seconds: {query}")
-            future.cancel()
-            raise ToolError(f"Query timed out after {SELECT_QUERY_TIMEOUT_SECS} seconds")
-    except ToolError:
-        raise
+        result = await execute_query(query=query, ctx=ctx)
+        return result
     except Exception as e:
         logger.error(f"Unexpected error in run_select_query: {str(e)}")
-        raise RuntimeError(f"Unexpected error during query execution: {str(e)}")
+        raise ToolError(f"Unexpected error during query execution: {str(e)}")
 
 
-def create_hydrolix_client(request_credential: Optional[HydrolixCredential]):
+async def create_hydrolix_client(request_credential: Optional[HydrolixCredential]):
     """
     Create a client for operations against query-head. Note that this eagerly issues requests for initialization
     of properties like `server_version`, and so may throw exceptions.
@@ -284,11 +383,11 @@ def create_hydrolix_client(request_credential: Optional[HydrolixCredential]):
     )
 
     try:
-        client = clickhouse_connect.get_client(
+        client = await clickhouse_connect.get_client(
             **HYDROLIX_CONFIG.get_client_config(request_credential)
         )
         # Test the connection
-        version = client.server_version
+        version = client.client.server_version
         logger.info(f"Successfully connected to Hydrolix compatible with ClickHouse {version}")
         return client
     except Exception as e:
