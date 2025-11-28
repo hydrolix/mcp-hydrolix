@@ -1,11 +1,16 @@
+import os
+import time
+
 import pytest
 import pytest_asyncio
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
 import asyncio
-from mcp_clickhouse.mcp_server import mcp, create_clickhouse_client
+from mcp_clickhouse.mcp_server import create_clickhouse_client
+from mcp_hydrolix.mcp_server import mcp
 from dotenv import load_dotenv
 import json
+from fastmcp.server.middleware import Middleware, MiddlewareContext
 
 # Load environment variables
 load_dotenv()
@@ -336,12 +341,53 @@ async def test_system_database_access(mcp_server):
         assert "databases" in table_names
 
 
+
+class ServerMetrics:
+    inflight_requests = 0
+    queries = {}
+
+class InFlightCounterMiddleware(Middleware):
+    async def on_request(self, context: MiddlewareContext, call_next):
+        # Increment counter before processing
+        try:
+            if context.message.name == "run_select_query":
+                ServerMetrics.queries[context.message.arguments["query"]] = {"start":time.time()}
+                # ServerMetrics.queries.append(context.message.arguments["query"])
+                ServerMetrics.inflight_requests += 1
+        except Exception:
+            pass
+        try:
+            # Process the request
+            return await call_next(context)
+        finally:
+            try:
+                if context.message.name == "run_select_query":
+                    ServerMetrics.queries[context.message.arguments["query"]]["end"] = time.time()
+                    # Decrement counter after processing (even if it fails)
+                    # ServerMetrics.inflight_requests -= 1
+            except Exception:
+                pass
+
+
 @pytest.mark.asyncio
 async def test_concurrent_queries(mcp_server, setup_test_database):
     """Test running multiple queries concurrently."""
     test_db, test_table, test_table2 = setup_test_database
 
+    mcp.add_middleware(InFlightCounterMiddleware())
+
+    # limit mcp client request time
+    os.environ["HYDROLIX_SEND_RECEIVE_TIMEOUT"] = "10"
+
+    # limit mcp server waiting for query finish
+    from mcp_server import SELECT_QUERY_TIMEOUT_SECS
+    SELECT_QUERY_TIMEOUT_SECS= 10
+
+    ServerMetrics.inflight_requests = 0
     async with Client(mcp_server) as client:
+        lq = "SELECT * FROM loop  (numbers(3)) LIMIT 7000000000000 SETTINGS max_execution_time=13"
+        lq_f = asyncio.gather(*[client.call_tool("run_select_query", {"query": lq})])
+
         # Run multiple queries concurrently
         queries = [
             f"SELECT COUNT(*) FROM {test_db}.{test_table}",
@@ -351,15 +397,29 @@ async def test_concurrent_queries(mcp_server, setup_test_database):
         ]
 
         # Execute all queries concurrently
-        results = await asyncio.gather(
+        results = asyncio.gather(
             *[client.call_tool("run_select_query", {"query": query}) for query in queries]
         )
 
-        # Verify all queries succeeded
-        assert len(results) == 4
+        # let mcp server handle requests
+        await asyncio.sleep(20)
 
-        # Check each result
-        for i, result in enumerate(results):
-            query_result = json.loads(result[0].text)
-            assert "rows" in query_result
-            assert len(query_result["rows"]) == 1
+    # Check that other queries were submitted to mcp server
+    assert lq_f.done() and isinstance(lq_f.exception(), ToolError)
+    assert ServerMetrics.inflight_requests > 1, "By now at least one another query should have been invoked."
+
+    # count queries started after long blocking query finished.
+    lq_end = ServerMetrics.queries[lq]["end"]
+    blocked_count = sum([1 for q, q_time in ServerMetrics.queries.items() if q != lq and q_time["start"] > lq_end])
+    assert blocked_count < len(queries), "All queries were blocked by long running query."
+
+    # all queries were invoked
+    for query in queries:
+        assert query in ServerMetrics.queries
+
+    # Check each result
+    assert results.done()
+    for result in results.result():
+        query_result = json.loads(result.content[0].text)
+        assert "rows" in query_result
+        assert len(query_result["rows"]) == 1

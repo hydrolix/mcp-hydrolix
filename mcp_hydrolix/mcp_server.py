@@ -6,6 +6,7 @@ import atexit
 
 import clickhouse_connect
 from clickhouse_connect.driver.binding import format_query_value
+from clickhouse_connect import common
 from dotenv import load_dotenv
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
@@ -70,6 +71,8 @@ mcp = FastMCP(
         "pip-system-certs",
     ],
 )
+# allow custom hydrolix settings in CH client
+common.set_setting("invalid_setting_action", "send")
 
 
 @mcp.custom_route("/health", methods=["GET"])

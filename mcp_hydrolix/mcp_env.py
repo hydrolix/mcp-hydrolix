@@ -116,6 +116,14 @@ class HydrolixConfig:
         return os.getenv("HYDROLIX_VERIFY", "true").lower() == "true"
 
     @property
+    def secure(self) -> bool:
+        """Get whether use secured connection.
+
+        Default: True
+        """
+        return os.getenv("HYDROLIX_SECURE", "true").lower() == "true"
+
+    @property
     def connect_timeout(self) -> int:
         """Get the connection timeout in seconds.
 
@@ -177,7 +185,7 @@ class HydrolixConfig:
         config = {
             "host": self.host,
             "port": self.port,
-            "secure": True,
+            "secure": self.secure,
             "verify": self.verify,
             "connect_timeout": self.connect_timeout,
             "send_receive_timeout": self.send_receive_timeout,

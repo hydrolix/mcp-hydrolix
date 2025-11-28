@@ -24,7 +24,8 @@ dev = [
     "ruff",
     "pytest",
     "pytest-asyncio",
-    "pre-commit"
+    "pre-commit",
+    "mcp-clickhouse>=0.1.12",
 ]
 
 [tool.hatch.build.targets.wheel]
