@@ -1,18 +1,67 @@
 on:
   workflow_dispatch:
+    inputs:
+      publish_pypi:
+        description: "Include a pypi push in this publish"
+        required: true
+        type: boolean
+        default: true
+      publish_docker:
+        description: "Include a docker push in this publish"
+        required: true
+        type: boolean
+        default: true
 
 jobs:
   publish:
     name: Upload release to PyPI
     runs-on: ubuntu-latest
+    if: ${{ inputs.publish_pypi }}
     environment:
       name: pypi
       url: "https://pypi.org/p/mcp-hydrolix"
     permissions:
       id-token: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: astral-sh/setup-uv@v5
       - run: uv python install
       - run: uv build
       - uses: pypa/gh-action-pypi-publish@release/v1
+  publish-docker:
+    name: Upload release to GAR
+    runs-on: ubuntu-latest
+    if: ${{ inputs.publish_docker }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+      - name: Authenticate GAR
+        uses: google-github-actions/auth@v3
+        with:
+          # Key ID: 98941823000cead5a61777398bd450e3e19539c3
+          credentials_json: ${{ secrets.GCP_GKE_CI_KEY }}
+      - name: "Set up GCP SDK" # needs to be done after google-github-actions/auth but before `gcloud auth configure-docker`
+        uses: google-github-actions/setup-gcloud@v3
+      - name: Configure GAR for docker
+        run: gcloud auth configure-docker us-docker.pkg.dev --quiet
+      - name: Get tag
+        id: get_tag
+        shell: bash
+        run: |
+          tag="v$(uv version --short)"
+          echo "::notice::Tag is $tag"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      - name: Build docker image for MCP
+        shell: bash
+        run: |
+          docker buildx build \
+            -t us-docker.pkg.dev/hdx-art/t/mcp-hydrolix:${{ steps.get_tag.outputs.tag }} \
+            -t us-docker.pkg.dev/hdx-art/t/mcp-hydrolix:latest \
+            .
+      - name: Push docker image
+        shell: bash
+        run: |
+          docker push us-docker.pkg.dev/hdx-art/t/mcp-hydrolix:${{ steps.get_tag.outputs.tag }}
+          docker push us-docker.pkg.dev/hdx-art/t/mcp-hydrolix:latest
