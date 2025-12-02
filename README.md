@@ -218,7 +218,11 @@ At least one authentication method must be configured when using the stdio trans
 * `HYDROLIX_TOKEN`: Service account token for environment-based authentication
 * `HYDROLIX_USER` and `HYDROLIX_PASSWORD`: Username and password for environment-based authentication (both must be provided together)
 
-If no environment-based credentials are provided, per-request authentication must be used (available only with HTTP or SSE transport).
+In summary:
+- For stdio, you MUST use HYDROLIX_TOKEN or HYDROLIX_USER+HYDROLIX_PASS (environmental credentials)
+- For http/sse, you MAY use HYDROLIX_TOKEN or HYDROLIX_USER+HYDROLIX_PASS (environmental credentials), but you may instead use per-request credentials.
+
+If no credentials are provided via the environment or the request, the request will fail.
 
 #### Optional Variables
 * `HYDROLIX_PORT`: The port number of your Hydrolix server
