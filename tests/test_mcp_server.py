@@ -89,10 +89,6 @@ async def setup_test_database():
 @pytest.fixture
 def mcp_server():
     """Return the MCP server instance for testing."""
-    setattr(mcp, "config", {})
-    mcp.config["test_mode"] = True
-    mcp.config["username"] = "default"
-    mcp.config["password"] = "clickhouse"
     return mcp
 
 

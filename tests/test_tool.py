@@ -4,9 +4,7 @@ import unittest
 
 from dotenv import load_dotenv
 from fastmcp.exceptions import ToolError
-import fastmcp
 from mcp_hydrolix import create_hydrolix_client, list_databases, list_tables, run_select_query
-from mcp_hydrolix.mcp_server import mcp
 
 load_dotenv()
 
@@ -26,10 +24,7 @@ class TestHydrolixTools(unittest.IsolatedAsyncioTestCase):
     @classmethod
     async def asyncSetUpClass(cls):
         """Set up the environment before tests."""
-        ctx = cls.mcp_ctx()
-        cls.client = await create_hydrolix_client(
-            None, ctx.get_state("username"), ctx.get_state("password"), ctx.get_state("token")
-        )
+        cls.client = await create_hydrolix_client(None, None)
 
         # Prepare test database and table
         await cls.client.command(f"CREATE DATABASE IF NOT EXISTS {cls.test_db}")
@@ -55,32 +50,16 @@ class TestHydrolixTools(unittest.IsolatedAsyncioTestCase):
         """Clean up the environment after tests."""
         await cls.client.command(f"DROP DATABASE IF EXISTS {cls.test_db}")
 
-    @classmethod
-    def mcp_server(cls):
-        """Return the MCP server instance for testing."""
-        setattr(mcp, "config", {})
-        mcp.config["test_mode"] = True
-        mcp.config["username"] = "default"
-        mcp.config["password"] = "clickhouse"
-        return mcp
-
-    @classmethod
-    def mcp_ctx(cls):
-        ctx = fastmcp.Context(cls.mcp_server())
-        ctx.set_state("username", mcp.config["username"])
-        ctx.set_state("password", mcp.config["password"])
-        return ctx
-
     async def test_list_databases(self):
         """Test listing databases."""
-        result = await list_databases.fn(self.mcp_ctx())
+        result = await list_databases.fn()
         # Parse JSON response
         databases = result
         self.assertIn(self.test_db, databases)
 
     async def test_list_tables_without_like(self):
         """Test listing tables without a 'LIKE' filter."""
-        result = await list_tables.fn(self.mcp_ctx(), self.test_db)
+        result = await list_tables.fn(self.test_db)
         self.assertIsInstance(result, list)
         self.assertEqual(len(result), 1)
         table = result[0]
@@ -88,7 +67,7 @@ class TestHydrolixTools(unittest.IsolatedAsyncioTestCase):
 
     async def test_list_tables_with_like(self):
         """Test listing tables with a 'LIKE' filter."""
-        result = await list_tables.fn(self.mcp_ctx(), self.test_db, like=f"{self.test_table}%")
+        result = await list_tables.fn(self.test_db, like=f"{self.test_table}%")
         self.assertIsInstance(result, list)
         self.assertEqual(len(result), 1)
         table = result[0]
@@ -97,7 +76,7 @@ class TestHydrolixTools(unittest.IsolatedAsyncioTestCase):
     async def test_run_select_query_success(self):
         """Test running a SELECT query successfully."""
         query = f"SELECT * FROM {self.test_db}.{self.test_table}"
-        result = await inspect.unwrap(run_select_query.fn)(self.mcp_ctx(), query)
+        result = await inspect.unwrap(run_select_query.fn)(query)
         self.assertIsInstance(result, dict)
         self.assertEqual(len(result["rows"]), 2)
         self.assertEqual(result["rows"][0][0], 1)
@@ -109,13 +88,13 @@ class TestHydrolixTools(unittest.IsolatedAsyncioTestCase):
 
         # Should raise ToolError
         with self.assertRaises(ToolError) as context:
-            await run_select_query.fn(self.mcp_ctx(), query)
+            await run_select_query.fn(query)
 
         self.assertIn("Query execution failed", str(context.exception))
 
     async def test_table_and_column_comments(self):
         """Test that table and column comments are correctly retrieved."""
-        result = await list_tables.fn(self.mcp_ctx(), self.test_db)
+        result = await list_tables.fn(self.test_db)
         self.assertIsInstance(result, list)
         self.assertEqual(len(result), 1)
 
