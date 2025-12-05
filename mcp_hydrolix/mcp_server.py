@@ -81,7 +81,7 @@ mcp = FastMCP(
         "python-dotenv",
         "pip-system-certs",
     ],
-    # auth=HydrolixCredentialChain(f"https://{HYDROLIX_CONFIG.host}/config"),
+    auth=HydrolixCredentialChain(f"https://{HYDROLIX_CONFIG.host}/config"),
 )
 
 
