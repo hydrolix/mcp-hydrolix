@@ -1,5 +1,6 @@
 import logging
 import json
+import asyncio
 from typing import Final, Optional, List, Any, Dict, Tuple, Sequence, cast
 
 import clickhouse_connect
@@ -17,17 +18,17 @@ from starlette.responses import PlainTextResponse
 from pydantic import Field
 from pydantic.dataclasses import dataclass
 
-from utilities import with_serializer
+from .utilities import with_serializer
 from clickhouse_connect.driver import httputil
-from mcp_env import HydrolixConfig, get_config
-from auth import (
+from .mcp_env import HydrolixConfig, get_config
+from .auth import (
     HydrolixCredential,
     UsernamePassword,
     AccessToken,
     HydrolixCredentialChain,
     ServiceAccountToken,
 )
-from logging_utils import AccessLogTokenRedactingFilter
+from .logging_utils import AccessLogTokenRedactingFilter
 
 
 @dataclass
@@ -80,7 +81,7 @@ mcp = FastMCP(
         "python-dotenv",
         "pip-system-certs",
     ],
-    auth=HydrolixCredentialChain(f"https://{HYDROLIX_CONFIG.host}/config"),
+    # auth=HydrolixCredentialChain(f"https://{HYDROLIX_CONFIG.host}/config"),
 )
 
 
@@ -139,19 +140,24 @@ async def execute_query(query: str):
         async with await create_hydrolix_client(
             client_shared_pool, get_request_credential()
         ) as client:
-            res = await client.query(
+            with await client.query_row_block_stream(
                 query,
                 settings={
-                    "readonly": 1,
+                    "readonly": 0,
                     "hdx_query_max_execution_time": get_config().query_timeout_sec,
                     "hdx_query_max_attempts": 1,
                     "hdx_query_max_result_rows": 100_000,
                     "hdx_query_max_memory_usage": 2 * 1024 * 1024 * 1024,  # 2GiB
                     "hdx_query_admin_comment": f"User: {MCP_SERVER_NAME}",
                 },
-            )
-            logger.info(f"Query returned {len(res.result_rows)} rows")
-            return {"columns": res.column_names, "rows": res.result_rows}
+            ) as stream:
+                names = stream.source.column_names
+                rows = []
+                for block in stream:
+                    rows.extend(block)
+                    asyncio.sleep(0.01)
+            logger.info(f"Query returned {len(rows)} rows")
+            return {"columns": names, "rows": rows}
     except Exception as err:
         logger.error(f"Error executing query: {err}")
         raise ToolError(f"Query execution failed: {str(err)}")

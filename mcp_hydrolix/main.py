@@ -2,9 +2,9 @@ import logging
 
 from gunicorn.app.base import BaseApplication
 
-from log import setup_logging
-from mcp_server import mcp
-from mcp_env import get_config, TransportType
+from .log import setup_logging
+from .mcp_server import mcp
+from .mcp_env import get_config, TransportType
 from fastmcp.server.http import StarletteWithLifespan
 
 

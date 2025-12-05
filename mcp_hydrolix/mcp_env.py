@@ -9,7 +9,7 @@ import os
 from typing import Optional
 from enum import Enum
 
-from auth.credentials import HydrolixCredential, ServiceAccountToken, UsernamePassword
+from .auth.credentials import HydrolixCredential, ServiceAccountToken, UsernamePassword
 
 
 class TransportType(str, Enum):
@@ -147,7 +147,7 @@ class HydrolixConfig:
 
         Default: 300 (Hydrolix default)
         """
-        return int(os.getenv("HYDROLIX_QUERIES_POOL_SIZE", 10))
+        return int(os.getenv("HYDROLIX_QUERIES_POOL_SIZE", 100))
 
     @property
     def query_timeout_sec(self) -> int:
@@ -219,7 +219,7 @@ class HydrolixConfig:
         Only used when transport is "http" or "sse".
         Default: 200
         """
-        return int(os.getenv("HYDROLIX_MCP_WORKER_CONNECTIONS", 200))
+        return int(os.getenv("HYDROLIX_MCP_WORKER_CONNECTIONS", 100))
 
     @property
     def mcp_max_requests_jitter(self) -> int:
@@ -228,7 +228,7 @@ class HydrolixConfig:
         Only used when transport is "http" or "sse".
         Default: 10000
         """
-        return int(os.getenv("HYDROLIX_MCP_MAX_REQUESTS", 300))
+        return int(os.getenv("HYDROLIX_MCP_MAX_REQUESTS", 3000))
 
     @property
     def mcp_max_requests(self) -> int:
@@ -237,7 +237,7 @@ class HydrolixConfig:
         Only used when transport is "http" or "sse".
         Default: 1000
         """
-        return int(os.getenv("HYDROLIX_MCP_MAX_REQUESTS_JITTER", 1000))
+        return int(os.getenv("HYDROLIX_MCP_MAX_REQUESTS_JITTER", 500))
 
     @property
     def mcp_keepalive(self) -> int:
