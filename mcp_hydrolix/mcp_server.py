@@ -143,7 +143,7 @@ async def execute_query(query: str):
             with await client.query_row_block_stream(
                 query,
                 settings={
-                    "readonly": 0,
+                    "readonly": 1,
                     "hdx_query_max_execution_time": get_config().query_timeout_sec,
                     "hdx_query_max_attempts": 1,
                     "hdx_query_max_result_rows": 100_000,
