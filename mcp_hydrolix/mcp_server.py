@@ -1,6 +1,6 @@
 import logging
 import json
-import asyncio
+import signal
 from typing import Final, Optional, List, Any, Dict, Tuple, Sequence, cast
 
 import clickhouse_connect
@@ -25,7 +25,6 @@ from .auth import (
     HydrolixCredential,
     UsernamePassword,
     AccessToken,
-    HydrolixCredentialChain,
     ServiceAccountToken,
 )
 from .logging_utils import AccessLogTokenRedactingFilter
@@ -134,6 +133,12 @@ common.set_setting("invalid_setting_action", "send")
 common.set_setting("autogenerate_session_id", False)
 client_shared_pool = httputil.get_pool_manager(maxsize=get_config().query_pool_size, num_pools=1)
 
+def term(*args,**kwargs):
+    client_shared_pool.clear()
+
+signal.signal(signal.SIGTERM, term)
+signal.signal(signal.SIGINT, term)
+signal.signal(signal.SIGQUIT, term)
 
 async def execute_query(query: str):
     try:
