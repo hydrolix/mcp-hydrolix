@@ -228,7 +228,7 @@ class HydrolixConfig:
         Only used when transport is "http" or "sse".
         Default: 10000
         """
-        return int(os.getenv("HYDROLIX_MCP_MAX_REQUESTS_JITTER", 3000))
+        return int(os.getenv("HYDROLIX_MCP_MAX_REQUESTS_JITTER", 300))
 
     @property
     def mcp_max_requests(self) -> int:
@@ -237,7 +237,7 @@ class HydrolixConfig:
         Only used when transport is "http" or "sse".
         Default: 1000
         """
-        return int(os.getenv("HYDROLIX_MCP_MAX_REQUESTS", 500))
+        return int(os.getenv("HYDROLIX_MCP_MAX_REQUESTS", 3000))
 
     @property
     def mcp_keepalive(self) -> int:

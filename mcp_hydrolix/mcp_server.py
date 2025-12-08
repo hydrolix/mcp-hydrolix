@@ -138,9 +138,9 @@ client_shared_pool = httputil.get_pool_manager(maxsize=get_config().query_pool_s
 async def execute_query(query: str):
     try:
         async with await create_hydrolix_client(
-            client_shared_pool, get_request_credential()
+                client_shared_pool, get_request_credential()
         ) as client:
-            with await client.query_row_block_stream(
+            res = await client.query(
                 query,
                 settings={
                     "readonly": 1,
@@ -150,14 +150,9 @@ async def execute_query(query: str):
                     "hdx_query_max_memory_usage": 2 * 1024 * 1024 * 1024,  # 2GiB
                     "hdx_query_admin_comment": f"User: {MCP_SERVER_NAME}",
                 },
-            ) as stream:
-                names = stream.source.column_names
-                rows = []
-                for block in stream:
-                    rows.extend(block)
-                    asyncio.sleep(0.01)
-            logger.info(f"Query returned {len(rows)} rows")
-            return {"columns": names, "rows": rows}
+            )
+            logger.info(f"Query returned {len(res.result_rows)} rows")
+            return {"columns": res.column_names, "rows": res.result_rows}
     except Exception as err:
         logger.error(f"Error executing query: {err}")
         raise ToolError(f"Query execution failed: {str(err)}")
@@ -184,8 +179,8 @@ async def health_check(request: Request) -> PlainTextResponse:
     """
     try:
         # Try to create a client connection to verify query-head connectivity
-        client = await create_hydrolix_client(client_shared_pool, get_request_credential())
-        version = client.client.server_version
+        async with await create_hydrolix_client(client_shared_pool, get_request_credential()) as client:
+            version = client.client.server_version
         return PlainTextResponse(f"OK - Connected to Hydrolix compatible with ClickHouse {version}")
     except Exception as e:
         # Return 503 Service Unavailable if we can't connect to Hydrolix
