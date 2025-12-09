@@ -3,6 +3,15 @@ revision = 3
 requires-python = ">=3.13"
 
 [[package]]
+name = "annotated-doc"
+version = "0.0.4"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/57/ba/046ceea27344560984e26a590f90bc7f4a75b06701f653222458922b558c/annotated_doc-0.0.4.tar.gz", hash = "sha256:fbcda96e87e9c92ad167c2e53839e57503ecfda18804ea28102353485033faa4", size = 7288, upload-time = "2025-11-10T22:07:42.062Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/1e/d3/26bf1008eb3d2daa8ef4cacc7f3bfdc11818d111f7e2d0201bc6e3b49d45/annotated_doc-0.0.4-py3-none-any.whl", hash = "sha256:571ac1dc6991c450b25a9c2d84a3705e2ae7a53467b5d111c24fa8baabbed320", size = 5303, upload-time = "2025-11-10T22:07:40.673Z" },
+]
+
+[[package]]
 name = "annotated-types"
 version = "0.7.0"
 source = { registry = "https://pypi.org/simple" }
@@ -315,6 +324,30 @@ wheels = [
 ]
 
 [[package]]
+name = "execnet"
+version = "2.1.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/bf/89/780e11f9588d9e7128a3f87788354c7946a9cbb1401ad38a48c4db9a4f07/execnet-2.1.2.tar.gz", hash = "sha256:63d83bfdd9a23e35b9c6a3261412324f964c2ec8dcd8d3c6916ee9373e0befcd", size = 166622, upload-time = "2025-11-12T09:56:37.75Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ab/84/02fc1827e8cdded4aa65baef11296a9bbe595c474f0d6d758af082d849fd/execnet-2.1.2-py3-none-any.whl", hash = "sha256:67fba928dd5a544b783f6056f449e5e3931a5c378b128bc18501f7ea79e296ec", size = 40708, upload-time = "2025-11-12T09:56:36.333Z" },
+]
+
+[[package]]
+name = "fastapi"
+version = "0.124.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "annotated-doc" },
+    { name = "pydantic" },
+    { name = "starlette" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/48/9c/11969bd3e3bc4aa3a711f83dd3720239d3565a934929c74fc32f6c9f3638/fastapi-0.124.0.tar.gz", hash = "sha256:260cd178ad75e6d259991f2fd9b0fee924b224850079df576a3ba604ce58f4e6", size = 357623, upload-time = "2025-12-06T13:11:35.692Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/4d/29/9e1e82e16e9a1763d3b55bfbe9b2fa39d7175a1fd97685c482fa402e111d/fastapi-0.124.0-py3-none-any.whl", hash = "sha256:91596bdc6dde303c318f06e8d2bc75eafb341fc793a0c9c92c0bc1db1ac52480", size = 112505, upload-time = "2025-12-06T13:11:34.392Z" },
+]
+
+[[package]]
 name = "fastmcp"
 version = "2.13.3"
 source = { registry = "https://pypi.org/simple" }
@@ -560,16 +593,20 @@ dependencies = [
 
 [package.optional-dependencies]
 dev = [
+    { name = "fastapi" },
     { name = "mcp-clickhouse" },
     { name = "pre-commit" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
+    { name = "pytest-repeat" },
+    { name = "pytest-xdist" },
     { name = "ruff" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "clickhouse-connect", specifier = ">=0.8.16" },
+    { name = "fastapi", marker = "extra == 'dev'", specifier = ">=0.124.0" },
     { name = "fastmcp", specifier = ">=2.13.2" },
     { name = "gunicorn", specifier = ">=23.0.0" },
     { name = "mcp-clickhouse", marker = "extra == 'dev'", specifier = ">=0.1.12" },
@@ -578,6 +615,8 @@ requires-dist = [
     { name = "pyjwt", specifier = ">=2.10.1" },
     { name = "pytest", marker = "extra == 'dev'" },
     { name = "pytest-asyncio", marker = "extra == 'dev'" },
+    { name = "pytest-repeat", marker = "extra == 'dev'" },
+    { name = "pytest-xdist", marker = "extra == 'dev'" },
     { name = "python-dotenv", specifier = ">=1.0.1" },
     { name = "ruff", marker = "extra == 'dev'" },
 ]
@@ -984,6 +1023,31 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/4e/51/f8794af39eeb870e87a8c8068642fc07bce0c854d6865d7dd0f2a9d338c2/pytest_asyncio-1.1.0.tar.gz", hash = "sha256:796aa822981e01b68c12e4827b8697108f7205020f24b5793b3c41555dab68ea", size = 46652, upload-time = "2025-07-16T04:29:26.393Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c7/9d/bf86eddabf8c6c9cb1ea9a869d6873b46f105a5d292d3a6f7071f5b07935/pytest_asyncio-1.1.0-py3-none-any.whl", hash = "sha256:5fe2d69607b0bd75c656d1211f969cadba035030156745ee09e7d71740e58ecf", size = 15157, upload-time = "2025-07-16T04:29:24.929Z" },
+]
+
+[[package]]
+name = "pytest-repeat"
+version = "0.9.4"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pytest" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/80/d4/69e9dbb9b8266df0b157c72be32083403c412990af15c7c15f7a3fd1b142/pytest_repeat-0.9.4.tar.gz", hash = "sha256:d92ac14dfaa6ffcfe6917e5d16f0c9bc82380c135b03c2a5f412d2637f224485", size = 6488, upload-time = "2025-04-07T14:59:53.077Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/73/d4/8b706b81b07b43081bd68a2c0359fe895b74bf664b20aca8005d2bb3be71/pytest_repeat-0.9.4-py3-none-any.whl", hash = "sha256:c1738b4e412a6f3b3b9e0b8b29fcd7a423e50f87381ad9307ef6f5a8601139f3", size = 4180, upload-time = "2025-04-07T14:59:51.492Z" },
+]
+
+[[package]]
+name = "pytest-xdist"
+version = "3.8.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "execnet" },
+    { name = "pytest" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/78/b4/439b179d1ff526791eb921115fca8e44e596a13efeda518b9d845a619450/pytest_xdist-3.8.0.tar.gz", hash = "sha256:7e578125ec9bc6050861aa93f2d59f1d8d085595d6551c2c90b6f4fad8d3a9f1", size = 88069, upload-time = "2025-07-01T13:30:59.346Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ca/31/d4e37e9e550c2b92a9cbc2e4d0b7420a27224968580b5a447f420847c975/pytest_xdist-3.8.0-py3-none-any.whl", hash = "sha256:202ca578cfeb7370784a8c33d6d05bc6e13b4f25b5053c30a152269fd10f0b88", size = 46396, upload-time = "2025-07-01T13:30:56.632Z" },
 ]
 
 [[package]]

@@ -10,11 +10,11 @@ from .credentials import (
     UsernamePassword,
 )
 from .mcp_providers import (
+    TOKEN_PARAM,
     AccessToken,
     ChainedAuthBackend,
     GetParamAuthBackend,
     HydrolixCredentialChain,
-    TOKEN_PARAM,
 )
 
 __all__ = [

@@ -4,9 +4,8 @@ import unittest
 
 from dotenv import load_dotenv
 from fastmcp.exceptions import ToolError
-from mcp_hydrolix import create_hydrolix_client, list_databases, list_tables, run_select_query
 
-load_dotenv()
+from mcp_hydrolix import create_hydrolix_client, list_databases, list_tables, run_select_query
 
 
 class TestHydrolixTools(unittest.IsolatedAsyncioTestCase):

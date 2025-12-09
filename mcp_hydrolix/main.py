@@ -1,11 +1,11 @@
 import logging
 
+from fastmcp.server.http import StarletteWithLifespan
 from gunicorn.app.base import BaseApplication
 
 from .log import setup_logging
+from .mcp_env import TransportType, get_config
 from .mcp_server import mcp
-from .mcp_env import get_config, TransportType
-from fastmcp.server.http import StarletteWithLifespan
 
 
 class CoreApplication(BaseApplication):
@@ -19,11 +19,7 @@ class CoreApplication(BaseApplication):
 
     def load_config(self) -> None:
         """Load the options specific to this application."""
-        config = {
-            key: value
-            for key, value in self.options.items()
-            if key in self.cfg.settings and value is not None
-        }
+        config = {key: value for key, value in self.options.items() if key in self.cfg.settings and value is not None}
         for key, value in config.items():
             self.cfg.set(key.lower(), value)
 
@@ -60,9 +56,7 @@ def main():
                 "keepalive": config.mcp_keepalive,
                 "logconfig_dict": log_dict_config,
             }
-            CoreApplication(
-                mcp.http_app(path="/mcp", stateless_http=True, transport=transport), options
-            ).run()
+            CoreApplication(mcp.http_app(path="/mcp", stateless_http=True, transport=transport), options).run()
     else:
         # For stdio transport, no host or port is needed
         mcp.run(transport=transport)

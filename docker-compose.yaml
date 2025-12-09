@@ -1,0 +1,56 @@
+version: '3.8'
+
+services:
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    container_name: hydrolix-test-clickhouse
+    ports:
+      - "9000:9000"   # Native protocol
+      - "8123:8123"   # HTTP interface
+    environment:
+      CLICKHOUSE_DB: default
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: clickhouse
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+      TEST_CONFIG: |+
+        <?xml version="1.0" ?>
+        <clickhouse>
+            <max_connections>4096</max_connections>
+            <logger>
+                <console>1</console>
+            </logger>
+            <timezone>UTC</timezone>
+            <custom_settings_prefixes replace="replace">SQL_,hdx_</custom_settings_prefixes>
+        </clickhouse>
+    entrypoint:
+      - /bin/bash
+      - -c
+      - |
+        $(echo "$$TEST_CONFIG" > /etc/clickhouse-server/config.d/tcconfig.xml)
+        exec /entrypoint.sh "$@"
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - clickhouse_logs:/var/log/clickhouse-server
+      # Optional: mount custom config
+      # - ./clickhouse-config.xml:/etc/clickhouse-server/config.d/custom.xml
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - hydrolix-test
+
+volumes:
+  clickhouse_data:
+    driver: local
+  clickhouse_logs:
+    driver: local
+
+networks:
+  hydrolix-test:
+    driver: bridge

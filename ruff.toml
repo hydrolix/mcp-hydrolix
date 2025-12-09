@@ -1,0 +1,46 @@
+target-version = "py310"
+respect-gitignore = true
+line-length = 120
+indent-width = 4
+fix = true
+unsafe-fixes = false
+
+include = ["*.py", "*.pyi", "**/pyproject.toml"]
+exclude = [
+    ".git",
+    "__pycache__",
+    "build",
+    "dist",
+    ".venv",
+    "migrations",
+]
+
+[lint]
+select = [
+    "E", # pycodestyle
+    "F", # pyflakes
+    "B", # flake8-bugbear
+    "I", # isort
+    "S", # flake8-bandit (security)
+    "C4", # flake8-comprehensions
+    "UP", # pyupgrade
+    "PT", # pytest-style
+    "TID", # tidy imports
+    "ANN", # flake8-annotations (type hints)
+    "N", # pep8-naming
+]
+
+ignore = []
+
+[lint.per-file-ignores]
+"**tests/**/*.py" = ["S101", "ANN001", "ANN201"]
+
+[lint.isort]
+combine-as-imports = true
+known-first-party = ["ariadne_core", "ariadne_pythia"]
+section-order = ["future", "standard-library", "third-party", "first-party", "local-folder"]
+
+[format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false

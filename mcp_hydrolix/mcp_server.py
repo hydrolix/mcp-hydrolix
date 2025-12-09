@@ -1,33 +1,33 @@
-import logging
 import json
+import logging
 import signal
-from typing import Final, Optional, List, Any, Dict, Tuple, Sequence, cast
+from collections.abc import Sequence
+from dataclasses import asdict, is_dataclass
+from typing import Any, Final, cast
 
 import clickhouse_connect
-from clickhouse_connect.driver.binding import format_query_value
 from clickhouse_connect import common
+from clickhouse_connect.driver import httputil
+from clickhouse_connect.driver.binding import format_query_value
 from dotenv import load_dotenv
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
-from dataclasses import asdict, is_dataclass
-
 from fastmcp.server.dependencies import get_access_token
+from pydantic import Field
+from pydantic.dataclasses import dataclass
 from starlette.requests import Request
 from starlette.responses import PlainTextResponse
 
-from pydantic import Field
-from pydantic.dataclasses import dataclass
-
-from .utilities import with_serializer
-from clickhouse_connect.driver import httputil
-from .mcp_env import HydrolixConfig, get_config
 from .auth import (
-    HydrolixCredential,
-    UsernamePassword,
     AccessToken,
+    HydrolixCredential,
+    HydrolixCredentialChain,
     ServiceAccountToken,
+    UsernamePassword,
 )
 from .logging_utils import AccessLogTokenRedactingFilter
+from .mcp_env import HydrolixConfig, get_config
+from .utilities import with_serializer
 
 
 @dataclass
@@ -36,9 +36,9 @@ class Column:
     table: str
     name: str
     column_type: str
-    default_kind: Optional[str]
-    default_expression: Optional[str]
-    comment: Optional[str]
+    default_kind: str | None
+    default_expression: str | None
+    comment: str | None
 
 
 @dataclass
@@ -47,19 +47,19 @@ class Table:
     name: str
     engine: str
     create_table_query: str
-    dependencies_database: List[str]
-    dependencies_table: List[str]
+    dependencies_database: list[str]
+    dependencies_table: list[str]
     engine_full: str
     sorting_key: str
     primary_key: str
-    total_rows: Optional[int]
-    total_bytes: Optional[int]
-    total_bytes_uncompressed: Optional[int]
-    parts: Optional[int]
-    active_parts: Optional[int]
-    total_marks: Optional[int]
-    comment: Optional[str] = None
-    columns: Optional[List[Column]] = Field([])
+    total_rows: int | None
+    total_bytes: int | None
+    total_bytes_uncompressed: int | None
+    parts: int | None
+    active_parts: int | None
+    total_marks: int | None
+    columns: list[Column] | None = Field([])
+    comment: str | None = None
 
 
 MCP_SERVER_NAME = "mcp-hydrolix"
@@ -89,13 +89,11 @@ def get_request_credential() -> HydrolixCredential | None:
         if isinstance(token, AccessToken):
             return cast(AccessToken, token).as_credential()
         else:
-            raise ValueError(
-                "Found non-hydrolix access token on request -- this should be impossible!"
-            )
+            raise ValueError("Found non-hydrolix access token on request -- this should be impossible!")
     return None
 
 
-async def create_hydrolix_client(pool_mgr, request_credential: Optional[HydrolixCredential]):
+async def create_hydrolix_client(pool_mgr, request_credential: HydrolixCredential | None):
     """
     Create a client for operations against query-head. Note that this eagerly issues requests for initialization
     of properties like `server_version`, and so may throw exceptions.
@@ -133,18 +131,19 @@ common.set_setting("invalid_setting_action", "send")
 common.set_setting("autogenerate_session_id", False)
 client_shared_pool = httputil.get_pool_manager(maxsize=get_config().query_pool_size, num_pools=1)
 
-def term(*args,**kwargs):
+
+def term(*args, **kwargs):
     client_shared_pool.clear()
+
 
 signal.signal(signal.SIGTERM, term)
 signal.signal(signal.SIGINT, term)
 signal.signal(signal.SIGQUIT, term)
 
+
 async def execute_query(query: str):
     try:
-        async with await create_hydrolix_client(
-                client_shared_pool, get_request_credential()
-        ) as client:
+        async with await create_hydrolix_client(client_shared_pool, get_request_credential()) as client:
             res = await client.query(
                 query,
                 settings={
@@ -165,9 +164,7 @@ async def execute_query(query: str):
 
 async def execute_cmd(query: str):
     try:
-        async with await create_hydrolix_client(
-            client_shared_pool, get_request_credential()
-        ) as client:
+        async with await create_hydrolix_client(client_shared_pool, get_request_credential()) as client:
             res = await client.command(query)
             logger.info("Command returned executed.")
             return res
@@ -192,11 +189,11 @@ async def health_check(request: Request) -> PlainTextResponse:
         return PlainTextResponse(f"ERROR - Cannot connect to Hydrolix: {str(e)}", status_code=503)
 
 
-def result_to_table(query_columns, result) -> List[Table]:
+def result_to_table(query_columns, result) -> list[Table]:
     return [Table(**dict(zip(query_columns, row))) for row in result]
 
 
-def result_to_column(query_columns, result) -> List[Column]:
+def result_to_column(query_columns, result) -> list[Column]:
     return [Column(**dict(zip(query_columns, row))) for row in result]
 
 
@@ -215,7 +212,7 @@ def to_json(obj: Any) -> str:
 
 
 @mcp.tool()
-async def list_databases() -> List[str]:
+async def list_databases() -> list[str]:
     """List available Hydrolix databases"""
     logger.info("Listing all databases")
     result = await execute_cmd("SHOW DATABASES")
@@ -231,9 +228,7 @@ async def list_databases() -> List[str]:
 
 
 @mcp.tool()
-async def list_tables(
-    database: str, like: Optional[str] = None, not_like: Optional[str] = None
-) -> List[Table]:
+async def list_tables(database: str, like: str | None = None, not_like: str | None = None) -> list[Table]:
     """List available Hydrolix tables in a database, including schema, comment,
     row count, and column count."""
     logger.info(f"Listing tables in database '{database}'")
@@ -273,7 +268,7 @@ async def list_tables(
 
 @mcp.tool()
 @with_serializer
-async def run_select_query(query: str) -> Dict[str, Tuple | Sequence[str | Sequence[Any]]]:
+async def run_select_query(query: str) -> dict[str, tuple | Sequence[str | Sequence[Any]]]:
     """Run a SELECT query in a Hydrolix time-series database using the Clickhouse SQL dialect.
     Queries run using this tool will timeout after 30 seconds.
 

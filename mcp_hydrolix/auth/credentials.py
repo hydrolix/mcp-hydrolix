@@ -2,7 +2,7 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Optional
+
 import jwt
 
 
@@ -20,7 +20,7 @@ class HydrolixCredential(ABC):
 class ServiceAccountToken(HydrolixCredential):
     """Hydrolix credentials using a service account token."""
 
-    def __init__(self, token: str, expected_iss: Optional[str]):
+    def __init__(self, token: str, expected_iss: str | None):
         """
         Initialize a ServiceAccountToken from a token JWT (or raise an error if the claims are invalid).
         NB the claims' signatures are NOT checked by this function -- these validations MUST NOT be considered

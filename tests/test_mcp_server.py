@@ -1,19 +1,19 @@
+import asyncio
+import datetime
+import json
 import os
 import time
+import uuid
 
 import pytest
 import pytest_asyncio
+from dotenv import load_dotenv
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
-import asyncio
-from mcp_clickhouse.mcp_server import create_clickhouse_client
-from mcp_hydrolix.mcp_server import mcp
-from dotenv import load_dotenv
-import json
 from fastmcp.server.middleware import Middleware, MiddlewareContext
+from mcp_clickhouse.mcp_server import create_clickhouse_client
 
-# Load environment variables
-load_dotenv()
+from mcp_hydrolix.mcp_server import mcp
 
 
 @pytest.fixture(scope="module")
@@ -392,24 +392,18 @@ async def test_concurrent_queries(mcp_server, setup_test_database):
         ]
 
         # Execute all queries concurrently
-        results = asyncio.gather(
-            *[client.call_tool("run_select_query", {"query": query}) for query in queries]
-        )
+        results = asyncio.gather(*[client.call_tool("run_select_query", {"query": query}) for query in queries])
 
         # let mcp server handle requests
         await asyncio.sleep(20)
 
     # Check that other queries were submitted to mcp server
     assert lq_f.done() and isinstance(lq_f.exception(), ToolError)
-    assert ServerMetrics.inflight_requests > 1, (
-        "By now at least one another query should have been invoked."
-    )
+    assert ServerMetrics.inflight_requests > 1, "By now at least one another query should have been invoked."
 
     # count queries started after long blocking query finished.
     lq_end = ServerMetrics.queries[lq]["end"]
-    blocked_count = sum(
-        [1 for q, q_time in ServerMetrics.queries.items() if q != lq and q_time["start"] > lq_end]
-    )
+    blocked_count = sum([1 for q, q_time in ServerMetrics.queries.items() if q != lq and q_time["start"] > lq_end])
     assert blocked_count < len(queries), "All queries were blocked by long running query."
 
     # all queries were invoked
@@ -422,3 +416,28 @@ async def test_concurrent_queries(mcp_server, setup_test_database):
         query_result = json.loads(result.content[0].text)
         assert "rows" in query_result
         assert len(query_result["rows"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_concurrent_queries_isolation(mcp_server, setup_test_database):
+    """Test running multiple queries concurrently."""
+
+    users = [[f"user_{i}", f"pass_{i}", uuid.uuid4().hex] for i in range(50)]
+
+    async def _call_tool(user, password, guid):
+        async with Client(mcp_server) as client:
+            return await client.call_tool(
+                "run_select_query", {"query": f"select '{user}', '{password}', '{guid}' from loop(numbers(3)) LIMIT 50"}
+            )
+
+    for _ in range(25):
+        results = await asyncio.gather(*[_call_tool(user, password, guid) for user, password, guid in users])
+
+    for result in results:
+        res = result.data["rows"]
+        user = res[0][0]
+        indata = list(filter(lambda x: x[0] == user, users))
+        assert len(indata) == 1
+        user_row = indata[0]
+        for res_row in res:
+            assert res_row == user_row

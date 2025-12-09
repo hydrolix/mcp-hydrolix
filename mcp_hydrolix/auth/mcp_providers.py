@@ -1,10 +1,10 @@
 """Authentication backends and providers for MCP Hydrolix server."""
 
-from abc import abstractmethod
 import time
-from typing import List, ClassVar, Final, Optional
+from abc import abstractmethod
+from typing import ClassVar, Final
 
-from fastmcp.server.auth import AuthProvider, AccessToken as FastMCPAccessToken
+from fastmcp.server.auth import AccessToken as FastMCPAccessToken, AuthProvider
 from mcp.server.auth.middleware.auth_context import (
     AuthContextMiddleware as McpAuthContextMiddleware,
 )
@@ -13,10 +13,10 @@ from mcp.server.auth.middleware.bearer_auth import (
     BearerAuthBackend,
 )
 from mcp.server.auth.provider import TokenVerifier as McpTokenVerifier
-from starlette.authentication import AuthenticationBackend, AuthCredentials
+from starlette.authentication import AuthCredentials, AuthenticationBackend
 from starlette.middleware import Middleware
 from starlette.middleware.authentication import AuthenticationMiddleware
-from starlette.requests import Request, HTTPConnection
+from starlette.requests import HTTPConnection, Request
 
 from .credentials import HydrolixCredential, ServiceAccountToken
 
@@ -29,7 +29,7 @@ class ChainedAuthBackend(AuthenticationBackend):
     authentication result. Only tries an auth method once all previous auth methods have failed.
     """
 
-    def __init__(self, backends: List[AuthenticationBackend]):
+    def __init__(self, backends: list[AuthenticationBackend]):
         self.backends = backends
 
     async def authenticate(self, conn: HTTPConnection):
@@ -91,12 +91,12 @@ class HydrolixCredentialChain(AuthProvider):
         FAKE_CLIENT_ID: ClassVar[Final[str]] = "MCP_CLIENT_VIA_SERVICE_ACCOUNT"
         FAKE_SCOPE: ClassVar[Final[str]] = "MCP_SERVICE_ACCOUNT_SCOPE"
 
-        expected_issuer: Optional[str] = None
+        expected_issuer: str | None = None
 
         def as_credential(self) -> ServiceAccountToken:
             return ServiceAccountToken(self.token, self.expected_issuer)
 
-    def __init__(self, expected_issuer: Optional[str]):
+    def __init__(self, expected_issuer: str | None):
         """
         Initialize HydrolixCredentialChain.
 

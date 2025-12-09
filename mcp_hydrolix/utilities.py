@@ -1,14 +1,14 @@
 import inspect
+import ipaddress
+import json
 from datetime import datetime, time
 from decimal import Decimal
 from functools import wraps
 from typing import Protocol
 
 import fastmcp.utilities.types
-from fastmcp.tools.tool import ToolResult
 from fastmcp import Context
-import json
-import ipaddress
+from fastmcp.tools.tool import ToolResult
 
 
 class ContextToolCallable(Protocol):

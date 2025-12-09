@@ -1,0 +1,41 @@
+name: Tests Pipeline
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/tests.yml'
+      - 'mcp_hydrolix/**'
+      - 'mcp_hydrolix/tests/**'
+      - 'mcp_hydrolix/pyproject.toml'
+      - 'mcp_hydrolix/ruff.toml'
+      - 'mcp_hydrolix/uv.lock'
+      - 'mcp_hydrolix/Dockerfile'
+      - 'mcp_hydrolix/docker-compose.yaml'
+  workflow_dispatch:
+
+jobs:
+  core-test:
+    runs-on: lke
+    container:
+      image: ghcr.io/astral-sh/uv:0.8.9-python3.13-bookworm-slim
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache UV dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/uv
+          key: ${{ runner.os }}-uv-${{ hashFiles('mcp_hydrolix/uv.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-uv-
+
+      - name: Build and run Docker Compose services
+        run: docker-compose up -d --build
+
+      - name: Run tests
+        working-directory: .
+        run: |
+          uv sync --frozen --no-editable
+#          uvx ruff check --fix --exit-non-zero-on-fix --config ruff.toml .
+          uvx ruff format --check --diff --config ruff.toml .
+          uv pip install '.[dev]'
+          uv run -q pytest -q
