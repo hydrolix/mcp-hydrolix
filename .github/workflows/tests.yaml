@@ -44,10 +44,10 @@ jobs:
         working-directory: .
         run: |
           uv sync --frozen --no-editable
-#          uvx ruff check --fix --exit-non-zero-on-fix --config ruff.toml .
+          # uvx ruff check --fix --exit-non-zero-on-fix --config ruff.toml .
           uvx ruff format --check --diff --config ruff.toml .
           uv pip install '.[dev]'
-          uv run -q pytest -q
+          uv run pytest
       - name: Stop Docker Compose services
         if: always()
         run: docker-compose down
