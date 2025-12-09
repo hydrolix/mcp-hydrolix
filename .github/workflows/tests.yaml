@@ -38,8 +38,8 @@ jobs:
           $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
           tee /etc/apt/sources.list.d/docker.list > /dev/null
           apt-get update
-          apt-get install -y docker-compose-plugin
-          docker-compose up -d
+          apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+          docker compose up -d
       - name: Run tests
         working-directory: .
         run: |
@@ -50,4 +50,4 @@ jobs:
           uv run pytest
       - name: Stop Docker Compose services
         if: always()
-        run: docker-compose down
+        run: docker compose down
