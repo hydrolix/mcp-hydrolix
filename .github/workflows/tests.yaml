@@ -27,10 +27,8 @@ jobs:
           key: ${{ runner.os }}-uv-${{ hashFiles('mcp_hydrolix/uv.lock') }}
           restore-keys: |
             ${{ runner.os }}-uv-
-
       - name: Build and run Docker Compose services
         run: docker-compose up -d --build
-
       - name: Run tests
         working-directory: .
         run: |
