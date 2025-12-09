@@ -15,7 +15,6 @@ on:
 
 jobs:
   core-test:
-    runs-on: lke-medium
     container:
       image: ghcr.io/astral-sh/uv:0.8.9-python3.13-bookworm-slim
     steps:
