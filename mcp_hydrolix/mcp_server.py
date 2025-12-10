@@ -129,7 +129,7 @@ async def create_hydrolix_client(pool_mgr, request_credential: HydrolixCredentia
 # allow custom hydrolix settings in CH client
 common.set_setting("invalid_setting_action", "send")
 common.set_setting("autogenerate_session_id", False)
-client_shared_pool = httputil.get_pool_manager(maxsize=get_config().query_pool_size, num_pools=1)
+client_shared_pool = httputil.get_pool_manager(maxsize=HYDROLIX_CONFIG.query_pool_size, num_pools=1)
 
 
 def term(*args, **kwargs):
