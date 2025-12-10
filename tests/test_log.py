@@ -125,7 +125,9 @@ class TestAccessLogTokenRedactingFilter:
 
     def test_redacts_complex_token_values(self, token_filter, log_record):
         """Test that complex token values are fully redacted."""
-        log_record.msg = "GET /api?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0"
+        log_record.msg = (
+            "GET /api?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0"
+        )
 
         token_filter.filter(log_record)
 
@@ -133,15 +135,21 @@ class TestAccessLogTokenRedactingFilter:
 
     def test_redacts_quoted_token_values(self, token_filter, log_record):
         """Test that complex token values are fully redacted."""
-        log_record.msg = "GET /api?token=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0\""
+        log_record.msg = (
+            'GET /api?token="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0"'
+        )
         token_filter.filter(log_record)
         assert log_record.msg == "GET /api?token=[REDACTED]"
 
-        log_record.msg = "GET /api?token='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0'"
+        log_record.msg = (
+            "GET /api?token='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0'"
+        )
         token_filter.filter(log_record)
         assert log_record.msg == "GET /api?token=[REDACTED]"
 
-        log_record.msg = "GET /api?token=`eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0`"
+        log_record.msg = (
+            "GET /api?token=`eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0`"
+        )
         token_filter.filter(log_record)
         assert log_record.msg == "GET /api?token=[REDACTED]"
 
@@ -166,7 +174,7 @@ class TestSetupLogging:
         with open(config_path) as f:
             config = yaml.safe_load(f)
 
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             yaml.dump(config, f)
             temp_path = f.name
 
@@ -226,11 +234,20 @@ class TestSetupLogging:
 
         assert result["root"]["level"] == "DEBUG"
 
-    @pytest.mark.parametrize("logger_name", [
-        ("test_logger"), ("root"),
-        ("uvicorn"), ("uvicorn.access"), ("uvicorn.error"),
-        ("gunicorn"), ("gunicorn.access"), ("gunicorn.error"),
-        (None)])
+    @pytest.mark.parametrize(
+        "logger_name",
+        [
+            ("test_logger"),
+            ("root"),
+            ("uvicorn"),
+            ("uvicorn.access"),
+            ("uvicorn.error"),
+            ("gunicorn"),
+            ("gunicorn.access"),
+            ("gunicorn.error"),
+            (None),
+        ],
+    )
     @pytest.mark.parametrize("log_format", [("default"), ("json"), (None)])
     def test_filter_integration_with_logging(self, temp_config_file, logger_name, log_format):
         """Test that the filter works when integrated with logging system."""
@@ -244,6 +261,7 @@ class TestSetupLogging:
 
         # Create a string handler to capture logs
         from io import StringIO
+
         log_stream = StringIO()
         logging.getHandlerByName("default").stream = log_stream
 
@@ -312,6 +330,7 @@ class TestJsonFormatter:
             raise ValueError("Test error")
         except ValueError:
             import sys
+
             log_record.exc_info = sys.exc_info()
 
         result = formatter.format(log_record)

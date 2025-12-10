@@ -3,7 +3,7 @@ import logging
 import signal
 from collections.abc import Sequence
 from dataclasses import asdict, is_dataclass
-from typing import Any, Final, Optional, List, cast, TypedDict, Tuple
+from typing import Any, Final, Optional, List, cast, TypedDict
 
 import clickhouse_connect
 from clickhouse_connect import common
