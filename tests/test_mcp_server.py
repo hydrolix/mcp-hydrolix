@@ -3,6 +3,7 @@ import json
 import os
 import time
 import uuid
+from typing import Any
 
 import pytest
 import pytest_asyncio
@@ -364,8 +365,22 @@ class InFlightCounterMiddleware(Middleware):
 
 
 @pytest.mark.asyncio
-async def test_concurrent_queries(mcp_server, setup_test_database):
+async def test_concurrent_queries(monkeypatch, mcp_server, setup_test_database):
     """Test running multiple queries concurrently."""
+
+    from clickhouse_connect.driver import AsyncClient
+
+    instance = AsyncClient
+    original_method = AsyncClient.query
+
+    async def wrapper_proxy(self, query: str, settings: dict[str, Any]):
+        settings["readonly"] = 0
+        # Call the original method
+        return await original_method(self, query, settings)
+
+    # Patch the instance method at runtime
+    monkeypatch.setattr(instance, "query", wrapper_proxy)
+
     test_db, test_table, test_table2 = setup_test_database
 
     mcp.add_middleware(InFlightCounterMiddleware())
@@ -378,7 +393,7 @@ async def test_concurrent_queries(mcp_server, setup_test_database):
 
     ServerMetrics.inflight_requests = 0
     async with Client(mcp_server) as client:
-        lq = "SELECT * FROM loop  (numbers(3)) LIMIT 7000000000000 SETTINGS max_execution_time=13"
+        lq = "SELECT * FROM loop  (numbers(3)) LIMIT 7000000000000 SETTINGS max_execution_time=9"
         lq_f = asyncio.gather(*[client.call_tool("run_select_query", {"query": lq})])
 
         # Run multiple queries concurrently
@@ -423,8 +438,20 @@ async def test_concurrent_queries(mcp_server, setup_test_database):
 
 
 @pytest.mark.asyncio
-async def test_concurrent_queries_isolation(mcp_server, setup_test_database):
+async def test_concurrent_queries_isolation(monkeypatch, mcp_server, setup_test_database):
     """Test running multiple queries concurrently."""
+    from clickhouse_connect.driver import AsyncClient
+
+    instance = AsyncClient
+    original_method = AsyncClient.query
+
+    async def wrapper_proxy(self, query: str, settings: dict[str, Any]):
+        settings["readonly"] = 0
+        # Call the original method
+        return await original_method(self, query, settings)
+
+    # Patch the instance method at runtime
+    monkeypatch.setattr(instance, "query", wrapper_proxy)
 
     users = [[f"user_{i}", f"pass_{i}", uuid.uuid4().hex] for i in range(50)]
 
