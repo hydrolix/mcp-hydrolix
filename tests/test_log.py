@@ -7,9 +7,7 @@ import tempfile
 from pathlib import Path
 
 import pytest
-import yaml
 
-import log
 from mcp_hydrolix.log import setup_logging, JsonFormatter
 from mcp_hydrolix.log.utils import AccessLogTokenRedactingFilter
 
@@ -168,14 +166,14 @@ class TestSetupLogging:
     @pytest.fixture
     def temp_config_file(self):
         """Create a temporary YAML config file for testing."""
-        # log_format = request.param
-        # config = setup_logging(None, "INFO", log_format)
-        config_path = f"{os.path.dirname(log.log.__file__)}/log.yaml"
+        import mcp_hydrolix
+
+        config_path = f"{os.path.dirname(mcp_hydrolix.log.log.__file__)}/log.yaml"
         with open(config_path) as f:
-            config = yaml.safe_load(f)
+            config = f.read()
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
-            yaml.dump(config, f)
+            f.write(config)
             temp_path = f.name
 
         yield temp_path
