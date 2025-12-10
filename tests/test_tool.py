@@ -2,7 +2,6 @@ import asyncio
 import inspect
 import unittest
 
-from dotenv import load_dotenv
 from fastmcp.exceptions import ToolError
 
 from mcp_hydrolix import create_hydrolix_client, list_databases, list_tables, run_select_query
@@ -102,11 +101,11 @@ class TestHydrolixTools(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(table_info.comment, "Test table for unit testing")
 
         # Get columns by name for easier testing
-        columns = {col.name: col for col in table_info.columns}
+        columns = {col.name: col.__dict__ for col in table_info.columns}
 
         # Verify column comments
-        self.assertEqual(columns["id"].comment, "Primary identifier")
-        self.assertEqual(columns["name"].comment, "User name field")
+        self.assertEqual(columns["id"]["comment"], "Primary identifier")
+        self.assertEqual(columns["name"]["comment"], "User name field")
 
 
 if __name__ == "__main__":

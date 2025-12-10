@@ -3,7 +3,7 @@
 import logging
 import re
 
-from .auth import TOKEN_PARAM
+from ..auth import TOKEN_PARAM
 
 
 class AccessLogTokenRedactingFilter(logging.Filter):
@@ -39,7 +39,9 @@ class AccessLogTokenRedactingFilter(logging.Filter):
                 for arg in record.args:
                     if isinstance(arg, str):
                         # Redact tokens from string arguments
-                        modified_args.append(self.TOKEN_PATTERN.sub(rf"{TOKEN_PARAM}=[REDACTED]", arg))
+                        modified_args.append(
+                            self.TOKEN_PATTERN.sub(rf"{TOKEN_PARAM}=[REDACTED]", arg)
+                        )
                     else:
                         modified_args.append(arg)
                 record.args = tuple(modified_args)

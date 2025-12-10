@@ -1,8 +1,8 @@
 """Authentication backends and providers for MCP Hydrolix server."""
 
 import time
-from abc import abstractmethod
-from typing import ClassVar, Final
+from abc import abstractmethod, ABC
+from typing import List, ClassVar, Final, Optional
 
 from fastmcp.server.auth import AccessToken as FastMCPAccessToken, AuthProvider
 from mcp.server.auth.middleware.auth_context import (
@@ -29,7 +29,7 @@ class ChainedAuthBackend(AuthenticationBackend):
     authentication result. Only tries an auth method once all previous auth methods have failed.
     """
 
-    def __init__(self, backends: list[AuthenticationBackend]):
+    def __init__(self, backends: List[AuthenticationBackend]):
         self.backends = backends
 
     async def authenticate(self, conn: HTTPConnection):
@@ -71,7 +71,7 @@ class GetParamAuthBackend(AuthenticationBackend):
         return AuthCredentials(auth_info.scopes), McpAuthenticatedUser(auth_info)
 
 
-class AccessToken(FastMCPAccessToken):
+class AccessToken(FastMCPAccessToken, ABC):
     @abstractmethod
     def as_credential(self) -> HydrolixCredential: ...
 
@@ -91,12 +91,12 @@ class HydrolixCredentialChain(AuthProvider):
         FAKE_CLIENT_ID: ClassVar[Final[str]] = "MCP_CLIENT_VIA_SERVICE_ACCOUNT"
         FAKE_SCOPE: ClassVar[Final[str]] = "MCP_SERVICE_ACCOUNT_SCOPE"
 
-        expected_issuer: str | None = None
+        expected_issuer: Optional[str] = None
 
         def as_credential(self) -> ServiceAccountToken:
             return ServiceAccountToken(self.token, self.expected_issuer)
 
-    def __init__(self, expected_issuer: str | None):
+    def __init__(self, expected_issuer: Optional[str]):
         """
         Initialize HydrolixCredentialChain.
 

@@ -7,6 +7,7 @@ and type conversion.
 import os
 from dataclasses import dataclass
 from enum import Enum
+from typing import Optional
 
 from .auth.credentials import HydrolixCredential, ServiceAccountToken, UsernamePassword
 
@@ -60,11 +61,13 @@ class HydrolixConfig:
         """Initialize the configuration from environment variables."""
         self._validate_required_vars()
         # Credential to use for clickhouse connections when no per-request credential is provided
-        self._default_credential: HydrolixCredential | None = None
+        self._default_credential: Optional[HydrolixCredential] = None
 
         # Set the default credential to the service account from the environment, if available
         if (global_service_account := os.environ.get("HYDROLIX_TOKEN")) is not None:
-            self._default_credential = ServiceAccountToken(global_service_account, f"https://{self.host}/config")
+            self._default_credential = ServiceAccountToken(
+                global_service_account, f"https://{self.host}/config"
+            )
         elif (global_username := os.environ.get("HYDROLIX_USER")) is not None and (
             global_password := os.environ.get("HYDROLIX_PASSWORD")
         ) is not None:
@@ -72,7 +75,7 @@ class HydrolixConfig:
             # from the environment, if available
             self._default_credential = UsernamePassword(global_username, global_password)
 
-    def creds_with(self, request_credential: HydrolixCredential | None) -> HydrolixCredential:
+    def creds_with(self, request_credential: Optional[HydrolixCredential]) -> HydrolixCredential:
         if request_credential is not None:
             return request_credential
         elif self._default_credential is not None:
@@ -102,7 +105,7 @@ class HydrolixConfig:
         return 8088
 
     @property
-    def database(self) -> str | None:
+    def database(self) -> Optional[str]:
         """Get the default database name if set."""
         return os.getenv("HYDROLIX_DATABASE")
 
@@ -155,7 +158,7 @@ class HydrolixConfig:
         return int(os.getenv("HYDROLIX_QUERY_TIMEOUT_SECS", 30))
 
     @property
-    def proxy_path(self) -> str | None:
+    def proxy_path(self) -> Optional[str]:
         return os.getenv("HYDROLIX_PROXY_PATH")
 
     @property
@@ -178,9 +181,9 @@ class HydrolixConfig:
         """Get the host to bind the MCP server to.
 
         Only used when transport is "http" or "sse".
-        Default: "0.0.0.0"
+        Default: "127.0.0.1"
         """
-        return os.getenv("HYDROLIX_MCP_BIND_HOST", "0.0.0.0")
+        return os.getenv("HYDROLIX_MCP_BIND_HOST", "127.0.0.1")
 
     @property
     def mcp_bind_port(self) -> int:
@@ -245,7 +248,7 @@ class HydrolixConfig:
         """
         return int(os.getenv("HYDROLIX_MCP_MAX_KEEPALIVE", 10))
 
-    def get_client_config(self, request_credential: HydrolixCredential | None) -> dict:
+    def get_client_config(self, request_credential: Optional[HydrolixCredential]) -> dict:
         """
         Get the configuration dictionary for clickhouse_connect client.
 

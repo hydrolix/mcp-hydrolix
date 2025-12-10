@@ -3,7 +3,7 @@ import logging
 import signal
 from collections.abc import Sequence
 from dataclasses import asdict, is_dataclass
-from typing import Any, Final, cast
+from typing import Any, Final, Optional, List, cast, TypedDict, Tuple
 
 import clickhouse_connect
 from clickhouse_connect import common
@@ -25,9 +25,9 @@ from .auth import (
     ServiceAccountToken,
     UsernamePassword,
 )
-from .logging_utils import AccessLogTokenRedactingFilter
+from .log.utils import AccessLogTokenRedactingFilter
 from .mcp_env import HydrolixConfig, get_config
-from .utilities import with_serializer
+from .utils import with_serializer
 
 
 @dataclass
@@ -36,9 +36,9 @@ class Column:
     table: str
     name: str
     column_type: str
-    default_kind: str | None
-    default_expression: str | None
-    comment: str | None
+    default_kind: Optional[str]
+    default_expression: Optional[str]
+    comment: Optional[str]
 
 
 @dataclass
@@ -47,19 +47,25 @@ class Table:
     name: str
     engine: str
     create_table_query: str
-    dependencies_database: list[str]
-    dependencies_table: list[str]
+    dependencies_database: List[str]
+    dependencies_table: List[str]
     engine_full: str
     sorting_key: str
     primary_key: str
-    total_rows: int | None
-    total_bytes: int | None
-    total_bytes_uncompressed: int | None
-    parts: int | None
-    active_parts: int | None
-    total_marks: int | None
-    columns: list[Column] | None = Field([])
-    comment: str | None = None
+    total_rows: Optional[int]
+    total_bytes: Optional[int]
+    total_bytes_uncompressed: Optional[int]
+    parts: Optional[int]
+    active_parts: Optional[int]
+    total_marks: Optional[int]
+    columns: Optional[List[Column]] = Field([])
+    comment: Optional[str] = None
+
+
+@dataclass
+class HdxQueryResult(TypedDict):
+    columns: List[str]
+    rows: List[List[Any]]
 
 
 MCP_SERVER_NAME = "mcp-hydrolix"
@@ -84,16 +90,18 @@ mcp = FastMCP(
 )
 
 
-def get_request_credential() -> HydrolixCredential | None:
+def get_request_credential() -> Optional[HydrolixCredential]:
     if (token := get_access_token()) is not None:
         if isinstance(token, AccessToken):
-            return cast(AccessToken, token).as_credential()
+            return token.as_credential()
         else:
-            raise ValueError("Found non-hydrolix access token on request -- this should be impossible!")
+            raise ValueError(
+                "Found non-hydrolix access token on request -- this should be impossible!"
+            )
     return None
 
 
-async def create_hydrolix_client(pool_mgr, request_credential: HydrolixCredential | None):
+async def create_hydrolix_client(pool_mgr, request_credential: Optional[HydrolixCredential]):
     """
     Create a client for operations against query-head. Note that this eagerly issues requests for initialization
     of properties like `server_version`, and so may throw exceptions.
@@ -141,14 +149,16 @@ signal.signal(signal.SIGINT, term)
 signal.signal(signal.SIGQUIT, term)
 
 
-async def execute_query(query: str):
+async def execute_query(query: str) -> HdxQueryResult:
     try:
-        async with await create_hydrolix_client(client_shared_pool, get_request_credential()) as client:
+        async with await create_hydrolix_client(
+            client_shared_pool, get_request_credential()
+        ) as client:
             res = await client.query(
                 query,
                 settings={
                     "readonly": 1,
-                    "hdx_query_max_execution_time": get_config().query_timeout_sec,
+                    "hdx_query_max_execution_time": HYDROLIX_CONFIG.query_timeout_sec,
                     "hdx_query_max_attempts": 1,
                     "hdx_query_max_result_rows": 100_000,
                     "hdx_query_max_memory_usage": 2 * 1024 * 1024 * 1024,  # 2GiB
@@ -156,7 +166,7 @@ async def execute_query(query: str):
                 },
             )
             logger.info(f"Query returned {len(res.result_rows)} rows")
-            return {"columns": res.column_names, "rows": res.result_rows}
+            return HdxQueryResult(columns=res.column_names, rows=res.result_rows)
     except Exception as err:
         logger.error(f"Error executing query: {err}")
         raise ToolError(f"Query execution failed: {str(err)}")
@@ -164,7 +174,9 @@ async def execute_query(query: str):
 
 async def execute_cmd(query: str):
     try:
-        async with await create_hydrolix_client(client_shared_pool, get_request_credential()) as client:
+        async with await create_hydrolix_client(
+            client_shared_pool, get_request_credential()
+        ) as client:
             res = await client.command(query)
             logger.info("Command returned executed.")
             return res
@@ -181,7 +193,9 @@ async def health_check(request: Request) -> PlainTextResponse:
     """
     try:
         # Try to create a client connection to verify query-head connectivity
-        async with await create_hydrolix_client(client_shared_pool, get_request_credential()) as client:
+        async with await create_hydrolix_client(
+            client_shared_pool, get_request_credential()
+        ) as client:
             version = client.client.server_version
         return PlainTextResponse(f"OK - Connected to Hydrolix compatible with ClickHouse {version}")
     except Exception as e:
@@ -189,11 +203,11 @@ async def health_check(request: Request) -> PlainTextResponse:
         return PlainTextResponse(f"ERROR - Cannot connect to Hydrolix: {str(e)}", status_code=503)
 
 
-def result_to_table(query_columns, result) -> list[Table]:
+def result_to_table(query_columns, result) -> List[Table]:
     return [Table(**dict(zip(query_columns, row))) for row in result]
 
 
-def result_to_column(query_columns, result) -> list[Column]:
+def result_to_column(query_columns, result) -> List[Column]:
     return [Column(**dict(zip(query_columns, row))) for row in result]
 
 
@@ -212,7 +226,7 @@ def to_json(obj: Any) -> str:
 
 
 @mcp.tool()
-async def list_databases() -> list[str]:
+async def list_databases() -> List[str]:
     """List available Hydrolix databases"""
     logger.info("Listing all databases")
     result = await execute_cmd("SHOW DATABASES")
@@ -228,7 +242,9 @@ async def list_databases() -> list[str]:
 
 
 @mcp.tool()
-async def list_tables(database: str, like: str | None = None, not_like: str | None = None) -> list[Table]:
+async def list_tables(
+    database: str, like: Optional[str] = None, not_like: Optional[str] = None
+) -> List[Table]:
     """List available Hydrolix tables in a database, including schema, comment,
     row count, and column count."""
     logger.info(f"Listing tables in database '{database}'")

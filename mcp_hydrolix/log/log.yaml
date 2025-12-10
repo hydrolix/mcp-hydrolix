@@ -1,6 +1,10 @@
 version: 1
 disable_existing_loggers: false
 
+filters:
+    token_filter:
+      '()': mcp_hydrolix.log.utils.AccessLogTokenRedactingFilter
+
 # This section defines the format of your log messages
 formatters:
   default:
@@ -16,6 +20,8 @@ handlers:
     formatter: default
     class: logging.StreamHandler
     stream: ext://sys.stderr
+    filters:
+      - token_filter
 
 root:
   level: INFO
