@@ -25,13 +25,6 @@ jobs:
         uses: pre-commit/action@v3.0.1
         with:
           extra_args: --all-files
-      - name: Cache UV dependencies
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/uv
-          key: ${{ runner.os }}-uv-${{ hashFiles('mcp_hydrolix/uv.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-uv-
       - name: Build and run Docker Compose services
         run: docker compose up -d --wait --wait-timeout 300
       - name: Install uv
