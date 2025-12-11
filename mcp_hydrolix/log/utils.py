@@ -42,6 +42,13 @@ class AccessLogTokenRedactingFilter(logging.Filter):
                         modified_args.append(
                             self.TOKEN_PATTERN.sub(rf"{TOKEN_PARAM}=[REDACTED]", arg)
                         )
+                    elif isinstance(arg, bytes):
+                        # Redact tokens from string arguments
+                        modified_args.append(
+                            self.TOKEN_PATTERN.sub(
+                                rf"{TOKEN_PARAM}=[REDACTED]", arg.decode("utf-8")
+                            )
+                        )
                     else:
                         modified_args.append(arg)
                 record.args = tuple(modified_args)

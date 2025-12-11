@@ -45,7 +45,12 @@ def main():
         if workers == 1:
             log_dict_config = setup_logging(None, "INFO", "json")
             lconfig.dictConfig(log_dict_config)
-            mcp.run(transport=transport, host=config.mcp_bind_host, port=config.mcp_bind_port)
+            mcp.run(
+                transport=transport,
+                host=config.mcp_bind_host,
+                port=config.mcp_bind_port,
+                uvicorn_config={"log_config": log_dict_config},
+            )
         else:
             log_dict_config = setup_logging(None, "INFO", "json")
             lconfig.dictConfig(log_dict_config)

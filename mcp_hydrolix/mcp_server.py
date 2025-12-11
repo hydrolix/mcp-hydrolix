@@ -25,7 +25,6 @@ from .auth import (
     ServiceAccountToken,
     UsernamePassword,
 )
-from .log.utils import AccessLogTokenRedactingFilter
 from .mcp_env import HydrolixConfig, get_config
 from .utils import with_serializer
 
@@ -70,10 +69,6 @@ class HdxQueryResult(TypedDict):
 
 MCP_SERVER_NAME = "mcp-hydrolix"
 logger = logging.getLogger(MCP_SERVER_NAME)
-
-# Add token redaction filter to uvicorn access logs
-uvicorn_access_logger = logging.getLogger("uvicorn.access")
-uvicorn_access_logger.addFilter(AccessLogTokenRedactingFilter())
 
 load_dotenv()
 
