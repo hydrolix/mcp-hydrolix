@@ -1,0 +1,40 @@
+name: Tests Pipeline
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/tests.yml'
+      - 'mcp_hydrolix/**'
+      - 'mcp_hydrolix/tests/**'
+      - 'mcp_hydrolix/pyproject.toml'
+      - 'mcp_hydrolix/ruff.toml'
+      - 'mcp_hydrolix/uv.lock'
+      - 'mcp_hydrolix/Dockerfile'
+      - 'mcp_hydrolix/docker-compose.yaml'
+  workflow_dispatch:
+
+jobs:
+  core-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - name: Pre-commit
+        uses: pre-commit/action@v3.0.1
+        with:
+          extra_args: --all-files
+      - name: Build and run Docker Compose services
+        run: docker compose up -d --wait --wait-timeout 300
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+      - name: Run tests
+        working-directory: .
+        run: |
+          uv sync --frozen --no-editable
+          uv pip install '.[dev]'
+          uv run pytest
+      - name: Stop Docker Compose services
+        if: always()
+        run: docker compose down

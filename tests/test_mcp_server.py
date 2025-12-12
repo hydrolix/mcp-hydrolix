@@ -1,14 +1,18 @@
+import asyncio
+import json
+import os
+import time
+import uuid
+from typing import Any
+
 import pytest
 import pytest_asyncio
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
-import asyncio
-from mcp_clickhouse.mcp_server import mcp, create_clickhouse_client
-from dotenv import load_dotenv
-import json
+from fastmcp.server.middleware import Middleware, MiddlewareContext
+from mcp_clickhouse.mcp_server import create_clickhouse_client
 
-# Load environment variables
-load_dotenv()
+from mcp_hydrolix.mcp_server import mcp
 
 
 @pytest.fixture(scope="module")
@@ -95,12 +99,8 @@ async def test_list_databases(mcp_server, setup_test_database):
     async with Client(mcp_server) as client:
         result = await client.call_tool("list_databases", {})
 
-        # The result should be a list containing at least one item
-        assert len(result) >= 1
-        assert isinstance(result[0].text, str)
-
-        # Parse the result text (it's a JSON list of database names)
-        databases = json.loads(result[0].text)
+        databases = result.data
+        assert len(result.data) >= 1
         assert test_db in databases
         assert "system" in databases  # System database should always exist
 
@@ -113,8 +113,8 @@ async def test_list_tables_basic(mcp_server, setup_test_database):
     async with Client(mcp_server) as client:
         result = await client.call_tool("list_tables", {"database": test_db})
 
-        assert len(result) >= 1
-        tables = json.loads(result[0].text)
+        tables = result.data
+        assert len(tables) >= 1
 
         # Should have exactly 2 tables
         assert len(tables) == 2
@@ -149,7 +149,7 @@ async def test_list_tables_with_like_filter(mcp_server, setup_test_database):
         # Test with LIKE filter
         result = await client.call_tool("list_tables", {"database": test_db, "like": "test_%"})
 
-        tables_data = json.loads(result[0].text)
+        tables_data = result.data
 
         # Handle both single dict and list of dicts
         if isinstance(tables_data, dict):
@@ -170,7 +170,7 @@ async def test_list_tables_with_not_like_filter(mcp_server, setup_test_database)
         # Test with NOT LIKE filter
         result = await client.call_tool("list_tables", {"database": test_db, "not_like": "test_%"})
 
-        tables_data = json.loads(result[0].text)
+        tables_data = result.data
 
         # Handle both single dict and list of dicts
         if isinstance(tables_data, dict):
@@ -191,7 +191,7 @@ async def test_run_select_query_success(mcp_server, setup_test_database):
         query = f"SELECT id, name, age FROM {test_db}.{test_table} ORDER BY id"
         result = await client.call_tool("run_select_query", {"query": query})
 
-        query_result = json.loads(result[0].text)
+        query_result = result.data
 
         # Check structure
         assert "columns" in query_result
@@ -217,7 +217,7 @@ async def test_run_select_query_with_aggregation(mcp_server, setup_test_database
         query = f"SELECT COUNT(*) as count, AVG(age) as avg_age FROM {test_db}.{test_table}"
         result = await client.call_tool("run_select_query", {"query": query})
 
-        query_result = json.loads(result[0].text)
+        query_result = result.data
 
         assert query_result["columns"] == ["count", "avg_age"]
         assert len(query_result["rows"]) == 1
@@ -245,7 +245,7 @@ async def test_run_select_query_with_join(mcp_server, setup_test_database):
         """
         result = await client.call_tool("run_select_query", {"query": query})
 
-        query_result = json.loads(result[0].text)
+        query_result = result.data
         assert query_result["rows"][0][0] == 3  # login, logout, purchase
 
 
@@ -286,7 +286,7 @@ async def test_table_metadata_details(mcp_server, setup_test_database):
 
     async with Client(mcp_server) as client:
         result = await client.call_tool("list_tables", {"database": test_db})
-        tables = json.loads(result[0].text)
+        tables = result.data
 
         # Find our test table
         test_table_info = next(t for t in tables if t["name"] == test_table)
@@ -324,7 +324,7 @@ async def test_system_database_access(mcp_server):
     async with Client(mcp_server) as client:
         # List tables in system database
         result = await client.call_tool("list_tables", {"database": "system"})
-        tables = json.loads(result[0].text)
+        tables = result.data
 
         # System database should have many tables
         assert len(tables) > 10
@@ -336,12 +336,66 @@ async def test_system_database_access(mcp_server):
         assert "databases" in table_names
 
 
+class ServerMetrics:
+    inflight_requests = 0
+    queries = {}
+
+
+class InFlightCounterMiddleware(Middleware):
+    async def on_request(self, context: MiddlewareContext, call_next):
+        # Increment counter before processing
+        try:
+            if context.message.name == "run_select_query":
+                ServerMetrics.queries[context.message.arguments["query"]] = {"start": time.time()}
+                # ServerMetrics.queries.append(context.message.arguments["query"])
+                ServerMetrics.inflight_requests += 1
+        except Exception:
+            pass
+        try:
+            # Process the request
+            return await call_next(context)
+        finally:
+            try:
+                if context.message.name == "run_select_query":
+                    ServerMetrics.queries[context.message.arguments["query"]]["end"] = time.time()
+                    # Decrement counter after processing (even if it fails)
+                    # ServerMetrics.inflight_requests -= 1
+            except Exception:
+                pass
+
+
 @pytest.mark.asyncio
-async def test_concurrent_queries(mcp_server, setup_test_database):
+async def test_concurrent_queries(monkeypatch, mcp_server, setup_test_database):
     """Test running multiple queries concurrently."""
+
+    from clickhouse_connect.driver import AsyncClient
+
+    instance = AsyncClient
+    original_method = AsyncClient.query
+
+    async def wrapper_proxy(self, query: str, settings: dict[str, Any]):
+        settings["readonly"] = 0
+        # Call the original method
+        return await original_method(self, query, settings)
+
+    # Patch the instance method at runtime
+    monkeypatch.setattr(instance, "query", wrapper_proxy)
+
     test_db, test_table, test_table2 = setup_test_database
 
+    mcp.add_middleware(InFlightCounterMiddleware())
+
+    # limit mcp client request time
+    os.environ["HYDROLIX_SEND_RECEIVE_TIMEOUT"] = "10"
+
+    # limit mcp server waiting for query finish
+    os.environ["HYDROLIX_QUERY_TIMEOUT_SECS"] = "10"
+
+    ServerMetrics.inflight_requests = 0
     async with Client(mcp_server) as client:
+        lq = "SELECT * FROM loop  (numbers(3)) LIMIT 7000000000000 SETTINGS max_execution_time=9"
+        lq_f = asyncio.gather(*[client.call_tool("run_select_query", {"query": lq})])
+
         # Run multiple queries concurrently
         queries = [
             f"SELECT COUNT(*) FROM {test_db}.{test_table}",
@@ -351,15 +405,74 @@ async def test_concurrent_queries(mcp_server, setup_test_database):
         ]
 
         # Execute all queries concurrently
-        results = await asyncio.gather(
+        results = asyncio.gather(
             *[client.call_tool("run_select_query", {"query": query}) for query in queries]
         )
 
-        # Verify all queries succeeded
-        assert len(results) == 4
+        # let mcp server handle requests
+        await asyncio.sleep(20)
 
-        # Check each result
-        for i, result in enumerate(results):
-            query_result = json.loads(result[0].text)
-            assert "rows" in query_result
-            assert len(query_result["rows"]) == 1
+    # Check that other queries were submitted to mcp server
+    assert lq_f.done() and isinstance(lq_f.exception(), ToolError)
+    assert ServerMetrics.inflight_requests > 1, (
+        "By now at least one another query should have been invoked."
+    )
+
+    # count queries started after long blocking query finished.
+    lq_end = ServerMetrics.queries[lq]["end"]
+    blocked_count = sum(
+        [1 for q, q_time in ServerMetrics.queries.items() if q != lq and q_time["start"] > lq_end]
+    )
+    assert blocked_count < len(queries), "All queries were blocked by long running query."
+
+    # all queries were invoked
+    for query in queries:
+        assert query in ServerMetrics.queries
+
+    # Check each result
+    assert results.done()
+    for result in results.result():
+        query_result = json.loads(result.content[0].text)
+        assert "rows" in query_result
+        assert len(query_result["rows"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_concurrent_queries_isolation(monkeypatch, mcp_server, setup_test_database):
+    """Test running multiple queries concurrently."""
+    from clickhouse_connect.driver import AsyncClient
+
+    instance = AsyncClient
+    original_method = AsyncClient.query
+
+    async def wrapper_proxy(self, query: str, settings: dict[str, Any]):
+        settings["readonly"] = 0
+        # Call the original method
+        return await original_method(self, query, settings)
+
+    # Patch the instance method at runtime
+    monkeypatch.setattr(instance, "query", wrapper_proxy)
+
+    users = [[f"user_{i}", f"pass_{i}", uuid.uuid4().hex] for i in range(50)]
+
+    async def _call_tool(user, password, guid):
+        async with Client(mcp_server) as client:
+            return await client.call_tool(
+                "run_select_query",
+                {
+                    "query": f"select '{user}', '{password}', '{guid}' from loop(numbers(3)) LIMIT 50"
+                },
+            )
+
+    results = await asyncio.gather(
+        *[_call_tool(user, password, guid) for user, password, guid in users for _ in range(10)]
+    )
+
+    for result in results:
+        res = result.data["rows"]
+        user = res[0][0]
+        indata = list(filter(lambda x: x[0] == user, users))
+        assert len(indata) == 1
+        user_row = indata[0]
+        for res_row in res:
+            assert res_row == user_row

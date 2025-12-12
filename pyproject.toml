@@ -7,10 +7,11 @@ license = "Apache-2.0"
 license-files = ["LICENSE"]
 requires-python = ">=3.13"
 dependencies = [
-     "fastmcp>=2.0.0",
+     "fastmcp>=2.13.3",
      "python-dotenv>=1.0.1",
-     "clickhouse-connect>=0.8.16",
+     "clickhouse-connect>=0.10.0",
      "pip-system-certs>=4.0",
+     "gunicorn>=23.0.0",
      "pyjwt>=2.10.1",
 ]
 
@@ -25,7 +26,11 @@ dev = [
     "ruff",
     "pytest",
     "pytest-asyncio",
-    "pre-commit"
+    "pytest-xdist",
+    "pytest-repeat",
+    "pre-commit",
+    "mcp-clickhouse>=0.1.12",
+    "fastapi>=0.124.0",
 ]
 
 [tool.hatch.build.targets.wheel]
