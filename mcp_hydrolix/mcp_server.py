@@ -18,15 +18,15 @@ from pydantic.dataclasses import dataclass
 from starlette.requests import Request
 from starlette.responses import PlainTextResponse
 
-from .auth import (
+from mcp_hydrolix.auth import (
     AccessToken,
     HydrolixCredential,
     HydrolixCredentialChain,
     ServiceAccountToken,
     UsernamePassword,
 )
-from .mcp_env import HydrolixConfig, get_config
-from .utils import with_serializer
+from mcp_hydrolix.mcp_env import HydrolixConfig, get_config
+from mcp_hydrolix.utils import with_serializer
 
 
 @dataclass
@@ -76,11 +76,6 @@ HYDROLIX_CONFIG: Final[HydrolixConfig] = get_config()
 
 mcp = FastMCP(
     name=MCP_SERVER_NAME,
-    dependencies=[
-        "clickhouse-connect",
-        "python-dotenv",
-        "pip-system-certs",
-    ],
     auth=HydrolixCredentialChain(f"https://{HYDROLIX_CONFIG.host}/config"),
 )
 

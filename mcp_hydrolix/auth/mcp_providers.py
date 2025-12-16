@@ -18,7 +18,7 @@ from starlette.middleware import Middleware
 from starlette.middleware.authentication import AuthenticationMiddleware
 from starlette.requests import HTTPConnection, Request
 
-from .credentials import HydrolixCredential, ServiceAccountToken
+from mcp_hydrolix.auth.credentials import HydrolixCredential, ServiceAccountToken
 
 TOKEN_PARAM: Final[str] = "token"
 
