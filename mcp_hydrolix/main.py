@@ -2,6 +2,8 @@ import logging.config as lconfig
 
 from fastmcp.server.http import StarletteWithLifespan
 from gunicorn.app.base import BaseApplication
+from starlette.middleware import Middleware
+from starlette.middleware.cors import CORSMiddleware
 
 from .log import setup_logging
 from .mcp_env import TransportType, get_config
@@ -36,6 +38,20 @@ def main():
     config = get_config()
     transport = config.mcp_server_transport
 
+    middleware = [
+        Middleware(
+            CORSMiddleware,
+            allow_origins=["*"],  # Allow all origins; use specific origins for security
+            allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+            allow_headers=[
+                "mcp-protocol-version",
+                "mcp-session-id",
+                "Authorization",
+                "Content-Type",
+            ],
+            expose_headers=["mcp-session-id"],
+        )
+    ]
     # For HTTP and SSE transports, we need to specify host and port
     http_transports = [TransportType.HTTP.value, TransportType.SSE.value]
     if transport in http_transports:
@@ -49,8 +65,10 @@ def main():
                 transport=transport,
                 host=config.mcp_bind_host,
                 port=config.mcp_bind_port,
-                uvicorn_config={"log_config": log_dict_config},
                 stateless_http=True,
+                path="/mcp",
+                middleware=middleware,
+                uvicorn_config={"log_config": log_dict_config},
             )
         else:
             log_dict_config = setup_logging(None, "INFO", "json")
@@ -67,7 +85,10 @@ def main():
                 "logconfig_dict": log_dict_config,
             }
             CoreApplication(
-                mcp.http_app(path="/mcp", stateless_http=True, transport=transport), options
+                mcp.http_app(
+                    path="/mcp", stateless_http=True, transport=transport, middleware=middleware
+                ),
+                options,
             ).run()
     else:
         # For stdio transport, no host or port is needed

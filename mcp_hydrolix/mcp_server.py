@@ -3,6 +3,7 @@ import logging
 import signal
 from collections.abc import Sequence
 from dataclasses import asdict, is_dataclass
+from pathlib import Path
 from typing import Any, Final, Optional, List, cast, TypedDict
 
 import clickhouse_connect
@@ -14,10 +15,12 @@ from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from fastmcp.server.dependencies import get_access_token
 from jwt import DecodeError
+from fastmcp.server.middleware import Middleware
 from pydantic import Field
 from pydantic.dataclasses import dataclass
 from starlette.requests import Request
 from starlette.responses import PlainTextResponse
+from starlette.responses import FileResponse, HTMLResponse
 
 from mcp_hydrolix.auth import (
     AccessToken,
@@ -74,6 +77,19 @@ logger = logging.getLogger(MCP_SERVER_NAME)
 load_dotenv()
 
 HYDROLIX_CONFIG: Final[HydrolixConfig] = get_config()
+
+
+class AddResponseHeadersMiddleware(Middleware):
+    """Mcp Apps extension needs specific mime type for the UI app resource response."""
+
+    async def on_read_resource(self, ctx, call_next) -> dict:
+        response = await call_next(ctx)
+
+        for resp in response:
+            resp.mime_type = "text/html;profile=mcp-app"
+
+        return response
+
 
 mcp = FastMCP(
     name=MCP_SERVER_NAME,
@@ -276,7 +292,7 @@ async def list_tables(
     return tables
 
 
-@mcp.tool()
+@mcp.tool(meta={"ui/resourceUri": "ui://widget/tschart"})
 @with_serializer
 async def run_select_query(query: str) -> dict[str, tuple | Sequence[str | Sequence[Any]]]:
     """Run a SELECT query in a Hydrolix time-series database using the Clickhouse SQL dialect.
@@ -323,3 +339,41 @@ async def run_select_query(query: str) -> dict[str, tuple | Sequence[str | Seque
     except Exception as e:
         logger.error(f"Unexpected error in run_select_query: {str(e)}")
         raise ToolError(f"Unexpected error during query execution: {str(e)}")
+
+
+@mcp.resource("ui://widget/{name}")
+def read_widget(name: str) -> str:
+    """Read a widget by name."""
+
+    file_path = Path(__file__).parent.parent / f"_ui/dist/{name}.html"
+    with open(file_path) as f:
+        html = f.read()
+    return html
+
+
+@mcp.custom_route("/ui/sandbox.html", methods=["GET"])
+async def serve_assets(request: Request):
+    """Serve static assets (JS, CSS, images)."""
+    file_path = Path(__file__).parent.parent / "_ui/dist/sandbox.html"
+    if file_path.exists() and file_path.is_file():
+        return FileResponse(
+            path=file_path,
+            headers={
+                "Content-Security-Policy": "; ".join(
+                    [
+                        "default-src 'self'",
+                        "img-src * data: blob: 'unsafe-inline'",
+                        "style-src * blob: data: 'unsafe-inline'",
+                        "script-src * blob: data: 'unsafe-inline' 'unsafe-eval'",
+                        "connect-src *",
+                        "font-src * blob: data:",
+                        "media-src * blob: data:",
+                        "frame-src * blob: data:",
+                    ]
+                ),
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0",
+            },
+        )
+    return HTMLResponse("Not found", status_code=404)
