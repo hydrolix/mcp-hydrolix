@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Optional
 
-from .auth.credentials import HydrolixCredential, ServiceAccountToken, UsernamePassword
+from mcp_hydrolix.auth.credentials import HydrolixCredential, ServiceAccountToken, UsernamePassword
 
 
 class TransportType(str, Enum):

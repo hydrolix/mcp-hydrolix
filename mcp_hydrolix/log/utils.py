@@ -3,7 +3,7 @@
 import logging
 import re
 
-from ..auth import TOKEN_PARAM
+from mcp_hydrolix.auth import TOKEN_PARAM
 
 
 class AccessLogTokenRedactingFilter(logging.Filter):
