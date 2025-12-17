@@ -29,7 +29,7 @@ dev = [
     "pytest-xdist",
     "pytest-repeat",
     "pre-commit",
-    "mcp-clickhouse==0.1.12",
+    "mcp-clickhouse==0.1.13",
     "fastapi>=0.124",
 ]
 
