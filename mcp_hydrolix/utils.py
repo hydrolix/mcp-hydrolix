@@ -1,7 +1,7 @@
 import inspect
 import ipaddress
 import json
-from datetime import datetime, time
+from datetime import datetime, time, date
 from decimal import Decimal
 from functools import wraps
 
@@ -16,9 +16,9 @@ class ExtendedEncoder(json.JSONEncoder):
         if isinstance(obj, ipaddress.IPv4Address):
             return str(obj)
         if isinstance(obj, datetime):
-            return obj.time()
-        if isinstance(obj, time):
-            return obj.hour * 3600 + obj.minute * 60 + obj.second + obj.microsecond / 1_000_000
+            return obj.timestamp()
+        if isinstance(obj, (date, time)):
+            return obj.isoformat()
         if isinstance(obj, bytes):
             return obj.decode()
         if isinstance(obj, Decimal):

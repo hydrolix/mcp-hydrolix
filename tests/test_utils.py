@@ -23,34 +23,27 @@ class TestExtendedEncoder:
         """Test that datetime objects are converted to time objects."""
         dt = datetime(2024, 1, 15, 14, 30, 45, 123456)
         result = json.dumps({"timestamp": dt}, cls=ExtendedEncoder)
-        expected_time = dt.time()
-        expected_seconds = (
-            expected_time.hour * 3600
-            + expected_time.minute * 60
-            + expected_time.second
-            + expected_time.microsecond / 1_000_000
-        )
-        assert result == f'{{"timestamp": {expected_seconds}}}'
+        expected_time = dt.timestamp()
+        assert result == f'{{"timestamp": {expected_time}}}'
 
     def test_time_serialization(self):
         """Test that time objects are converted to seconds."""
         t = time(14, 30, 45, 123456)
         result = json.dumps({"time": t}, cls=ExtendedEncoder)
-        expected_seconds = 14 * 3600 + 30 * 60 + 45 + 123456 / 1_000_000
-        assert result == f'{{"time": {expected_seconds}}}'
+        expected_time = "14:30:45.123456"
+        assert result == f'{{"time": "{expected_time}"}}'
 
     def test_time_serialization_midnight(self):
         """Test time serialization at midnight (edge case)."""
         t = time(0, 0, 0, 0)
         result = json.dumps({"time": t}, cls=ExtendedEncoder)
-        assert result == '{"time": 0.0}'
+        assert result == '{"time": "00:00:00"}'
 
     def test_time_serialization_end_of_day(self):
         """Test time serialization at end of day (edge case)."""
         t = time(23, 59, 59, 999999)
         result = json.dumps({"time": t}, cls=ExtendedEncoder)
-        expected_seconds = 23 * 3600 + 59 * 60 + 59 + 999999 / 1_000_000
-        assert result == f'{{"time": {expected_seconds}}}'
+        assert result == '{"time": "23:59:59.999999"}'
 
     def test_bytes_serialization(self):
         """Test that bytes are decoded to strings."""
@@ -88,7 +81,7 @@ class TestExtendedEncoder:
         parsed = json.loads(result)
 
         assert parsed["ip"] == "10.0.0.1"
-        assert parsed["time"] == 12 * 3600
+        assert parsed["time"] == "12:00:00"
         assert parsed["data"] == "test"
         assert parsed["amount"] == "99.99"
 
@@ -222,7 +215,7 @@ class TestWithSerializerDecorator:
 
         assert isinstance(result, ToolResult)
         parsed = result.structured_content
-        assert parsed["time"] == 10 * 3600 + 30 * 60
+        assert parsed["time"] == "10:30:00"
         assert parsed["decimal"] == "123.45"
 
     def test_content_structured_content_match(self):
