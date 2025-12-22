@@ -38,3 +38,7 @@ loggers:
     handlers: [ default ]
     level: INFO
     propagate: false
+  fastmcp:
+    handlers: [ default ]
+    level: INFO
+    propagate: false

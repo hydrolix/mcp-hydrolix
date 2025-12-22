@@ -13,6 +13,7 @@ from dotenv import load_dotenv
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from fastmcp.server.dependencies import get_access_token
+from jwt import DecodeError
 from pydantic import Field
 from pydantic.dataclasses import dataclass
 from starlette.requests import Request
@@ -76,14 +77,17 @@ HYDROLIX_CONFIG: Final[HydrolixConfig] = get_config()
 
 mcp = FastMCP(
     name=MCP_SERVER_NAME,
-    auth=HydrolixCredentialChain(f"https://{HYDROLIX_CONFIG.host}/config"),
+    auth=HydrolixCredentialChain(None),
 )
 
 
 def get_request_credential() -> Optional[HydrolixCredential]:
     if (token := get_access_token()) is not None:
         if isinstance(token, AccessToken):
-            return token.as_credential()
+            try:
+                return token.as_credential()
+            except DecodeError:
+                raise ValueError("The provided access token is invalid.")
         else:
             raise ValueError(
                 "Found non-hydrolix access token on request -- this should be impossible!"
