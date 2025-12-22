@@ -50,6 +50,7 @@ def main():
                 host=config.mcp_bind_host,
                 port=config.mcp_bind_port,
                 uvicorn_config={"log_config": log_dict_config},
+                stateless_http=True,
             )
         else:
             log_dict_config = setup_logging(None, "INFO", "json")
