@@ -1,6 +1,7 @@
 import json
 import logging
 import signal
+import sys
 from collections.abc import Sequence
 from dataclasses import asdict, is_dataclass
 from typing import Any, Final, Optional, List, cast, TypedDict
@@ -131,8 +132,16 @@ async def create_hydrolix_client(pool_mgr, request_credential: Optional[Hydrolix
 # allow custom hydrolix settings in CH client
 common.set_setting("invalid_setting_action", "send")
 common.set_setting("autogenerate_session_id", False)
-client_shared_pool = httputil.get_pool_manager(maxsize=HYDROLIX_CONFIG.query_pool_size, num_pools=1)
 
+pool_kwargs = {
+    "maxsize": HYDROLIX_CONFIG.query_pool_size,
+    "num_pools": 1,
+    "verify": HYDROLIX_CONFIG.verify,
+}
+if not HYDROLIX_CONFIG.verify:
+    import urllib3
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+client_shared_pool = httputil.get_pool_manager(**pool_kwargs)
 
 def term(*args, **kwargs):
     client_shared_pool.clear()
