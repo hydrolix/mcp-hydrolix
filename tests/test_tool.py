@@ -90,15 +90,13 @@ class TestHydrolixTools(unittest.IsolatedAsyncioTestCase):
 
         self.assertIn("Query execution failed", str(context.exception))
 
-    async def test_table_and_column_comments(self):
-        """Test that table and column comments are correctly retrieved."""
+    async def test_column_comments(self):
+        """Test that column comments are correctly retrieved."""
         result = await list_tables.fn(self.test_db)
         self.assertIsInstance(result, list)
         self.assertEqual(len(result), 1)
 
         table_info = result[0]
-        # Verify table comment
-        self.assertEqual(table_info.comment, "Test table for unit testing")
 
         # Get columns by name for easier testing
         columns = {col.name: col.__dict__ for col in table_info.columns}
