@@ -1,7 +1,6 @@
 import json
 import logging
 import signal
-import sys
 from collections.abc import Sequence
 from dataclasses import asdict, is_dataclass
 from typing import Any, Final, Optional, List, cast, TypedDict
@@ -140,8 +139,10 @@ pool_kwargs = {
 }
 if not HYDROLIX_CONFIG.verify:
     import urllib3
+
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 client_shared_pool = httputil.get_pool_manager(**pool_kwargs)
+
 
 def term(*args, **kwargs):
     client_shared_pool.clear()
