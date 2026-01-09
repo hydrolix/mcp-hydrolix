@@ -1,0 +1,39 @@
+model_list:
+  - model_name: llama
+    litellm_params:
+      model: azure/Llama-3.3-70B-Instruct
+      api_key: os.environ/AZURE_OPENAI_API_KEY
+      api_base: os.environ/AZURE_OPENAI_ENDPOINT
+      api_version: 2024-05-01-preview
+  - model_name: gpt-4o
+    litellm_params:
+      model: azure/gpt-4o
+      api_key: os.environ/AZURE_OPENAI_API_KEY
+      api_base: os.environ/AZURE_OPENAI_ENDPOINT
+      api_version: 2024-12-01-preview
+  - model_name: text-embedding-3-small
+    litellm_params:
+      model: azure/text-embedding-3-small
+      api_key: os.environ/AZURE_OPENAI_API_KEY
+      api_base: os.environ/AZURE_OPENAI_ENDPOINT
+      api_version: 2024-12-01-preview
+      base_model: text-embedding-3-small
+  - model_name: nova-micro
+    litellm_params:
+      model: bedrock/amazon.nova-micro-v1:0
+  # - model_name: gpt-oss-120b
+  #   litellm_params:
+  #     model: bedrock/openai.gpt-oss-120b-1:0
+  #     # or add AWS_PROFILE to env in order to use SSO
+  #     # aws_access_key_id: os.environ/AWS_ACCESS_KEY_ID
+  #     # aws_secret_access_key: os.environ/AWS_SECRET_ACCESS_KEY
+  #     # aws_session_token: os.environ/AWS_SESSION_TOKEN
+  - model_name: gpt-oss-120b
+    litellm_params:
+      model: azure/gpt-oss-120b
+      api_key: os.environ/AZURE_OPENAI_API_KEY
+      api_base: os.environ/AZURE_OPENAI_ENDPOINT
+      api_version: 2024-05-01-preview
+litellm_settings:
+  set_verbose: True
+  log: debug

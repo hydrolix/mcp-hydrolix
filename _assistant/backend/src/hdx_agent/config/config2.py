@@ -11,22 +11,11 @@ from langchain_openai import ChatOpenAI
 class Settings(BaseSettings):
     """Application configuration loaded from environment variables."""
 
-    # OpenAI Configuration
-    openai_api_key: str = ""
-    openai_model: str = "gpt-4o"
-    openai_temperature: float = 0.0
-
-    # ClickHouse Configuration
-    clickhouse_host: str = "localhost"
-    clickhouse_port: int = 8123
-    clickhouse_user: str = "default"
-    clickhouse_password: str = ""
-    clickhouse_database: str = "default"
-
     # Server Configuration
     server_host: str = "0.0.0.0"
     server_port: int = 8000
-    cors_origins: list[str] = ["http://localhost:3000","http://127.0.0.1:3000"]
+    cors_origins: list[str] = ["*"]
+    config_path: str = "./agent.local.yaml"
 
     # Agent Configuration
     max_iterations: int = 10

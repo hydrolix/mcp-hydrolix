@@ -1,0 +1,134 @@
+server:
+  bind: 0.0.0.0
+  port: 8080
+  workers: 2  # per worker settings
+  timeout: 120
+  worker_connections: 50
+  max_requests: 100
+  max_requests_jitter: 1000
+  keep_alive: 5
+
+security:
+  base_url: https://demo.trafficpeak.live/config/v1/
+  cache_ttl_sec: 300
+  cache_max_size: 1000
+
+vectorstore:
+  chromadb:
+    host: localhost
+    port: 8000
+    path: /Users/odemkovych/Projects/hydrolix/ariadne/ariadne-core/chroma
+
+db:
+  postgresql: &db-postgresql
+    host: localhost
+    port: 5432
+    username: postgres
+    password: postgres
+    pool: # per each worker
+      min_size: 10
+      max_size: 25
+
+  sqlite: &db-sqlite
+    path: /tmp/ariadne-core/checkpointer.sqlite
+
+mcp:
+  url: http://127.0.0.1:8000/mcp
+
+wandb:
+  entity:
+  project_name:
+  api_key:
+
+llm:provider:
+  litellm: &provider-litellm
+    api_type: litellm
+    api_base_url: http://localhost:4000
+    api_key: emptykey
+
+llm:model:
+  llama: &model-llama
+    timeout: 60
+    temperature: 0.4
+    top_p: 0.2
+    max_completion_tokens: 4096
+
+  gpt-4o: &model-gpt-4o
+    timeout: 60
+    temperature: 0.4
+    top_p: 0.2
+    max_completion_tokens: 16384
+
+  gpt-oss-120b: &model-gpt-oss-120b
+    timeout: 60
+    temperature: 0.4
+    top_p: 0.2
+    max_completion_tokens: 16384
+
+  nova-micro: &model-nova-micro
+    timeout: 60
+    temperature: 0.4
+    top_p: 0.2
+    max_completion_tokens: 10000
+
+  text-embedding-3-small: &emb3small
+    timeout: 60
+
+
+graph:
+  litellm-gpt-4o: &graph-litellm-gpt-4o
+    assistant:
+      <<: *provider-litellm
+      <<: *model-gpt-4o
+      model_name: gpt-4o
+
+    summary:
+      <<: *provider-litellm
+      <<: *model-gpt-4o
+      model_name: gpt-4o
+      max_completion_tokens: 2048
+      max_tokens_before_summary: 2048
+      max_summary_tokens: 1024
+
+    embedding:
+      <<: *provider-litellm
+      <<: *emb3small
+      model_name: text-embedding-3-small
+
+  litellm-gpt-oss-120b: &graph-litellm-gpt-oss-120b
+    assistant:
+      <<: *provider-litellm
+      <<: *model-gpt-oss-120b
+      model_name: gpt-oss-120b
+    summary:
+      <<: *provider-litellm
+      <<: *model-gpt-oss-120b
+      model_name: gpt-oss-120b
+      max_completion_tokens: 2048
+      max_tokens_before_summary: 2048
+      max_summary_tokens: 1024
+    embedding:
+      <<: *provider-litellm
+      <<: *emb3small
+      model_name: text-embedding-3-small
+
+  litellm-nova-micro: &graph-litellm-nova-micro
+    assistant:
+      <<: *provider-litellm
+      <<: *model-nova-micro
+      model_name: nova-micro
+
+    summary:
+      <<: *provider-litellm
+      <<: *model-nova-micro
+      model_name: nova-micro
+      max_completion_tokens: 2048
+      max_tokens_before_summary: 2048
+      max_summary_tokens: 1024
+
+  <<: *graph-litellm-gpt-oss-120b
+
+  memory:
+    postgresql:
+      <<: *db-postgresql
+      database: ariadne_core

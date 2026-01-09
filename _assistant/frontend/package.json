@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "next dev",
+    "dev": "NODE_ENV=local next dev",
     "build": "next build",
     "start": "next start"
   },

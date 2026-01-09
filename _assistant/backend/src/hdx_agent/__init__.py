@@ -1,7 +1,8 @@
 """ClickHouse SQL Agent Backend."""
+
 from pathlib import Path
 
-from hdx_agent.config import Config
+from hdx_agent.config import Config, get_settings
 
-Config.set_config_path(Path("/Users/odemkovych/Projects/docker/agent/agent.local.yaml"))
-
+settings = get_settings()
+Config.set_config_path(Path(settings.config_path))

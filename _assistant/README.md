@@ -1,5 +1,57 @@
 # GRAP-143 Research and PoC for MCP Apps integration with simple MCP server and chat
 
+## How to run
+
+### Clickhouse DB
+Run clickhouse db and then add some test data.
+```shell
+docker compose -f ../docker-compose.yaml up -d
+```
+
+### LiteLLM
+```shell
+export ARIADNE_WANDB_API_KEY=
+export AZURE_OPENAI_API_KEY=
+export AZURE_OPENAI_ENDPOINT=
+
+# pip install litellm[proxy]
+litellm -c ./litellm.local.yaml --port 4000
+```
+
+### MCP Hydrolix
+```shell
+cd ..
+export HYDROLIX_DB=
+export HYDROLIX_HOST=127.0.0.1
+export HYDROLIX_MCP_BIND_PORT=8000
+export HYDROLIX_MCP_SERVER_TRANSPORT=http
+export HYDROLIX_MCP_WORKERS=2
+export HYDROLIX_PORT=8123
+export HYDROLIX_SECURE=false
+export HYDROLIX_VERIFY=false
+export HYDROLIX_USER=default
+export HYDROLIX_PASSWORD=clickhouse
+
+uv sync
+uv run mcp-hydrolix
+```
+
+### Agent Backend
+```shell
+cd ./backend
+uv sync
+uv run backend
+```
+
+### Agent Frontend
+```shell
+cd ./frontend
+npm install -d
+npm run dev
+```
+
+
+
 ## Overview
 
 The Proof of Concept (POC) developed under GRAP-143 establishes a viable tech stack for accelerating the development of the Hydrolix AI Agent application.

@@ -4,8 +4,8 @@ import {StreamableHTTPClientTransport} from "@modelcontextprotocol/sdk/client/st
 import {RESOURCE_MIME_TYPE, RESOURCE_URI_META_KEY} from "@modelcontextprotocol/ext-apps/app-bridge";
 
 
-export const MCP_SERVER_URL = new URL('http://127.0.0.1:8000/mcp')
-export const SANDBOX_PROXY_URL = new URL("http://127.0.0.1:8000/ui/sandbox.html");
+export const MCP_SERVER_URL = new URL((process.env["NEXT_PUBLIC_MCP_SERVER_URL"] as string | undefined) ?? "http://127.0.0.1:8000/mcp")
+export const SANDBOX_PROXY_URL = new URL((process.env["NEXT_PUBLIC_SANDBOX_PROXY_URL"] as string | undefined) ?? "http://127.0.0.1:8000/ui/sandbox.html");
 export const IMPLEMENTATION = {name: "MCP Assistant UI", version: "2.0.0"};
 
 export interface ServerInfo {
