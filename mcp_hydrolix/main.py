@@ -71,6 +71,9 @@ def main():
             ).run()
     else:
         # For stdio transport, no host or port is needed
+        log_dict_config = setup_logging(None, "INFO", "json")
+        if log_dict_config:
+            lconfig.dictConfig(log_dict_config)
         mcp.run(transport=transport)
 
 
