@@ -252,35 +252,58 @@ async def list_tables(
     """List available Hydrolix tables in a database, including schema, comment,
     row count, and column count."""
     logger.info(f"Listing tables in database '{database}'")
+
+    # Single optimized query using LEFT JOIN and groupArray to fetch all data at once
     query = f"""
-        SELECT database, name, engine, create_table_query, dependencies_database,
-            dependencies_table, engine_full, sorting_key, primary_key, total_rows, total_bytes,
-            total_bytes_uncompressed, parts, active_parts, total_marks, comment
-        FROM system.tables WHERE database = {format_query_value(database)}"""
+        SELECT
+            t.database, t.name, t.engine, t.create_table_query, t.dependencies_database,
+            t.dependencies_table, t.engine_full, t.sorting_key, t.primary_key, t.total_rows,
+            t.total_bytes, t.total_bytes_uncompressed, t.parts, t.active_parts, t.total_marks,
+            t.comment,
+            groupArray(tuple(c.database, c.table, c.name, c.type, c.default_kind, c.default_expression, c.comment)) as columns
+        FROM system.tables t
+        LEFT JOIN system.columns c ON t.database = c.database AND t.name = c.table
+        WHERE t.database = {format_query_value(database)}"""
+
     if like:
-        query += f" AND name LIKE {format_query_value(like)}"
+        query += f" AND t.name LIKE {format_query_value(like)}"
 
     if not_like:
-        query += f" AND name NOT LIKE {format_query_value(not_like)}"
+        query += f" AND t.name NOT LIKE {format_query_value(not_like)}"
+
+    query += """
+        GROUP BY t.database, t.name, t.engine, t.create_table_query, t.dependencies_database,
+                 t.dependencies_table, t.engine_full, t.sorting_key, t.primary_key, t.total_rows,
+                 t.total_bytes, t.total_bytes_uncompressed, t.parts, t.active_parts, t.total_marks, t.comment"""
 
     result = await execute_query(query)
 
-    # Deserialize result as Table dataclass instances
-    tables = result_to_table(result["columns"], result["rows"])
+    # Process results and convert aggregated columns
+    tables = []
+    for row in result["rows"]:
+        # First 16 fields are table metadata
+        table_data = dict(zip(result["columns"][:16], row[:16]))
+        table = Table(**table_data)
 
-    for table in tables:
-        column_data_query = f"""
-            SELECT database, table, name, type AS column_type, default_kind, default_expression, comment
-            FROM system.columns
-            WHERE database = {format_query_value(database)} AND table = {format_query_value(table.name)}"""
-        column_data_query_result = await execute_query(column_data_query)
+        # 17th field (index 16) is the aggregated columns array
+        columns_array = row[16] if len(row) > 16 else []
+
+        # Convert column tuples to Column objects
         table.columns = [
-            c
-            for c in result_to_column(
-                column_data_query_result["columns"],
-                column_data_query_result["rows"],
+            Column(
+                database=col_tuple[0],
+                table=col_tuple[1],
+                name=col_tuple[2],
+                column_type=col_tuple[3],
+                default_kind=col_tuple[4],
+                default_expression=col_tuple[5],
+                comment=col_tuple[6]
             )
+            for col_tuple in columns_array
+            if col_tuple[2] is not None  # Filter out empty tuples from tables with no columns
         ]
+
+        tables.append(table)
 
     logger.info(f"Found {len(tables)} tables")
     return tables
