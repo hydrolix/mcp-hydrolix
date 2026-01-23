@@ -271,7 +271,7 @@ Example `mcpServers` configuration connecting to a remote HTTP server with per-r
 {
   "mcpServers": {
     "mcp-hydrolix-remote": {
-      "url": "http://my-hydrolix-mcp.example.com:8000/mcp?token=<service-account-token>"
+      "url": "http://my-hydrolix-mcp.example.com/mcp?token=<service-account-token>"
     }
   }
 }
