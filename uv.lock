@@ -803,6 +803,7 @@ name = "mcp-hydrolix"
 version = "0.1.7"
 source = { editable = "." }
 dependencies = [
+    { name = "certifi" },
     { name = "clickhouse-connect" },
     { name = "fastmcp" },
     { name = "gunicorn" },
@@ -825,6 +826,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "certifi", specifier = ">=2024.0.0" },
     { name = "clickhouse-connect", specifier = ">=0.10,<0.11" },
     { name = "fastapi", marker = "extra == 'dev'", specifier = ">=0.124" },
     { name = "fastmcp", specifier = ">=2.14,<2.15" },
