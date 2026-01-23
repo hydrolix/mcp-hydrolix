@@ -46,10 +46,7 @@ class Table:
     database: str
     name: str
     engine: str
-    create_table_query: str
-    dependencies_database: List[str]
     dependencies_table: List[str]
-    engine_full: str
     sorting_key: str
     primary_key: str
     total_rows: Optional[int]
@@ -57,9 +54,7 @@ class Table:
     total_bytes_uncompressed: Optional[int]
     parts: Optional[int]
     active_parts: Optional[int]
-    total_marks: Optional[int]
     columns: Optional[List[Column]] = Field([])
-    comment: Optional[str] = None
 
 
 @dataclass
@@ -249,17 +244,16 @@ async def list_databases() -> List[str]:
 async def list_tables(
     database: str, like: Optional[str] = None, not_like: Optional[str] = None
 ) -> List[Table]:
-    """List available Hydrolix tables in a database, including schema, comment,
+    """List available Hydrolix tables in a database, including schema,
     row count, and column count."""
     logger.info(f"Listing tables in database '{database}'")
 
     # Single optimized query using LEFT JOIN and groupArray to fetch all data at once
     query = f"""
         SELECT
-            t.database, t.name, t.engine, t.create_table_query, t.dependencies_database,
-            t.dependencies_table, t.engine_full, t.sorting_key, t.primary_key, t.total_rows,
-            t.total_bytes, t.total_bytes_uncompressed, t.parts, t.active_parts, t.total_marks,
-            t.comment,
+            t.database, t.name, t.engine,
+            t.dependencies_table, t.sorting_key, t.primary_key, t.total_rows,
+            t.total_bytes, t.total_bytes_uncompressed, t.parts, t.active_parts,
             groupArray(tuple(c.database, c.table, c.name, c.type, c.default_kind, c.default_expression, c.comment)) as columns
         FROM system.tables t
         LEFT JOIN system.columns c ON t.database = c.database AND t.name = c.table
@@ -272,21 +266,21 @@ async def list_tables(
         query += f" AND t.name NOT LIKE {format_query_value(not_like)}"
 
     query += """
-        GROUP BY t.database, t.name, t.engine, t.create_table_query, t.dependencies_database,
-                 t.dependencies_table, t.engine_full, t.sorting_key, t.primary_key, t.total_rows,
-                 t.total_bytes, t.total_bytes_uncompressed, t.parts, t.active_parts, t.total_marks, t.comment"""
+        GROUP BY t.database, t.name, t.engine,
+                 t.dependencies_table, t.sorting_key, t.primary_key, t.total_rows,
+                 t.total_bytes, t.total_bytes_uncompressed, t.parts, t.active_parts"""
 
     result = await execute_query(query)
 
     # Process results and convert aggregated columns
     tables = []
     for row in result["rows"]:
-        # First 16 fields are table metadata
-        table_data = dict(zip(result["columns"][:16], row[:16]))
+        # First 11 fields are table metadata
+        table_data = dict(zip(result["columns"][:11], row[:11]))
         table = Table(**table_data)
 
-        # 17th field (index 16) is the aggregated columns array
-        columns_array = row[16] if len(row) > 16 else []
+        # 12th field (index 11) is the aggregated columns array
+        columns_array = row[11] if len(row) > 11 else []
 
         # Convert column tuples to Column objects
         table.columns = [
