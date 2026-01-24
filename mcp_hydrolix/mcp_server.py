@@ -137,10 +137,16 @@ pool_kwargs = {
     "num_pools": 1,
     "verify": HYDROLIX_CONFIG.verify,
 }
-if not HYDROLIX_CONFIG.verify:
+
+# When verify=True, use certifi CA bundle for SSL verification
+# This ensures we trust modern CAs like Let's Encrypt
+if HYDROLIX_CONFIG.verify:
+    pool_kwargs["ca_cert"] = "certifi"
+else:
     import urllib3
 
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
 client_shared_pool = httputil.get_pool_manager(**pool_kwargs)
 
 
