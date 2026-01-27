@@ -381,6 +381,8 @@ async def _populate_table_metadata(database: str, table: Table) -> None:
             "Aggregate columns (column_category='aggregate') MUST be wrapped in their corresponding -Merge functions. "
             "ALIAS aggregate columns (column_category='alias_aggregate') are pre-wrapped aggregates - use directly without -Merge. "
             "Dimension columns (column_category='dimension') can be SELECTed directly and MUST appear in GROUP BY when mixed with aggregates. "
+            "IMPORTANT: Dimension columns may have function-like names (e.g., 'toStartOfHour(col)') - these are LITERAL column names, use them exactly as-is with backticks. "
+            "WRONG: SELECT toStartOfHour(col). RIGHT: SELECT `toStartOfHour(col)`. Also use in GROUP BY: GROUP BY `toStartOfHour(col)`. "
             "CRITICAL RULE: If your SELECT includes ANY dimension columns (column_category='dimension') "
             "AND ANY aggregate columns (column_category='aggregate' or 'alias_aggregate'), "
             "you MUST include 'GROUP BY <all dimension columns from SELECT>'. "
