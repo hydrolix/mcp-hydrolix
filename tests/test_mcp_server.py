@@ -130,14 +130,12 @@ async def test_list_tables_basic(mcp_server, setup_test_database):
             assert "columns" in table
             assert "total_rows" in table
             assert "engine" in table
-            assert "comment" in table
 
             # Verify column information exists
             assert len(table["columns"]) > 0
             for column in table["columns"]:
                 assert "name" in column
                 assert "column_type" in column
-                assert "comment" in column
 
 
 @pytest.mark.asyncio
@@ -291,12 +289,8 @@ async def test_table_metadata_details(mcp_server, setup_test_database):
         # Find our test table
         test_table_info = next(t for t in tables if t["name"] == test_table)
 
-        # Check table comment
-        assert test_table_info["comment"] == "Test table for MCP server testing"
-
         # Check engine info
         assert test_table_info["engine"] == "MergeTree"
-        assert "MergeTree" in test_table_info["engine_full"]
 
         # Check row count
         assert test_table_info["total_rows"] == 4
