@@ -2,7 +2,8 @@ import logging
 import re
 import signal
 from collections.abc import Sequence
-from typing import Any, Final, Optional, List, cast, TypedDict
+from graphlib import TopologicalSorter
+from typing import Any, Final, Optional, List, cast, TypedDict, Set, Dict, Union, Literal
 
 import clickhouse_connect
 from clickhouse_connect import common
@@ -15,6 +16,8 @@ from fastmcp.server.dependencies import get_access_token
 from jwt import DecodeError
 from pydantic import Field
 from pydantic.dataclasses import dataclass
+import sqlglot
+from sqlglot import exp
 from starlette.requests import Request
 from starlette.responses import PlainTextResponse
 
@@ -29,20 +32,60 @@ from mcp_hydrolix.mcp_env import HydrolixConfig, get_config
 from mcp_hydrolix.utils import with_serializer
 
 
-@dataclass
+@dataclass(frozen=True)
 class Column:
-    """Column with enriched metadata: column_category, base_function, merge_function."""
+    """Regular dimension column (non-ALIAS, non-aggregate)."""
 
     database: str
     table: str
     name: str
     column_type: str
-    default_kind: Optional[str]
-    default_expression: Optional[str]
     comment: Optional[str]
-    column_category: Optional[str] = None  # 'aggregate', 'alias_aggregate', 'dimension'
-    base_function: Optional[str] = None
-    merge_function: Optional[str] = None
+    kind: Literal["Column"] = "Column"
+
+
+@dataclass(frozen=True)
+class AliasColumn:
+    """ALIAS dimension column (ALIAS but not an aggregate)."""
+
+    database: str
+    table: str
+    name: str
+    column_type: str
+    comment: Optional[str]
+    default_expression: str
+    kind: Literal["AliasColumn"] = "AliasColumn"
+
+
+@dataclass(frozen=True)
+class AggregateColumn:
+    """Raw aggregate column (AggregateFunction/SimpleAggregateFunction type)."""
+
+    database: str
+    table: str
+    name: str
+    column_type: str
+    comment: Optional[str]
+    base_function: str
+    merge_function: str
+    kind: Literal["AggregateColumn"] = "AggregateColumn"
+
+
+@dataclass(frozen=True)
+class SummaryColumn:
+    """ALIAS aggregate column (ALIAS wrapping a -Merge function)."""
+
+    database: str
+    table: str
+    name: str
+    column_type: str
+    comment: Optional[str]
+    default_expression: str
+    kind: Literal["SummaryColumn"] = "SummaryColumn"
+
+
+# Union type for all column types
+ColumnType = Union[Column, AliasColumn, AggregateColumn, SummaryColumn]
 
 
 @dataclass
@@ -59,7 +102,7 @@ class Table:
     total_bytes_uncompressed: Optional[int]
     parts: Optional[int]
     active_parts: Optional[int]
-    columns: Optional[List[Column]] = Field(default_factory=list)
+    columns: Optional[List[ColumnType]] = Field(default_factory=list)
     is_summary_table: bool = False
     summary_table_info: Optional[str] = None
 
@@ -69,13 +112,23 @@ class HdxQueryResult(TypedDict):
     rows: List[List[Any]]
 
 
+class RawColumnData(TypedDict):
+    """Raw column data from DESCRIBE TABLE query."""
+
+    name: str
+    type: str
+    default_type: str
+    default_expression: str
+    comment: str
+
+
 @dataclass
 class TableClassification:
     """Result of table column classification."""
 
     is_summary_table: bool
-    aggregate_columns: List[Column]
-    dimension_columns: List[Column]
+    aggregate_columns: List[Union[AggregateColumn, SummaryColumn]]
+    dimension_columns: List[Union[Column, AliasColumn]]
 
 
 MCP_SERVER_NAME = "mcp-hydrolix"
@@ -276,7 +329,7 @@ def get_merge_function(base_function: str) -> str:
         return f"{base_function}Merge"
 
 
-def classify_table_columns(columns: List[Column]) -> TableClassification:
+def classify_table_columns(columns: List[ColumnType]) -> TableClassification:
     """
     Classify columns and determine if table is a summary table (has any aggregate columns).
     Requires columns to be enriched first via enrich_column_metadata().
@@ -285,7 +338,7 @@ def classify_table_columns(columns: List[Column]) -> TableClassification:
     dimension_columns = []
 
     for column in columns:
-        if column.column_category in ("aggregate", "alias_aggregate"):
+        if isinstance(column, (AggregateColumn, SummaryColumn)):
             aggregate_columns.append(column)
         else:
             dimension_columns.append(column)
@@ -297,38 +350,161 @@ def classify_table_columns(columns: List[Column]) -> TableClassification:
     )
 
 
-def enrich_column_metadata(column: Column) -> Column:
+def _compute_aggregate_columns(alias_definitions: Dict[str, str]) -> Set[str]:
     """
-    Classify column as aggregate, alias_aggregate, or dimension and populate metadata.
-    Sets column_category, base_function, and merge_function fields.
+    Determine which ALIAS columns are aggregates (directly or transitively).
+
+    Uses sqlglot to parse SQL expressions and build a dependency graph, then
+    determines which aliases are aggregates by checking for aggregate functions
+    in their expressions or transitive dependencies on other aggregates.
+
+    Args:
+        alias_definitions: Dict[column_name, default_expression]
+
+    Returns:
+        Set of column names that are aggregates (directly or transitively)
+
+    Example:
+        alias_defs = {
+            "cnt_all": "countMerge(`count()`)",
+            "pct_errors": "cnt_errors / cnt_all * 100"  # Transitive aggregate
+        }
+        result = _compute_aggregate_columns(alias_defs)
+        # Returns: {"cnt_all", "pct_errors"}
+    """
+    if not alias_definitions:
+        return set()
+
+    # Parse all expressions with sqlglot
+    parsed_aliases: Dict[str, sqlglot.Expression] = {}
+    for name, sql in alias_definitions.items():
+        try:
+            parsed_aliases[name] = sqlglot.parse_one(sql, dialect="clickhouse")
+        except Exception as e:
+            logger.warning(f"Failed to parse ALIAS column '{name}' expression: {sql}, error: {e}")
+            continue
+
+    def alias_dependencies(name: str, expr: sqlglot.Expression) -> Set[str]:
+        """Get the aliases that `name` depends on directly by walking its AST."""
+        return {
+            node.name
+            for node in expr.walk()
+            if isinstance(node, (exp.Column, exp.Identifier))
+            and node.name in parsed_aliases
+            and node.name != name
+        }
+
+    # Build dependency graph: column -> set of columns it depends on
+    alias_dependency_graph: Dict[str, Set[str]] = {
+        name: alias_dependencies(name, expr)
+        for name, expr in parsed_aliases.items()
+    }
+
+    # Process in topological order (dependencies before dependents)
+    is_aggregate: Dict[str, bool] = {}
+    for alias in TopologicalSorter(alias_dependency_graph).static_order():
+        # Check if expression contains an aggregate function directly
+        is_direct_agg = parsed_aliases[alias].find(exp.AggFunc) is not None
+
+        # Check if it references another aggregate (transitive)
+        is_transitive_agg = any(
+            is_aggregate.get(required_alias, False)
+            for required_alias in alias_dependency_graph[alias]
+        )
+
+        is_aggregate[alias] = is_direct_agg or is_transitive_agg
+
+    return {col for col, is_agg in is_aggregate.items() if is_agg}
+
+
+def enrich_column_metadata(
+    database: str, table: str, raw_columns: List[RawColumnData]
+) -> List[ColumnType]:
+    """
+    Classify columns into distinct types based on their characteristics.
 
     Detection strategy:
-    1. Check column_type for AggregateFunction/SimpleAggregateFunction (primary method)
-    2. Check if ALIAS wrapping a -Merge function (for user-friendly shortcuts)
-    3. Everything else is a dimension
+    1. Check column_type for AggregateFunction/SimpleAggregateFunction → AggregateColumn
+    2. Use sqlglot AST parsing to detect ALIAS aggregates (including transitive) → SummaryColumn
+    3. ALIAS columns that aren't aggregates → AliasColumn
+    4. Everything else → Column (regular dimension)
 
     Note: In real ClickHouse summary tables, aggregate columns ALWAYS have
     AggregateFunction or SimpleAggregateFunction types.
+
+    Args:
+        database: Database name
+        table: Table name
+        raw_columns: List of raw column dictionaries from DESCRIBE TABLE
+
+    Returns:
+        List of typed column objects (Column, AliasColumn, AggregateColumn, or SummaryColumn)
     """
+    # Collect all ALIAS column definitions for aggregate detection
+    alias_definitions = {
+        col["name"]: col["default_expression"]
+        for col in raw_columns
+        if col["default_type"] == "ALIAS" and col["default_expression"]
+    }
 
-    type_func = extract_function_from_type(column.column_type)
-    if type_func:
-        column.column_category = "aggregate"
-        column.base_function = type_func
-        column.merge_function = get_merge_function(type_func)
-    elif (
-        column.default_kind == "ALIAS"
-        and column.default_expression
-        and "Merge(" in column.default_expression
-    ):
-        column.column_category = "alias_aggregate"
-        column.base_function = None
-        column.merge_function = None
-    # Everything else is a dimension
-    else:
-        column.column_category = "dimension"
+    # Use sqlglot to determine which ALIAS columns are aggregates (direct or transitive)
+    aggregate_aliases = _compute_aggregate_columns(alias_definitions)
 
-    return column
+    # Classify each column and create the appropriate type
+    result: List[ColumnType] = []
+    for col in raw_columns:
+        type_func = extract_function_from_type(col["type"])
+
+        if type_func:
+            # AggregateFunction or SimpleAggregateFunction type
+            result.append(
+                AggregateColumn(
+                    database=database,
+                    table=table,
+                    name=col["name"],
+                    column_type=col["type"],
+                    comment=col.get("comment"),
+                    base_function=type_func,
+                    merge_function=get_merge_function(type_func),
+                )
+            )
+        elif col["name"] in aggregate_aliases:
+            # ALIAS column that's an aggregate (detected via AST parsing)
+            result.append(
+                SummaryColumn(
+                    database=database,
+                    table=table,
+                    name=col["name"],
+                    column_type=col["type"],
+                    comment=col.get("comment"),
+                    default_expression=col["default_expression"],
+                )
+            )
+        elif col["default_type"] == "ALIAS":
+            # ALIAS column that's NOT an aggregate (dimension)
+            result.append(
+                AliasColumn(
+                    database=database,
+                    table=table,
+                    name=col["name"],
+                    column_type=col["type"],
+                    comment=col.get("comment"),
+                    default_expression=col["default_expression"],
+                )
+            )
+        else:
+            # Regular dimension column
+            result.append(
+                Column(
+                    database=database,
+                    table=table,
+                    name=col["name"],
+                    column_type=col["type"],
+                    comment=col.get("comment"),
+                )
+            )
+
+    return result
 
 
 async def _populate_table_metadata(database: str, table: Table) -> None:
@@ -346,25 +522,22 @@ async def _populate_table_metadata(database: str, table: Table) -> None:
     column_data_query_result = await execute_query(column_data_query)
 
     # DESCRIBE TABLE returns: name, type, default_type, default_expression, comment, ...
-    # Transform results to Column objects, mapping DESCRIBE TABLE fields to Column dataclass fields
+    # Transform results to raw column data dictionaries
     column_names = column_data_query_result["columns"]
-    columns = [
-        Column(
-            database=database,
-            table=table.name,
-            name=row_dict.get("name", ""),
-            column_type=row_dict.get("type", ""),
-            default_kind=row_dict.get("default_type", ""),
-            default_expression=row_dict.get("default_expression", ""),
-            comment=row_dict.get("comment", ""),
-        )
+    raw_columns: List[RawColumnData] = [
+        {
+            "name": row_dict.get("name", ""),
+            "type": row_dict.get("type", ""),
+            "default_type": row_dict.get("default_type", ""),
+            "default_expression": row_dict.get("default_expression", ""),
+            "comment": row_dict.get("comment", ""),
+        }
         for row_dict in (dict(zip(column_names, row)) for row in column_data_query_result["rows"])
     ]
 
-    # Summary Table Support: Enrich column metadata
-    # For each column, detect if it's an aggregate, alias_aggregate, or dimension
-    # and populate column_category, base_function, and merge_function fields.
-    enriched_columns = [enrich_column_metadata(col) for col in columns]
+    # Summary Table Support: Classify columns into typed objects
+    # (Column, AliasColumn, AggregateColumn, or SummaryColumn)
+    enriched_columns = enrich_column_metadata(database, table.name, raw_columns)
 
     # Classify table based on enriched column metadata
     # A table is a summary table if it has ANY aggregate columns
@@ -377,22 +550,30 @@ async def _populate_table_metadata(database: str, table: Table) -> None:
         num_agg = len(classification.aggregate_columns)
         num_dim = len(classification.dimension_columns)
         summary_table_info = (
-            f"This is a SUMMARY TABLE with {num_agg} aggregate column(s) and {num_dim} dimension column(s). "
-            "Aggregate columns (column_category='aggregate') MUST be wrapped in their corresponding -Merge functions. "
-            "ALIAS aggregate columns (column_category='alias_aggregate') are pre-wrapped aggregates - use directly without -Merge. "
-            "Dimension columns (column_category='dimension') can be SELECTed directly and MUST appear in GROUP BY when mixed with aggregates. "
-            "IMPORTANT: Dimension columns may have function-like names (e.g., 'toStartOfHour(col)') - these are LITERAL column names, use them exactly as-is with backticks. "
-            "WRONG: SELECT toStartOfHour(col). RIGHT: SELECT `toStartOfHour(col)`. Also use in GROUP BY: GROUP BY `toStartOfHour(col)`. "
-            "CRITICAL RULE: If your SELECT includes ANY dimension columns (column_category='dimension') "
-            "AND ANY aggregate columns (column_category='aggregate' or 'alias_aggregate'), "
-            "you MUST include 'GROUP BY <all dimension columns from SELECT>'. "
-            "WITHOUT GROUP BY, the query will FAIL with 'NOT_AN_AGGREGATE' error. "
-            "IMPORTANT: ALIAS aggregates (column_category='alias_aggregate') are NOT dimensions - do NOT include them in GROUP BY. "
-            "Example: SELECT reqHost, cnt_all FROM table GROUP BY reqHost (reqHost=dimension, cnt_all=alias_aggregate). "
-            "CRITICAL: You MUST use the EXACT merge_function value from each aggregate column's metadata. "
-            "DO NOT infer the merge function from the column name - always check the merge_function field. "
-            "For example, if column `avgIf(col, condition)` has merge_function='avgIfMerge', "
-            "you MUST use avgIfMerge(`avgIf(col, condition)`), NOT avgMerge(...)."
+            f"This is a SUMMARY TABLE with {num_agg} aggregate column(s) and {num_dim} dimension column(s).\n\n"
+
+            "COLUMN TYPES (identified by 'kind' field):\n"
+            "  • kind='AggregateColumn': Raw aggregates with base_function/merge_function fields\n"
+            "    → MUST wrap with merge_function when querying\n"
+            "    → CRITICAL: Use EXACT merge_function value from metadata - DO NOT infer from column name - always check the merge_function field\n"
+            "    → Example: If column `avgIf(col, condition)` has merge_function='avgIfMerge', you MUST use avgIfMerge(`avgIf(col, condition)`), NOT avgMerge(...)\n"
+            "  • kind='SummaryColumn': Pre-wrapped ALIAS aggregates with default_expression field\n"
+            "    → Can be used directly without -Merge wrapper (already contains merge function)\n"
+            "  • kind='AliasColumn': Computed ALIAS dimensions with default_expression field\n"
+            "    → These are dimensions, NOT aggregates\n"
+            "  • kind='Column': Regular dimension columns\n\n"
+
+            "CRITICAL QUERY RULES:\n"
+            "  1. GROUP BY requirement: If SELECT includes ANY dimensions (kind='Column' OR kind='AliasColumn') "
+            "AND ANY aggregates (kind='AggregateColumn' OR kind='SummaryColumn'), you MUST include "
+            "'GROUP BY <all dimension columns from SELECT>'. WITHOUT GROUP BY, the query will FAIL with 'NOT_AN_AGGREGATE' error.\n"
+            "  2. Aggregates (kind='AggregateColumn' or kind='SummaryColumn') are NOT dimensions - do NOT include them in GROUP BY.\n"
+            "  3. Example: SELECT reqHost, cnt_all FROM table GROUP BY reqHost (reqHost has kind='Column', cnt_all has kind='SummaryColumn')\n\n"
+
+            "IMPORTANT WARNINGS:\n"
+            "  • Function-like column names: Dimension columns (kind='Column' or 'AliasColumn') may have "
+            "function-like names like 'toStartOfHour(col)' - these are LITERAL column names, use exactly as-is with backticks.\n"
+            "    WRONG: SELECT toStartOfHour(col). RIGHT: SELECT `toStartOfHour(col)`. Also in GROUP BY: GROUP BY `toStartOfHour(col)`."
         )
 
     # Populate table object with metadata
@@ -426,11 +607,11 @@ async def get_table_info(database: str, table: str) -> Table:
 
     This tool provides:
     - is_summary_table: Boolean indicating if table has pre-aggregated data
-    - columns: List of columns with metadata:
-      - column_category: 'aggregate', 'alias_aggregate', or 'dimension'
-      - merge_function: Exact -Merge function name for aggregate columns (e.g., "countMerge")
-      - column_type: ClickHouse data type
-      - default_expression: For ALIAS columns, shows the underlying expression
+    - columns: List of columns with metadata (each has a 'kind' field identifying type):
+      - kind='AggregateColumn': Raw aggregates with base_function/merge_function fields
+      - kind='SummaryColumn': Pre-wrapped ALIAS aggregates with default_expression
+      - kind='AliasColumn': Computed ALIAS dimensions with default_expression
+      - kind='Column': Regular dimension columns
     - summary_table_info: Human-readable description for summary tables
     - row_count, total_bytes: Table statistics
 
@@ -438,8 +619,9 @@ async def get_table_info(database: str, table: str) -> Table:
     1. Call get_table_info('database', 'table_name')
     2. Check is_summary_table field
     3. If is_summary_table=True:
-       - Read column_category and merge_function for each column
-       - Use merge_function to wrap aggregate columns in queries
+       - Check 'kind' field for each column
+       - For kind='AggregateColumn': wrap with merge_function in queries
+       - For kind='SummaryColumn': use directly without wrapping
        - Example: SELECT countMerge(`count(vendor_id)`) FROM table
     4. If is_summary_table=False:
        - Use standard SQL (SELECT count(*), sum(col), etc.)

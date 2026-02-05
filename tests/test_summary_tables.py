@@ -2,6 +2,9 @@
 
 from mcp_hydrolix.mcp_server import (
     Column,
+    AliasColumn,
+    AggregateColumn,
+    SummaryColumn,
     classify_table_columns,
     enrich_column_metadata,
     extract_function_from_type,
@@ -52,75 +55,67 @@ class TestEnrichColumnMetadata:
 
     def test_detects_aggregate_from_type(self):
         """Test aggregate columns are detected from AggregateFunction type."""
-        col = Column(
-            database="test_db",
-            table="test_table",
-            name="any_name",
-            column_type="AggregateFunction(count, String)",
-            default_kind="",
-            default_expression="",
-            comment="",
-        )
+        raw_col = {
+            "name": "any_name",
+            "type": "AggregateFunction(count, String)",
+            "default_type": "",
+            "default_expression": "",
+            "comment": "",
+        }
 
-        enriched = enrich_column_metadata(col)
+        enriched = enrich_column_metadata("test_db", "test_table", [raw_col])[0]
 
-        assert enriched.column_category == "aggregate"
+        assert isinstance(enriched, AggregateColumn)
         assert enriched.base_function == "count"
         assert enriched.merge_function == "countMerge"
 
     def test_classifies_as_dimension_without_aggregate_type(self):
         """Test columns without AggregateFunction type are dimensions."""
-        col = Column(
-            database="test_db",
-            table="test_table",
-            name="vendor_id",
-            column_type="String",
-            default_kind="",
-            default_expression="",
-            comment="",
-        )
+        raw_col = {
+            "name": "vendor_id",
+            "type": "String",
+            "default_type": "",
+            "default_expression": "",
+            "comment": "",
+        }
 
-        enriched = enrich_column_metadata(col)
+        enriched = enrich_column_metadata("test_db", "test_table", [raw_col])[0]
 
-        assert enriched.column_category == "dimension"
-        assert enriched.base_function is None
-        assert enriched.merge_function is None
+        assert isinstance(enriched, Column)
+        assert enriched.name == "vendor_id"
+        assert enriched.column_type == "String"
 
     def test_detects_alias_aggregates(self):
         """Test ALIAS columns with -Merge functions are detected."""
-        col = Column(
-            database="test_db",
-            table="test_table",
-            name="cnt_all",
-            column_type="",
-            default_kind="ALIAS",
-            default_expression="countMerge(`count()`)",
-            comment="",
-        )
+        raw_col = {
+            "name": "cnt_all",
+            "type": "",
+            "default_type": "ALIAS",
+            "default_expression": "countMerge(`count()`)",
+            "comment": "",
+        }
 
-        enriched = enrich_column_metadata(col)
+        enriched = enrich_column_metadata("test_db", "test_table", [raw_col])[0]
 
-        assert enriched.column_category == "alias_aggregate"
-        assert enriched.base_function is None
-        assert enriched.merge_function is None
+        assert isinstance(enriched, SummaryColumn)
+        assert enriched.name == "cnt_all"
+        assert enriched.default_expression == "countMerge(`count()`)"
 
     def test_alias_without_merge_is_dimension(self):
         """Test ALIAS columns without -Merge are dimensions."""
-        col = Column(
-            database="test_db",
-            table="test_table",
-            name="full_name",
-            column_type="",
-            default_kind="ALIAS",
-            default_expression="concat(first_name, ' ', last_name)",
-            comment="",
-        )
+        raw_col = {
+            "name": "full_name",
+            "type": "",
+            "default_type": "ALIAS",
+            "default_expression": "concat(first_name, ' ', last_name)",
+            "comment": "",
+        }
 
-        enriched = enrich_column_metadata(col)
+        enriched = enrich_column_metadata("test_db", "test_table", [raw_col])[0]
 
-        assert enriched.column_category == "dimension"
-        assert enriched.base_function is None
-        assert enriched.merge_function is None
+        assert isinstance(enriched, AliasColumn)
+        assert enriched.name == "full_name"
+        assert enriched.default_expression == "concat(first_name, ' ', last_name)"
 
 
 class TestClassifyTableColumns:
@@ -128,30 +123,23 @@ class TestClassifyTableColumns:
 
     def test_table_with_aggregates_is_summary_table(self):
         """Test table with aggregate columns is classified as summary table."""
-        columns = [
-            enrich_column_metadata(
-                Column(
-                    database="test_db",
-                    table="test",
-                    name="count(vendor_id)",
-                    column_type="AggregateFunction(count, String)",
-                    default_kind="",
-                    default_expression="",
-                    comment="",
-                )
-            ),
-            enrich_column_metadata(
-                Column(
-                    database="test_db",
-                    table="test",
-                    name="cdn",
-                    column_type="String",
-                    default_kind="",
-                    default_expression="",
-                    comment="",
-                )
-            ),
+        raw_columns = [
+            {
+                "name": "count(vendor_id)",
+                "type": "AggregateFunction(count, String)",
+                "default_type": "",
+                "default_expression": "",
+                "comment": "",
+            },
+            {
+                "name": "cdn",
+                "type": "String",
+                "default_type": "",
+                "default_expression": "",
+                "comment": "",
+            },
         ]
+        columns = enrich_column_metadata("test_db", "test", raw_columns)
 
         result = classify_table_columns(columns)
 
@@ -161,19 +149,16 @@ class TestClassifyTableColumns:
 
     def test_table_without_aggregates_is_regular_table(self):
         """Test table with only dimensions is not a summary table."""
-        columns = [
-            enrich_column_metadata(
-                Column(
-                    database="test_db",
-                    table="test",
-                    name="vendor_id",
-                    column_type="String",
-                    default_kind="",
-                    default_expression="",
-                    comment="",
-                )
-            ),
+        raw_columns = [
+            {
+                "name": "vendor_id",
+                "type": "String",
+                "default_type": "",
+                "default_expression": "",
+                "comment": "",
+            },
         ]
+        columns = enrich_column_metadata("test_db", "test", raw_columns)
 
         result = classify_table_columns(columns)
 
