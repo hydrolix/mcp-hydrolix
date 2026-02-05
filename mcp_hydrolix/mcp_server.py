@@ -41,6 +41,8 @@ class Column:
     name: str
     column_type: str
     comment: Optional[str]
+    default_type: Optional[str] = None
+    default_expression: Optional[str] = None
     kind: Literal["Column"] = "Column"
 
 
@@ -53,6 +55,7 @@ class AliasColumn:
     name: str
     column_type: str
     comment: Optional[str]
+    default_type: str
     default_expression: str
     kind: Literal["AliasColumn"] = "AliasColumn"
 
@@ -68,6 +71,8 @@ class AggregateColumn:
     comment: Optional[str]
     base_function: str
     merge_function: str
+    default_type: Optional[str] = None
+    default_expression: Optional[str] = None
     kind: Literal["AggregateColumn"] = "AggregateColumn"
 
 
@@ -80,6 +85,7 @@ class SummaryColumn:
     name: str
     column_type: str
     comment: Optional[str]
+    default_type: str
     default_expression: str
     kind: Literal["SummaryColumn"] = "SummaryColumn"
 
@@ -465,6 +471,8 @@ def enrich_column_metadata(
                     comment=col.get("comment"),
                     base_function=type_func,
                     merge_function=get_merge_function(type_func),
+                    default_type=col.get("default_type") or None,
+                    default_expression=col.get("default_expression") or None,
                 )
             )
         elif col["name"] in aggregate_aliases:
@@ -476,6 +484,7 @@ def enrich_column_metadata(
                     name=col["name"],
                     column_type=col["type"],
                     comment=col.get("comment"),
+                    default_type=col["default_type"],
                     default_expression=col["default_expression"],
                 )
             )
@@ -488,6 +497,7 @@ def enrich_column_metadata(
                     name=col["name"],
                     column_type=col["type"],
                     comment=col.get("comment"),
+                    default_type=col["default_type"],
                     default_expression=col["default_expression"],
                 )
             )
@@ -500,6 +510,8 @@ def enrich_column_metadata(
                     name=col["name"],
                     column_type=col["type"],
                     comment=col.get("comment"),
+                    default_type=col.get("default_type") or None,
+                    default_expression=col.get("default_expression") or None,
                 )
             )
 
