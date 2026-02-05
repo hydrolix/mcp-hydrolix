@@ -396,8 +396,7 @@ def _compute_aggregate_columns(alias_definitions: Dict[str, str]) -> Set[str]:
 
     # Build dependency graph: column -> set of columns it depends on
     alias_dependency_graph: Dict[str, Set[str]] = {
-        name: alias_dependencies(name, expr)
-        for name, expr in parsed_aliases.items()
+        name: alias_dependencies(name, expr) for name, expr in parsed_aliases.items()
     }
 
     # Process in topological order (dependencies before dependents)
@@ -551,7 +550,6 @@ async def _populate_table_metadata(database: str, table: Table) -> None:
         num_dim = len(classification.dimension_columns)
         summary_table_info = (
             f"This is a SUMMARY TABLE with {num_agg} aggregate column(s) and {num_dim} dimension column(s).\n\n"
-
             "COLUMN TYPES (identified by 'kind' field):\n"
             "  • kind='AggregateColumn': Raw aggregates with base_function/merge_function fields\n"
             "    → MUST wrap with merge_function when querying\n"
@@ -562,14 +560,12 @@ async def _populate_table_metadata(database: str, table: Table) -> None:
             "  • kind='AliasColumn': Computed ALIAS dimensions with default_expression field\n"
             "    → These are dimensions, NOT aggregates\n"
             "  • kind='Column': Regular dimension columns\n\n"
-
             "CRITICAL QUERY RULES:\n"
             "  1. GROUP BY requirement: If SELECT includes ANY dimensions (kind='Column' OR kind='AliasColumn') "
             "AND ANY aggregates (kind='AggregateColumn' OR kind='SummaryColumn'), you MUST include "
             "'GROUP BY <all dimension columns from SELECT>'. WITHOUT GROUP BY, the query will FAIL with 'NOT_AN_AGGREGATE' error.\n"
             "  2. Aggregates (kind='AggregateColumn' or kind='SummaryColumn') are NOT dimensions - do NOT include them in GROUP BY.\n"
             "  3. Example: SELECT reqHost, cnt_all FROM table GROUP BY reqHost (reqHost has kind='Column', cnt_all has kind='SummaryColumn')\n\n"
-
             "IMPORTANT WARNINGS:\n"
             "  • Function-like column names: Dimension columns (kind='Column' or 'AliasColumn') may have "
             "function-like names like 'toStartOfHour(col)' - these are LITERAL column names, use exactly as-is with backticks.\n"
