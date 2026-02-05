@@ -64,9 +64,7 @@ class HydrolixConfig:
         self._default_credential: Optional[HydrolixCredential] = None
 
         # Set the default credential to the service account from the environment, if available
-        if (
-            global_service_account := os.environ.get("HYDROLIX_TOKEN")
-        ) and global_service_account.strip():
+        if global_service_account := (os.environ.get("HYDROLIX_TOKEN") or "").strip():
             self._default_credential = ServiceAccountToken(global_service_account, None)
         elif (global_username := os.environ.get("HYDROLIX_USER")) is not None and (
             global_password := os.environ.get("HYDROLIX_PASSWORD")
