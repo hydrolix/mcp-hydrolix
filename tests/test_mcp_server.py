@@ -281,9 +281,6 @@ async def test_run_select_query_syntax_error(mcp_server):
 @pytest.mark.asyncio
 async def test_table_metadata_details(mcp_server, setup_test_database):
     """Test that table metadata is correctly retrieved.
-
-    Updated to use get_table_info() for column details, as list_tables()
-    now returns only basic table info without columns.
     """
     test_db, test_table, _ = setup_test_database
 
@@ -300,7 +297,7 @@ async def test_table_metadata_details(mcp_server, setup_test_database):
         result = await client.call_tool(
             "get_table_info", {"database": test_db, "table": test_table}
         )
-        test_table_info = result.data
+        test_table_info = result.data.model_dump()
 
         # Check engine info
         assert test_table_info["engine"] == "MergeTree"
