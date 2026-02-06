@@ -280,8 +280,7 @@ async def test_run_select_query_syntax_error(mcp_server):
 
 @pytest.mark.asyncio
 async def test_table_metadata_details(mcp_server, setup_test_database):
-    """Test that table metadata is correctly retrieved.
-    """
+    """Test that table metadata is correctly retrieved."""
     test_db, test_table, _ = setup_test_database
 
     async with Client(mcp_server) as client:
