@@ -296,7 +296,7 @@ async def test_table_metadata_details(mcp_server, setup_test_database):
         result = await client.call_tool(
             "get_table_info", {"database": test_db, "table": test_table}
         )
-        test_table_info = result.data.model_dump()
+        test_table_info = vars(result.data)
 
         # Check engine info
         assert test_table_info["engine"] == "MergeTree"
@@ -304,6 +304,8 @@ async def test_table_metadata_details(mcp_server, setup_test_database):
         # Check row count
         assert test_table_info["total_rows"] == 4
 
+        # Convert columns list items to dicts
+        test_table_info["columns"] = [vars(col) for col in test_table_info["columns"]]
         # Check columns and their comments
         columns_by_name = {col["name"]: col for col in test_table_info["columns"]}
 
