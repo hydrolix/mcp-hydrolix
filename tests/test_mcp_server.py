@@ -297,7 +297,9 @@ async def test_table_metadata_details(mcp_server, setup_test_database):
         assert test_table_exists, f"Test table {test_table} not found in list_tables result"
 
         # Now use get_table_info to get detailed metadata including columns
-        result = await client.call_tool("get_table_info", {"database": test_db, "table": test_table})
+        result = await client.call_tool(
+            "get_table_info", {"database": test_db, "table": test_table}
+        )
         test_table_info = result.data
 
         # Check engine info
