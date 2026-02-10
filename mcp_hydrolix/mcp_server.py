@@ -47,7 +47,8 @@ class Column:
 
 @dataclass
 class Table:
-    """Table with summary table detection (is_summary_table=True if has aggregate columns)."""
+    """Table with summary table detection (is_summary_table=True if aggregate
+columns are present)."""
 
     database: str
     name: str
@@ -60,7 +61,7 @@ class Table:
     parts: Optional[int]
     active_parts: Optional[int]
     columns: Optional[List[Column]] = Field(default_factory=list)
-    is_summary_table: bool = False
+    is_summary_table: Optional[bool] = None
     summary_table_info: Optional[str] = None
 
 
@@ -481,7 +482,7 @@ async def list_tables(
     - Get basic table metadata (name, engine, row counts, sizes, primary keys)
 
     Returns basic table information WITHOUT column details for performance.
-    Tables are returned with empty columns lists and is_summary_table=False.
+    Tables are returned with empty columns lists and is_summary_table not set.
 
     IMPORTANT WORKFLOW - Follow these steps:
 
