@@ -48,7 +48,7 @@ class Column:
 @dataclass
 class Table:
     """Table with summary table detection (is_summary_table=True if aggregate
-columns are present)."""
+    columns are present)."""
 
     database: str
     name: str
