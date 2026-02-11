@@ -4,7 +4,13 @@ import unittest
 
 from fastmcp.exceptions import ToolError
 
-from mcp_hydrolix import create_hydrolix_client, list_databases, list_tables, run_select_query
+from mcp_hydrolix import (
+    create_hydrolix_client,
+    get_table_info,
+    list_databases,
+    list_tables,
+    run_select_query,
+)
 
 
 class TestHydrolixTools(unittest.IsolatedAsyncioTestCase):
@@ -91,12 +97,19 @@ class TestHydrolixTools(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Query execution failed", str(context.exception))
 
     async def test_column_comments(self):
-        """Test that column comments are correctly retrieved."""
-        result = await list_tables.fn(self.test_db)
-        self.assertIsInstance(result, list)
-        self.assertEqual(len(result), 1)
+        """Test that column comments are correctly retrieved.
 
-        table_info = result[0]
+        Updated: Now uses get_table_info() instead of list_tables()
+        since list_tables() no longer returns column metadata.
+        """
+        # First verify the table exists
+        tables = await list_tables.fn(self.test_db)
+        self.assertIsInstance(tables, list)
+        self.assertEqual(len(tables), 1)
+        self.assertEqual(tables[0].name, self.test_table)
+
+        # Now get detailed table info including columns
+        table_info = await get_table_info.fn(self.test_db, self.test_table)
 
         # Get columns by name for easier testing
         columns = {col.name: col.__dict__ for col in table_info.columns}

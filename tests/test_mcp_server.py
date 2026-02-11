@@ -107,7 +107,10 @@ async def test_list_databases(mcp_server, setup_test_database):
 
 @pytest.mark.asyncio
 async def test_list_tables_basic(mcp_server, setup_test_database):
-    """Test the list_tables tool without filters."""
+    """Test the list_tables tool without filters.
+
+    Updated: list_tables() now returns only basic table info without columns.
+    """
     test_db, test_table, test_table2 = setup_test_database
 
     async with Client(mcp_server) as client:
@@ -124,18 +127,16 @@ async def test_list_tables_basic(mcp_server, setup_test_database):
         assert test_table in table_names
         assert test_table2 in table_names
 
-        # Check table details
+        # Check basic table details (without columns)
         for table in tables:
             assert table["database"] == test_db
-            assert "columns" in table
             assert "total_rows" in table
             assert "engine" in table
+            assert "name" in table
+            assert "primary_key" in table
 
-            # Verify column information exists
-            assert len(table["columns"]) > 0
-            for column in table["columns"]:
-                assert "name" in column
-                assert "column_type" in column
+            # Columns should be empty or None (not populated by list_tables)
+            assert table.get("columns") is None or len(table.get("columns", [])) == 0
 
 
 @pytest.mark.asyncio
@@ -283,11 +284,19 @@ async def test_table_metadata_details(mcp_server, setup_test_database):
     test_db, test_table, _ = setup_test_database
 
     async with Client(mcp_server) as client:
+        # First, list tables to discover available tables
         result = await client.call_tool("list_tables", {"database": test_db})
         tables = result.data
 
-        # Find our test table
-        test_table_info = next(t for t in tables if t["name"] == test_table)
+        # Verify our test table exists in the list
+        test_table_exists = any(t["name"] == test_table for t in tables)
+        assert test_table_exists, f"Test table {test_table} not found in list_tables result"
+
+        # Now use get_table_info to get detailed metadata including columns
+        result = await client.call_tool(
+            "get_table_info", {"database": test_db, "table": test_table}
+        )
+        test_table_info = vars(result.data)
 
         # Check engine info
         assert test_table_info["engine"] == "MergeTree"
@@ -295,6 +304,8 @@ async def test_table_metadata_details(mcp_server, setup_test_database):
         # Check row count
         assert test_table_info["total_rows"] == 4
 
+        # Convert columns list items to dicts
+        test_table_info["columns"] = [vars(col) for col in test_table_info["columns"]]
         # Check columns and their comments
         columns_by_name = {col["name"]: col for col in test_table_info["columns"]}
 
