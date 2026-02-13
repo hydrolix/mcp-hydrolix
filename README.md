@@ -1,5 +1,7 @@
 # Hydrolix MCP Server
 
+<!-- mcp-name: io.github.hydrolix/mcp-hydrolix -->
+
 [![PyPI - Version](https://img.shields.io/pypi/v/mcp-hydrolix)](https://pypi.org/project/mcp-hydrolix)
 
 An MCP server for Hydrolix.
