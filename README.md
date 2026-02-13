@@ -9,7 +9,6 @@ An MCP server for Hydrolix.
 * `run_select_query`
   * Execute SQL queries on your Hydrolix cluster.
   * Input: `sql` (string): The SQL query to execute.
-  * All Hydrolix queries are run with `readonly = 1` to ensure they are safe.
 
 * `list_databases`
   * List all databases on your Hydrolix cluster.
@@ -17,6 +16,11 @@ An MCP server for Hydrolix.
 * `list_tables`
   * List all tables in a database.
   * Input: `database` (string): The name of the database.
+
+* `get_table_info`
+  * Get table metadata such as schema
+  * Input: `database` (string): The name of the database.
+  * Input: `table` (string): The name of the table.
 
 ## Effective Usage
 
@@ -56,6 +60,8 @@ The server supports multiple authentication methods with the following precedenc
    - Username and password (`HYDROLIX_USER` and `HYDROLIX_PASSWORD`)
 
 When multiple authentication methods are configured, the server will use the first available method in the precedence order above. Per-request authentication is only available when using HTTP or SSE transport modes.
+
+**Note: Using a service account token with a readonly role is recommended.**
 
 MCP Server definition using username and password (JSON):
 
