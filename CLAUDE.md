@@ -53,12 +53,12 @@ uv run mcp-hydrolix
 
 **How It Works:**
 - Results are returned in pages (default: 50 tables or 10,000 rows per page)
-- Each response includes a `nextCursor` field (opaque token) if more data exists
-- Clients loop by passing the cursor to subsequent calls until `nextCursor` is None
+- Each response includes a `next_cursor` field (opaque token) if more data exists
+- Clients loop by passing the cursor to subsequent calls until `next_cursor` is None
 
 **Tool Behavior:**
-- `list_tables(database, paginate=True)` → Returns `PaginatedTableList` with `tables`, `nextCursor`, `pageSize`, `totalRetrieved`
-- `run_select_query(query, paginate=True)` → Returns `PaginatedQueryResult` with `rows`, `columns`, `nextCursor`, `hasMore`
+- `list_tables(database, paginate=True)` → Returns `PaginatedTableList` with `tables`, `next_cursor`, `page_size`, `total_retrieved`
+- `run_select_query(query, paginate=True)` → Returns `PaginatedQueryResult` with `rows`, `columns`, `next_cursor`, `has_more`
 - Set `paginate=False` for legacy behavior (returns all data in single response)
 
 **Configuration:**
@@ -75,8 +75,8 @@ uv run mcp-hydrolix
 **Security:** Cursor validation prevents parameter tampering and query switching attacks.
 
 **For LLMs/Clients:** Tool docstrings include complete pagination workflow examples showing how to:
-1. Check for `nextCursor` in response
-2. Loop until `nextCursor` is None
+1. Check for `next_cursor` in response
+2. Loop until `next_cursor` is None
 3. Pass cursor to subsequent calls
 4. Handle both paginated and non-paginated modes
 
@@ -86,6 +86,6 @@ uv run mcp-hydrolix
 
 **Query Safety**: All queries run with readonly=1, timeouts, and row/memory limits (see code for specifics).
 
-**Pagination**: Always check for `nextCursor` in tool responses. Loop with cursor parameter until None to fetch all data.
+**Pagination**: Always check for `next_cursor` in tool responses. Loop with cursor parameter until None to fetch all data.
 
 **Configuration**: See `mcp_env.py` docstrings for all available environment variables and defaults.

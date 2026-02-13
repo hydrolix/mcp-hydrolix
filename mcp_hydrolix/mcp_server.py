@@ -72,9 +72,9 @@ class PaginatedTableList(TypedDict):
     """Response format for paginated list_tables results."""
 
     tables: List[Table]
-    nextCursor: Optional[str]
-    pageSize: int
-    totalRetrieved: int
+    next_cursor: Optional[str]
+    page_size: int
+    total_retrieved: int
 
 
 class PaginatedQueryResult(TypedDict):
@@ -82,10 +82,10 @@ class PaginatedQueryResult(TypedDict):
 
     columns: List[str]
     rows: List[List[Any]]
-    nextCursor: Optional[str]
-    pageSize: int
-    totalRetrieved: int
-    hasMore: bool
+    next_cursor: Optional[str]
+    page_size: int
+    total_retrieved: int
+    has_more: bool
 
 
 @dataclass
@@ -522,11 +522,11 @@ async def list_tables(
         - Results are returned in pages (default: 50 tables per page)
         - Response includes:
           - tables: List of Table objects for current page
-          - nextCursor: Opaque cursor string (None if no more pages)
-          - pageSize: Number of tables in this page
-          - totalRetrieved: Total tables retrieved so far (including this page)
-        - To get next page, pass nextCursor to cursor parameter
-        - Loop until nextCursor is None to fetch all tables
+          - next_cursor: Opaque cursor string (None if no more pages)
+          - page_size: Number of tables in this page
+          - total_retrieved: Total tables retrieved so far (including this page)
+        - To get next page, pass next_cursor to cursor parameter
+        - Loop until next_cursor is None to fetch all tables
 
         When paginate=False:
         - Returns all tables in single response (legacy behavior)
@@ -538,8 +538,8 @@ async def list_tables(
             tables = result['tables']
 
             # Get subsequent pages if more exist
-            while result['nextCursor']:
-                result = await list_tables('my_database', cursor=result['nextCursor'])
+            while result['next_cursor']:
+                result = await list_tables('my_database', cursor=result['next_cursor'])
                 tables.extend(result['tables'])
     """
     logger.info(f"Listing tables in database '{database}' (paginate={paginate}, cursor={cursor})")
@@ -610,9 +610,9 @@ async def list_tables(
 
     return PaginatedTableList(
         tables=tables,
-        nextCursor=next_cursor,
-        pageSize=len(tables),
-        totalRetrieved=offset + len(tables),
+        next_cursor=next_cursor,
+        page_size=len(tables),
+        total_retrieved=offset + len(tables),
     )
 
 
@@ -834,12 +834,12 @@ async def run_select_query(
         - Response includes:
           - columns: List of column names
           - rows: List of row data for current page
-          - nextCursor: Opaque cursor string (None if no more pages)
-          - pageSize: Number of rows in this page
-          - totalRetrieved: Total rows retrieved so far (including this page)
-          - hasMore: Boolean indicating if more pages exist
-        - To get next page, pass nextCursor to cursor parameter with same query
-        - Loop until nextCursor is None to fetch all results
+          - next_cursor: Opaque cursor string (None if no more pages)
+          - page_size: Number of rows in this page
+          - total_retrieved: Total rows retrieved so far (including this page)
+          - has_more: Boolean indicating if more pages exist
+        - To get next page, pass next_cursor to cursor parameter with same query
+        - Loop until next_cursor is None to fetch all results
 
         When paginate=False:
         - Returns all results in single response (legacy behavior)
@@ -851,10 +851,10 @@ async def run_select_query(
             rows = result['rows']
 
             # Get subsequent pages if more exist
-            while result['nextCursor']:
+            while result['next_cursor']:
                 result = await run_select_query(
                     'SELECT * FROM table ORDER BY id',
-                    cursor=result['nextCursor']
+                    cursor=result['next_cursor']
                 )
                 rows.extend(result['rows'])
 
@@ -917,10 +917,10 @@ async def run_select_query(
         return PaginatedQueryResult(
             columns=columns,
             rows=rows,
-            nextCursor=next_cursor,
-            pageSize=len(rows),
-            totalRetrieved=offset + len(rows),
-            hasMore=has_more,
+            next_cursor=next_cursor,
+            page_size=len(rows),
+            total_retrieved=offset + len(rows),
+            has_more=has_more,
         )
 
     except Exception as e:

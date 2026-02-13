@@ -87,15 +87,15 @@ class TestListTablesPagination:
         result = await list_tables_fn(database=test_db)
 
         assert "tables" in result
-        assert "nextCursor" in result
-        assert "pageSize" in result
-        assert "totalRetrieved" in result
+        assert "next_cursor" in result
+        assert "page_size" in result
+        assert "total_retrieved" in result
 
         # Should return first page (50 tables)
         assert len(result["tables"]) == 50
-        assert result["pageSize"] == 50
-        assert result["totalRetrieved"] == 50
-        assert result["nextCursor"] is not None  # More pages exist
+        assert result["page_size"] == 50
+        assert result["total_retrieved"] == 50
+        assert result["next_cursor"] is not None  # More pages exist
 
     @pytest.mark.asyncio
     async def test_list_tables_pagination_complete(self, setup_pagination_test_database):
@@ -112,7 +112,7 @@ class TestListTablesPagination:
             all_tables.extend([t.name for t in result["tables"]])
             page_count += 1
 
-            cursor = result.get("nextCursor")
+            cursor = result.get("next_cursor")
             if not cursor:
                 break
 
@@ -140,15 +140,15 @@ class TestListTablesPagination:
         while True:
             result = await list_tables_fn(database=test_db, cursor=cursor)
             pages.append(result)
-            cursor = result.get("nextCursor")
+            cursor = result.get("next_cursor")
             if not cursor:
                 break
 
         # Last page should have 25 tables (125 % 50 = 25)
         last_page = pages[-1]
-        assert last_page["pageSize"] == 25
-        assert last_page["nextCursor"] is None
-        assert last_page["totalRetrieved"] == total_tables
+        assert last_page["page_size"] == 25
+        assert last_page["next_cursor"] is None
+        assert last_page["total_retrieved"] == total_tables
 
     @pytest.mark.asyncio
     async def test_list_tables_with_like_filter(self, setup_pagination_test_database):
@@ -159,7 +159,7 @@ class TestListTablesPagination:
         result = await list_tables_fn(database=test_db, like="test_table_01%")
 
         assert len(result["tables"]) == 10
-        assert result["nextCursor"] is None  # All results fit in one page
+        assert result["next_cursor"] is None  # All results fit in one page
         assert all("_01" in t.name for t in result["tables"])
 
     @pytest.mark.asyncio
@@ -177,7 +177,7 @@ class TestListTablesPagination:
 
         # Get cursor with LIKE filter
         result1 = await list_tables_fn(database=test_db, like="test_table_0%")
-        cursor = result1["nextCursor"]
+        cursor = result1["next_cursor"]
 
         if cursor:  # Only test if cursor was generated
             # Try to use cursor without LIKE filter (parameter mismatch)
@@ -212,17 +212,17 @@ class TestRunSelectQueryPagination:
 
         assert "columns" in result
         assert "rows" in result
-        assert "nextCursor" in result
-        assert "pageSize" in result
-        assert "totalRetrieved" in result
-        assert "hasMore" in result
+        assert "next_cursor" in result
+        assert "page_size" in result
+        assert "total_retrieved" in result
+        assert "has_more" in result
 
         # Should return first page (10,000 rows)
         assert len(result["rows"]) == 10000
-        assert result["pageSize"] == 10000
-        assert result["totalRetrieved"] == 10000
-        assert result["hasMore"] is True
-        assert result["nextCursor"] is not None
+        assert result["page_size"] == 10000
+        assert result["total_retrieved"] == 10000
+        assert result["has_more"] is True
+        assert result["next_cursor"] is not None
 
     @pytest.mark.asyncio
     async def test_query_result_pagination_complete(self, setup_large_query_result):
@@ -240,7 +240,7 @@ class TestRunSelectQueryPagination:
             all_rows.extend(result["rows"])
             page_count += 1
 
-            cursor = result.get("nextCursor")
+            cursor = result.get("next_cursor")
             if not cursor:
                 break
 
@@ -265,16 +265,16 @@ class TestRunSelectQueryPagination:
         while True:
             result = await run_select_query_fn(query, cursor=cursor)
             pages.append(result)
-            cursor = result.get("nextCursor")
+            cursor = result.get("next_cursor")
             if not cursor:
                 break
 
         # Last page should have 5,000 rows (25,000 % 10,000 = 5,000)
         last_page = pages[-1]
-        assert last_page["pageSize"] == 5000
-        assert last_page["hasMore"] is False
-        assert last_page["nextCursor"] is None
-        assert last_page["totalRetrieved"] == total_rows
+        assert last_page["page_size"] == 5000
+        assert last_page["has_more"] is False
+        assert last_page["next_cursor"] is None
+        assert last_page["total_retrieved"] == total_rows
 
     @pytest.mark.asyncio
     async def test_query_result_invalid_cursor(self, setup_large_query_result):
@@ -293,7 +293,7 @@ class TestRunSelectQueryPagination:
         # Get cursor from first query
         query1 = f"SELECT id FROM {test_db}.{test_table} ORDER BY id"
         result1 = await run_select_query_fn(query1)
-        cursor = result1["nextCursor"]
+        cursor = result1["next_cursor"]
 
         # Try to use cursor with different query
         query2 = f"SELECT value FROM {test_db}.{test_table} ORDER BY id"
@@ -312,7 +312,7 @@ class TestRunSelectQueryPagination:
 
         # Should still paginate to 10,000 rows per page
         assert len(result["rows"]) == 10000
-        assert result["hasMore"] is True
+        assert result["has_more"] is True
 
     @pytest.mark.asyncio
     async def test_query_maintains_column_names(self, setup_large_query_result):
@@ -333,9 +333,9 @@ class TestRunSelectQueryPagination:
         result = await run_select_query_fn(query)
 
         assert len(result["rows"]) == 0
-        assert result["pageSize"] == 0
-        assert result["hasMore"] is False
-        assert result["nextCursor"] is None
+        assert result["page_size"] == 0
+        assert result["has_more"] is False
+        assert result["next_cursor"] is None
 
 
 class TestPaginationEdgeCases:
@@ -350,8 +350,8 @@ class TestPaginationEdgeCases:
         result = await list_tables_fn(database=test_db, like="test_table_00%")
 
         assert len(result["tables"]) == 10
-        assert result["nextCursor"] is None
-        assert result["totalRetrieved"] == 10
+        assert result["next_cursor"] is None
+        assert result["total_retrieved"] == 10
 
     @pytest.mark.asyncio
     async def test_cursor_data_structure(self, setup_pagination_test_database):
@@ -359,7 +359,7 @@ class TestPaginationEdgeCases:
         test_db, _ = setup_pagination_test_database
 
         result = await list_tables_fn(database=test_db)
-        cursor = result.get("nextCursor")
+        cursor = result.get("next_cursor")
 
         if cursor:
             from mcp_hydrolix.pagination import decode_cursor
@@ -380,7 +380,7 @@ class TestPaginationEdgeCases:
         query = f"SELECT id FROM {test_db}.{test_table}"
 
         result = await run_select_query_fn(query)
-        cursor = result.get("nextCursor")
+        cursor = result.get("next_cursor")
 
         if cursor:
             from mcp_hydrolix.pagination import decode_cursor, hash_query
