@@ -641,225 +641,322 @@ def _add_pagination_to_query(query: str, limit: int, offset: int) -> str:
 
 
 @mcp.tool()
+async def get_summary_table_query_help():
+    """Get detailed instructions for querying Hydrolix summary tables with pre-aggregated data.
+
+    This tool provides comprehensive documentation on how to properly query summary tables,
+    which require special -Merge functions for aggregate columns. Call this tool when you need
+    to understand or construct queries for tables where is_summary_table=True.
+
+    Returns ToolResult with text content containing:
+        - overview: What summary tables are and why they need special handling
+        - workflow: Required steps before querying any table
+        - critical_rules: 7 critical rules for querying summary tables
+        - patterns: 6 common query patterns with examples
+    """
+    import json
+
+    from fastmcp.tools.tool import ToolResult
+    from mcp.types import Annotations, TextContent
+
+    help_text = {
+        "overview": """Summary tables contain pre-computed aggregations stored in aggregate function state columns.
+These tables are identified by having columns with aggregate function names like count(...),
+sum(...), avg(...), countIf(...), sumIf(...), etc.
+
+WHY SPECIAL HANDLING: Summary tables require special -Merge functions for aggregate columns. Querying
+without checking metadata first will cause:
+- "Nested aggregate function" errors (if you use sum/count/avg instead of -Merge)
+- "Cannot read AggregateFunction" errors (if you SELECT aggregate columns directly)
+- Wrong results (if you treat aggregate columns as regular values)""",
+        "workflow": """REQUIRED WORKFLOW (follow this order every time):
+
+1. FIRST: Call get_table_info('database', 'table_name')
+   - Check is_summary_table field
+   - Read column metadata (column_category, merge_function for each column)
+
+2. THEN: Build query based on metadata
+   - If is_summary_table=False: use standard SQL (count, sum, avg, etc.)
+   - If is_summary_table=True: follow summary table rules below
+
+Do NOT skip step 1. Do NOT assume a table is regular/summary without checking.""",
+        "critical_rules": """1. Raw aggregate columns (column_category='aggregate') CANNOT be SELECTed directly
+   - They store binary AggregateFunction states, not readable values
+   - Direct SELECT will cause deserialization errors
+   - MUST be wrapped in their -Merge function from get_table_info:
+     - count(vendor_id) → countMerge(`count(vendor_id)`)
+     - sum(bytes_out) → sumMerge(`sum(bytes_out)`)
+     - avg(latitude) → avgMerge(`avg(latitude)`)
+     - countIf(condition) → countIfMerge(`countIf(condition)`)
+   - ALWAYS check column.merge_function in get_table_info to get the exact function name
+   - Use backticks around column names with special characters
+
+2. Do NOT use standard aggregate functions (sum/count/avg) on summary table columns
+   - WRONG: SELECT sum(count_column) FROM summary_table
+     (causes "nested aggregate function" error)
+   - RIGHT: SELECT countMerge(`count_column`) FROM summary_table
+     (uses the merge function from column metadata)
+
+3. ALIAS aggregate columns (column_category='alias_aggregate') use directly:
+   - These are pre-defined shortcuts that already wrap -Merge functions
+   - Example: cnt_all (which is defined as ALIAS countMerge(`count()`))
+   - SELECT cnt_all directly, NO additional wrapping needed
+   - These make queries simpler and more readable
+
+4. Dimension columns (column_category='dimension') - use as-is with backticks:
+   - Reference them exactly as listed in column metadata
+   - Many have function-like names (e.g., `toStartOfMinute(primary_datetime)`)
+   - These are LITERAL column names, not expressions to compute
+   - WRONG: SELECT toStartOfMinute(primary_datetime) (tries to call function on non-existent base column)
+   - RIGHT: SELECT `toStartOfMinute(primary_datetime)` (selects the actual dimension column)
+   - Always use backticks for columns with special characters
+   - Can be used in SELECT, WHERE, GROUP BY, ORDER BY
+   - For time dimensions in WHERE clauses:
+     * Use simple date format: '2022-06-01' (preferred)
+     * Use full timestamp: '2022-06-01 00:00:00' (with seconds)
+     * Do NOT use partial time: '2022-06-01 00:00' (causes parse errors)
+     * Use >= and < for ranges: WHERE col >= '2022-06-01' AND col < '2022-06-02'
+
+5. CRITICAL: When mixing dimensions and aggregates in SELECT, you MUST use GROUP BY:
+   - SELECT only aggregates → no GROUP BY needed (aggregates entire table)
+     Example: SELECT count_vendor_id FROM table
+   - SELECT dimensions + aggregates → MUST GROUP BY all dimension columns
+     Example: SELECT pickup_dt, count_vendor_id FROM table GROUP BY pickup_dt
+   - Forgetting GROUP BY causes error: "Column X is not under aggregate function and not in GROUP BY"
+
+6. NEVER use SELECT * on summary tables (will cause deserialization errors)
+
+7. Aggregate columns can ONLY appear in SELECT:
+   - Raw aggregates: wrapped with -Merge (see column.merge_function)
+   - Alias aggregates: used directly
+   - NEVER in GROUP BY (use dimension columns only)""",
+        "patterns": """Pattern 1: Aggregate entire table
+-- First: get_table_info('database', 'summary_table')
+-- Read column.merge_function for count(column_name) = "countMerge"
+SELECT countMerge(`count(column_name)`) as total FROM database.summary_table
+
+Pattern 2: Aggregate with grouping by dimension
+-- First: get_table_info('database', 'summary_table')
+-- Read merge_function for each aggregate column
+SELECT time_bucket_column,
+       countMerge(`count(column_name)`) as total,
+       avgMerge(`avg(other_column)`) as avg_value
+FROM database.summary_table
+GROUP BY time_bucket_column
+
+Pattern 2b: Grouping with time range filter
+-- First: get_table_info('database', 'summary_table')
+SELECT `toStartOfMinute(datetime_field)` as time_bucket,
+       countMerge(`count(column)`) as total
+FROM database.summary_table
+WHERE `toStartOfMinute(datetime_field)` >= '2022-06-01'
+  AND `toStartOfMinute(datetime_field)` < '2022-06-02'
+GROUP BY `toStartOfMinute(datetime_field)`
+ORDER BY time_bucket DESC
+
+Pattern 3: Multiple aggregates (no dimensions, no GROUP BY)
+-- First: get_table_info('database', 'summary_table')
+SELECT countMerge(`count(column_name)`) as count_result,
+       sumMerge(`sum(other_column)`) as sum_result
+FROM database.summary_table
+
+Pattern 4: Using ALIAS aggregate columns (no dimensions, no GROUP BY)
+-- First: get_table_info('database', 'summary_table')
+-- Check which columns have column_category='alias_aggregate'
+SELECT cnt_all, sum_bytes, avg_value FROM database.summary_table
+-- No -Merge needed, these are pre-defined aliases
+
+Pattern 5: ALIAS aggregates with dimensions (requires GROUP BY)
+-- First: get_table_info('database', 'summary_table')
+SELECT time_dimension,
+       cnt_all,
+       avg_value
+FROM database.summary_table
+GROUP BY time_dimension
+-- MUST include GROUP BY when mixing dimensions and aggregates
+
+Pattern 6: Using dimensions with function-like names (common pattern)
+-- First: get_table_info('database', 'summary_table')
+-- See dimension column named: toStartOfMinute(primary_datetime)
+-- WRONG: SELECT toStartOfMinute(primary_datetime) ... (tries to call function)
+-- RIGHT: Use the literal column name with backticks
+SELECT `toStartOfMinute(primary_datetime)` as time_bucket,
+       countMerge(`count()`) as cnt,
+       maxMerge(`max(value)`) as max_val
+FROM database.summary_table
+GROUP BY `toStartOfMinute(primary_datetime)`
+ORDER BY time_bucket DESC
+LIMIT 10""",
+    }
+
+    return ToolResult(
+        content=[
+            TextContent(
+                type="text",
+                text=json.dumps(help_text, indent=2),
+                annotations=Annotations(audience=["assistant"]),
+            )
+        ]
+    )
+
+
+@mcp.tool()
+async def get_pagination_help():
+    """Get detailed instructions for handling paginated responses from list_tables and run_select_query.
+
+    Both list_tables and run_select_query tools support cursor-based pagination to handle large
+    result sets efficiently. Call this tool when you need to understand how to fetch all data
+    across multiple pages.
+
+    Returns ToolResult with text content containing:
+        - overview: How pagination works
+        - response_structure: What fields are in paginated responses
+        - workflow_example: Complete example of fetching all pages
+        - best_practices: Important tips for using pagination
+    """
+    import json
+
+    from fastmcp.tools.tool import ToolResult
+    from mcp.types import Annotations, TextContent
+
+    help_text = {
+        "overview": """Cursor-based pagination allows efficient retrieval of large result sets in pages.
+- Default page size: 50 tables (list_tables) or 10,000 rows (run_select_query)
+- Each response includes an opaque cursor token for fetching the next page
+- Loop through pages by passing the cursor to subsequent calls
+- Stop when next_cursor is None (no more data)""",
+        "response_structure": """Paginated responses include these fields:
+
+For list_tables (PaginatedTableList):
+- tables: List[Table] - Current page of tables
+- next_cursor: Optional[str] - Pass this to get next page (None if done)
+- page_size: int - Number of tables in this page
+- total_retrieved: int - Total tables fetched so far (including this page)
+
+For run_select_query (PaginatedQueryResult):
+- columns: List[str] - Column names
+- rows: List[List[Any]] - Current page of rows
+- next_cursor: Optional[str] - Pass this to get next page (None if done)
+- page_size: int - Number of rows in this page
+- total_retrieved: int - Total rows fetched so far (including this page)
+- has_more: bool - Whether more pages exist""",
+        "workflow_example": """Complete example of fetching all data across pages:
+
+# Example 1: Paginating through all tables
+result = await list_tables('my_database')
+all_tables = result['tables']
+
+while result['next_cursor']:
+    result = await list_tables('my_database', cursor=result['next_cursor'])
+    all_tables.extend(result['tables'])
+
+# Now all_tables contains all tables in the database
+
+# Example 2: Paginating through query results
+result = await run_select_query('SELECT * FROM table ORDER BY id')
+all_rows = result['rows']
+
+while result['next_cursor']:
+    result = await run_select_query(
+        'SELECT * FROM table ORDER BY id',
+        cursor=result['next_cursor']
+    )
+    all_rows.extend(result['rows'])
+
+# Now all_rows contains all query results""",
+        "best_practices": """1. ALWAYS include ORDER BY in queries when using pagination
+   - Ensures consistent ordering across pages
+   - Without ORDER BY, row order may change between pages
+
+2. Check next_cursor field, not has_more
+   - Loop while next_cursor is not None
+   - has_more is informational only
+
+3. Pass same query/parameters with cursor
+   - Cursors are tied to specific query parameters
+   - Changing query/parameters with existing cursor causes validation error
+
+4. Cursors are opaque tokens
+   - Do not parse or modify cursor strings
+   - Cursors include validation data to prevent tampering
+
+5. Set paginate=False for legacy behavior
+   - Returns all data in single response (no pagination)
+   - Use only for small result sets to avoid memory issues
+
+6. Configuration (environment variables):
+   - HYDROLIX_LIST_TABLES_PAGE_SIZE=50 (default)
+   - HYDROLIX_QUERY_RESULT_PAGE_SIZE=10000 (default)
+   - HYDROLIX_ENABLE_PAGINATION=true (default)""",
+    }
+
+    return ToolResult(
+        content=[
+            TextContent(
+                type="text",
+                text=json.dumps(help_text, indent=2),
+                annotations=Annotations(audience=["assistant"]),
+            )
+        ]
+    )
+
+
+@mcp.tool()
 @with_serializer
 async def run_select_query(
     query: str, cursor: Optional[str] = None, paginate: bool = True
 ) -> dict[str, Any]:
-    """Run a SELECT query in a Hydrolix time-series database using the Clickhouse SQL dialect with pagination support.
-    Queries run using this tool will timeout after 30 seconds.
+    """Run a SELECT query in a Hydrolix time-series database using ClickHouse SQL dialect.
 
-    MANDATORY PRE-QUERY CHECK - DO THIS FIRST BEFORE EVERY QUERY:
+    Queries timeout after 30 seconds. Uses cursor-based pagination by default (10,000 rows/page).
 
-    BEFORE running ANY query on a table, you MUST call get_table_info(database, table_name)
-    to check if it's a summary table and get column metadata.
+    MANDATORY PRE-QUERY CHECK:
+        ALWAYS call get_table_info(database, table_name) FIRST to check if table is a summary table.
+        Summary tables require special -Merge functions. See get_summary_table_query_help() for details.
 
-    WHY: Summary tables require special -Merge functions for aggregate columns. Querying
-    without checking metadata first will cause:
-    - "Nested aggregate function" errors (if you use sum/count/avg instead of -Merge)
-    - "Cannot read AggregateFunction" errors (if you SELECT aggregate columns directly)
-    - Wrong results (if you treat aggregate columns as regular values)
+    REQUIRED WORKFLOW:
+        1. Call get_table_info(database, table_name)
+        2. If is_summary_table=True: Call get_summary_table_query_help() for query construction rules
+        3. Build and execute query using this tool
+        4. If next_cursor in response: Call get_pagination_help() for pagination workflow
 
-    REQUIRED WORKFLOW (follow this order every time):
+    Performance Guidelines:
+        - Primary key is always a timestamp
+        - Include LIMIT or timestamp filter as performance guard
+        - Use specific fields, avoid SELECT *
+        - For aggregations: use timestamp filter, or LIMIT in subquery before aggregation
+        - Use prefix/suffix matching: column LIKE 'prefix%' or column LIKE '%suffix'
 
-    1. FIRST: Call get_table_info('database', 'table_name')
-       - Check is_summary_table field
-       - Read column metadata (column_category, merge_function for each column)
+    Regular Table Examples:
+        Purpose: get logs from the `application.logs` table. Primary key: `timestamp`.
+        Performance guard: 10 minute recency filter.
 
-    2. THEN: Build query based on metadata
-       - If is_summary_table=False: use standard SQL (count, sum, avg, etc.)
-       - If is_summary_table=True: follow summary table rules below
+        `SELECT message, timestamp FROM application.logs WHERE timestamp > now() - INTERVAL 10 MINUTES`
 
-    Do NOT skip step 1. Do NOT assume a table is regular/summary without checking.
+        Purpose: get the median humidity from the `weather.measurements` table. Primary
+        key: `date`. Performance guard: 1000 row limit, applied before aggregation.
 
-    The primary key on tables queried this way is always a timestamp. Queries should include either
-    a LIMIT clause or a filter based on the primary key as a performance guard to ensure they return
-    in a reasonable amount of time. Queries should select specific fields and avoid the use of
-    SELECT * to avoid performance issues. The performance guard used for the query should be clearly
-    communicated with the user, and the user should be informed that the query may take a long time
-    to run if the performance guard is not used. When choosing a performance guard, the user's
-    preference should be requested and used if available. When using aggregations, the performance
-    guard should take form of a primary key filter, or else the LIMIT should be applied in a
-    subquery before applying the aggregations.
+         `SELECT median(humidity) FROM (SELECT humidity FROM weather.measurements LIMIT 1000)`
 
-    When matching columns based on substrings, prefix or suffix matches should be used instead of
-    full-text search whenever possible. When searching for substrings, the syntax `column LIKE
-    '%suffix'` or `column LIKE 'prefix%'` should be used.
+        Purpose: get the lowest temperature from the `weather.measurements` table over
+        the last 10 years. Primary key: `date`. Performance guard: date range filter.
 
-    SUMMARY TABLE RULES (only apply if is_summary_table=True from get_table_info):
+        `SELECT min(temperature) FROM weather.measurements WHERE date > now() - INTERVAL 10 YEARS`
 
-    Summary tables contain pre-computed aggregations stored in aggregate function state columns.
-    These tables are identified by having columns with aggregate function names like count(...),
-    sum(...), avg(...), countIf(...), sumIf(...), etc.
-
-    CRITICAL RULES for querying summary tables:
-
-    1. Raw aggregate columns (column_category='aggregate') CANNOT be SELECTed directly
-       - They store binary AggregateFunction states, not readable values
-       - Direct SELECT will cause deserialization errors
-       - MUST be wrapped in their -Merge function from get_table_info:
-         - count(vendor_id) → countMerge(`count(vendor_id)`)
-         - sum(bytes_out) → sumMerge(`sum(bytes_out)`)
-         - avg(latitude) → avgMerge(`avg(latitude)`)
-         - countIf(condition) → countIfMerge(`countIf(condition)`)
-       - ALWAYS check column.merge_function in get_table_info to get the exact function name
-       - Use backticks around column names with special characters
-
-    2. Do NOT use standard aggregate functions (sum/count/avg) on summary table columns
-       - WRONG: SELECT sum(count_column) FROM summary_table
-         (causes "nested aggregate function" error)
-       - RIGHT: SELECT countMerge(`count_column`) FROM summary_table
-         (uses the merge function from column metadata)
-
-    3. ALIAS aggregate columns (column_category='alias_aggregate') use directly:
-       - These are pre-defined shortcuts that already wrap -Merge functions
-       - Example: cnt_all (which is defined as ALIAS countMerge(`count()`))
-       - SELECT cnt_all directly, NO additional wrapping needed
-       - These make queries simpler and more readable
-
-    4. Dimension columns (column_category='dimension') - use as-is with backticks:
-       - Reference them exactly as listed in column metadata
-       - Many have function-like names (e.g., `toStartOfMinute(primary_datetime)`)
-       - These are LITERAL column names, not expressions to compute
-       - WRONG: SELECT toStartOfMinute(primary_datetime) (tries to call function on non-existent base column)
-       - RIGHT: SELECT `toStartOfMinute(primary_datetime)` (selects the actual dimension column)
-       - Always use backticks for columns with special characters
-       - Can be used in SELECT, WHERE, GROUP BY, ORDER BY
-       - For time dimensions in WHERE clauses:
-         * Use simple date format: '2022-06-01' (preferred)
-         * Use full timestamp: '2022-06-01 00:00:00' (with seconds)
-         * Do NOT use partial time: '2022-06-01 00:00' (causes parse errors)
-         * Use >= and < for ranges: WHERE col >= '2022-06-01' AND col < '2022-06-02'
-
-    5. CRITICAL: When mixing dimensions and aggregates in SELECT, you MUST use GROUP BY:
-       - SELECT only aggregates → no GROUP BY needed (aggregates entire table)
-         Example: SELECT count_vendor_id FROM table
-       - SELECT dimensions + aggregates → MUST GROUP BY all dimension columns
-         Example: SELECT pickup_dt, count_vendor_id FROM table GROUP BY pickup_dt
-       - Forgetting GROUP BY causes error: "Column X is not under aggregate function and not in GROUP BY"
-
-    6. NEVER use SELECT * on summary tables (will cause deserialization errors)
-
-    7. Aggregate columns can ONLY appear in SELECT:
-       - Raw aggregates: wrapped with -Merge (see column.merge_function)
-       - Alias aggregates: used directly
-       - NEVER in GROUP BY (use dimension columns only)
-
-    Summary table query patterns (after calling get_table_info first):
-
-    Pattern 1: Aggregate entire table
-    -- First: get_table_info('database', 'summary_table')
-    -- Read column.merge_function for count(column_name) = "countMerge"
-    SELECT countMerge(`count(column_name)`) as total FROM database.summary_table
-
-    Pattern 2: Aggregate with grouping by dimension
-    -- First: get_table_info('database', 'summary_table')
-    -- Read merge_function for each aggregate column
-    SELECT time_bucket_column,
-           countMerge(`count(column_name)`) as total,
-           avgMerge(`avg(other_column)`) as avg_value
-    FROM database.summary_table
-    GROUP BY time_bucket_column
-
-    Pattern 2b: Grouping with time range filter
-    -- First: get_table_info('database', 'summary_table')
-    SELECT `toStartOfMinute(datetime_field)` as time_bucket,
-           countMerge(`count(column)`) as total
-    FROM database.summary_table
-    WHERE `toStartOfMinute(datetime_field)` >= '2022-06-01'
-      AND `toStartOfMinute(datetime_field)` < '2022-06-02'
-    GROUP BY `toStartOfMinute(datetime_field)`
-    ORDER BY time_bucket DESC
-
-    Pattern 3: Multiple aggregates (no dimensions, no GROUP BY)
-    -- First: get_table_info('database', 'summary_table')
-    SELECT countMerge(`count(column_name)`) as count_result,
-           sumMerge(`sum(other_column)`) as sum_result
-    FROM database.summary_table
-
-    Pattern 4: Using ALIAS aggregate columns (no dimensions, no GROUP BY)
-    -- First: get_table_info('database', 'summary_table')
-    -- Check which columns have column_category='alias_aggregate'
-    SELECT cnt_all, sum_bytes, avg_value FROM database.summary_table
-    -- No -Merge needed, these are pre-defined aliases
-
-    Pattern 5: ALIAS aggregates with dimensions (requires GROUP BY)
-    -- First: get_table_info('database', 'summary_table')
-    SELECT time_dimension,
-           cnt_all,
-           avg_value
-    FROM database.summary_table
-    GROUP BY time_dimension
-    -- MUST include GROUP BY when mixing dimensions and aggregates
-
-    Pattern 6: Using dimensions with function-like names (common pattern)
-    -- First: get_table_info('database', 'summary_table')
-    -- See dimension column named: toStartOfMinute(primary_datetime)
-    -- WRONG: SELECT toStartOfMinute(primary_datetime) ... (tries to call function)
-    -- RIGHT: Use the literal column name with backticks
-    SELECT `toStartOfMinute(primary_datetime)` as time_bucket,
-           countMerge(`count()`) as cnt,
-           maxMerge(`max(value)`) as max_val
-    FROM database.summary_table
-    GROUP BY `toStartOfMinute(primary_datetime)`
-    ORDER BY time_bucket DESC
-    LIMIT 10
-
-    Regular table examples (non-summary):
-
-    Example query. Purpose: get logs from the `application.logs` table. Primary key: `timestamp`.
-    Performance guard: 10 minute recency filter.
-
-    `SELECT message, timestamp FROM application.logs WHERE timestamp > now() - INTERVAL 10 MINUTES`
-
-    Example query. Purpose: get the median humidity from the `weather.measurements` table. Primary
-    key: `date`. Performance guard: 1000 row limit, applied before aggregation.
-
-     `SELECT median(humidity) FROM (SELECT humidity FROM weather.measurements LIMIT 1000)`
-
-    Example query. Purpose: get the lowest temperature from the `weather.measurements` table over
-    the last 10 years. Primary key: `date`. Performance guard: date range filter.
-
-    `SELECT min(temperature) FROM weather.measurements WHERE date > now() - INTERVAL 10 YEARS`
-
-    Example query. Purpose: get the app name with the most log messages from the `application.logs`
-    table in the window between new year and valentine's day of 2024. Primary key: `timestamp`.
-    Performance guard: date range filter.
-     `SELECT app, count(*) FROM application.logs WHERE timestamp > '2024-01-01' AND timestamp < '2024-02-14' GROUP BY app ORDER BY count(*) DESC LIMIT 1`
+        Purpose: get the app name with the most log messages from the `application.logs`
+        table in the window between new year and valentine's day of 2024. Primary key: `timestamp`.
+        Performance guard: date range filter.
+         `SELECT app, count(*) FROM application.logs WHERE timestamp > '2024-01-01' AND timestamp < '2024-02-14' GROUP BY app ORDER BY count(*) DESC LIMIT 1`
 
     Pagination:
-        This tool supports cursor-based pagination for large result sets.
+        By default (paginate=True), returns PaginatedQueryResult with:
+        - rows, columns: Current page data
+        - next_cursor: Pass to subsequent calls (None when done)
+        - page_size, total_retrieved, has_more: Pagination metadata
 
-        When paginate=True (default):
-        - Results are returned in pages (default: 10,000 rows per page)
-        - Response includes:
-          - columns: List of column names
-          - rows: List of row data for current page
-          - next_cursor: Opaque cursor string (None if no more pages)
-          - page_size: Number of rows in this page
-          - total_retrieved: Total rows retrieved so far (including this page)
-          - has_more: Boolean indicating if more pages exist
-        - To get next page, pass next_cursor to cursor parameter with same query
-        - Loop until next_cursor is None to fetch all results
+        Set paginate=False for legacy single-response mode (use only for small result sets).
 
-        When paginate=False:
-        - Returns all results in single response (legacy behavior)
-        - Returns HdxQueryResult dict with columns and rows only
-
-        Example pagination workflow:
-            # Get first page
-            result = await run_select_query('SELECT * FROM table ORDER BY id')
-            rows = result['rows']
-
-            # Get subsequent pages if more exist
-            while result['next_cursor']:
-                result = await run_select_query(
-                    'SELECT * FROM table ORDER BY id',
-                    cursor=result['next_cursor']
-                )
-                rows.extend(result['rows'])
-
-        IMPORTANT: When using pagination, always include ORDER BY in your query
-        to ensure consistent ordering across pages.
+        Call get_pagination_help() for complete pagination workflow examples.
     """
     logger.info(f"Executing SELECT query: {query} (paginate={paginate}, cursor={cursor})")
 

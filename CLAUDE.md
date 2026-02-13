@@ -24,6 +24,24 @@ export HYDROLIX_MCP_BIND_PORT=8000
 uv run mcp-hydrolix
 ```
 
+### Sample MCP configuration for running local development version
+```json
+"mcp-hydrolix": {
+  "command": "<absolute path to uv>",
+  "args": [
+    "run",
+    "--directory",
+    "<absolute path to mcp-hydrolix repo>",
+    "mcp-hydrolix"
+  ],
+  "env": {
+    "HYDROLIX_HOST": "<REPLACE_ME>",
+    "HYDROLIX_USER": "<REPLACE_ME>",
+    "HYDROLIX_PASSWORD": "<REPLACE_ME>"
+  }
+}
+```
+
 ## Architecture
 
 **`main.py`**: Transport selection (stdio/HTTP/SSE)
