@@ -1,8 +1,7 @@
 import logging
 import re
 import signal
-from collections.abc import Sequence
-from typing import Any, Final, Optional, List, cast, TypedDict
+from typing import Any, Final, List, Optional, TypedDict, cast
 
 import clickhouse_connect
 from clickhouse_connect import common
@@ -67,6 +66,26 @@ class Table:
 class HdxQueryResult(TypedDict):
     columns: List[str]
     rows: List[List[Any]]
+
+
+class PaginatedTableList(TypedDict):
+    """Response format for paginated list_tables results."""
+
+    tables: List[Table]
+    nextCursor: Optional[str]
+    pageSize: int
+    totalRetrieved: int
+
+
+class PaginatedQueryResult(TypedDict):
+    """Response format for paginated run_select_query results."""
+
+    columns: List[str]
+    rows: List[List[Any]]
+    nextCursor: Optional[str]
+    pageSize: int
+    totalRetrieved: int
+    hasMore: bool
 
 
 @dataclass
@@ -471,9 +490,13 @@ async def get_table_info(database: str, table: str) -> Table:
 
 @mcp.tool()
 async def list_tables(
-    database: str, like: Optional[str] = None, not_like: Optional[str] = None
-) -> List[Table]:
-    """List all tables in a database for exploration and discovery.
+    database: str,
+    like: Optional[str] = None,
+    not_like: Optional[str] = None,
+    cursor: Optional[str] = None,
+    paginate: bool = True,
+) -> "List[Table] | PaginatedTableList":
+    """List all tables in a database with pagination support.
 
     Use this tool to:
     - Discover what tables exist in a database
@@ -490,34 +513,139 @@ async def list_tables(
     for just that one table.
 
     BEFORE querying any table from the results, check is_summary_table and column
-    metadata to build correct queries."""
-    logger.info(f"Listing tables in database '{database}'")
+    metadata to build correct queries.
+
+    Pagination:
+        This tool supports cursor-based pagination for large result sets.
+
+        When paginate=True (default):
+        - Results are returned in pages (default: 50 tables per page)
+        - Response includes:
+          - tables: List of Table objects for current page
+          - nextCursor: Opaque cursor string (None if no more pages)
+          - pageSize: Number of tables in this page
+          - totalRetrieved: Total tables retrieved so far (including this page)
+        - To get next page, pass nextCursor to cursor parameter
+        - Loop until nextCursor is None to fetch all tables
+
+        When paginate=False:
+        - Returns all tables in single response (legacy behavior)
+        - Returns List[Table] directly
+
+        Example pagination workflow:
+            # Get first page
+            result = await list_tables('my_database')
+            tables = result['tables']
+
+            # Get subsequent pages if more exist
+            while result['nextCursor']:
+                result = await list_tables('my_database', cursor=result['nextCursor'])
+                tables.extend(result['tables'])
+    """
+    logger.info(f"Listing tables in database '{database}' (paginate={paginate}, cursor={cursor})")
+
+    # Import pagination utilities
+    from mcp_hydrolix.pagination import decode_cursor, encode_cursor, validate_cursor_params
+
+    # Decode cursor to get offset
+    offset = 0
+    if cursor:
+        try:
+            cursor_data = decode_cursor(cursor)
+            validate_cursor_params(
+                cursor_data, {"database": database, "like": like, "not_like": not_like}
+            )
+            offset = cursor_data.get("offset", 0)
+        except Exception as e:
+            raise ToolError(f"Invalid cursor: {str(e)}")
+
+    # Build base query
     query = f"""
         SELECT {SYSTEM_TABLES_FIELDS}
         FROM system.tables WHERE database = {format_query_value(database)}"""
+
     if like:
         query += f" AND name LIKE {format_query_value(like)}"
 
     if not_like:
         query += f" AND name NOT LIKE {format_query_value(not_like)}"
 
-    result = await execute_query(query)
+    # Add pagination if enabled
+    if paginate and HYDROLIX_CONFIG.enable_pagination:
+        page_size = HYDROLIX_CONFIG.list_tables_page_size
+        # Fetch one extra to detect if more pages exist
+        query += f" LIMIT {page_size + 1} OFFSET {offset}"
 
-    # Deserialize result as Table dataclass instances
+    result = await execute_query(query)
     tables = result_to_table(result["columns"], result["rows"])
 
-    # Populate each table with column metadata
+    # Check if more pages exist (only when paginating)
+    has_more = False
+    if paginate and HYDROLIX_CONFIG.enable_pagination:
+        page_size = HYDROLIX_CONFIG.list_tables_page_size
+        has_more = len(tables) > page_size
+        if has_more:
+            tables = tables[:page_size]  # Trim extra row
+
+    # Populate column metadata only for tables in this page
     for table in tables:
         await _populate_table_metadata(database, table)
 
-    logger.info(f"Found {len(tables)} tables")
-    return tables
+    logger.info(f"Found {len(tables)} tables (offset={offset}, hasMore={has_more})")
+
+    # Return format depends on paginate parameter
+    if not paginate or not HYDROLIX_CONFIG.enable_pagination:
+        # Legacy behavior: return list directly
+        return tables
+
+    # Generate next cursor if more data exists
+    next_cursor = None
+    if has_more:
+        next_cursor_data = {
+            "type": "table_list",
+            "offset": offset + page_size,
+            "params": {"database": database, "like": like, "not_like": not_like},
+        }
+        next_cursor = encode_cursor(next_cursor_data)
+
+    return PaginatedTableList(
+        tables=tables,
+        nextCursor=next_cursor,
+        pageSize=len(tables),
+        totalRetrieved=offset + len(tables),
+    )
+
+
+def _add_pagination_to_query(query: str, limit: int, offset: int) -> str:
+    """Add LIMIT and OFFSET to a SQL query.
+
+    If the query already contains LIMIT or OFFSET clauses, wraps it in a subquery
+    to apply pagination at the outer level.
+
+    Args:
+        query: SQL query string
+        limit: Maximum number of rows to return
+        offset: Number of rows to skip
+
+    Returns:
+        Modified query with LIMIT and OFFSET applied
+    """
+    query = query.strip().rstrip(";")
+
+    # If query already has LIMIT/OFFSET, wrap in subquery
+    if "LIMIT" in query.upper() or "OFFSET" in query.upper():
+        return f"SELECT * FROM ({query}) AS paginated_subquery LIMIT {limit} OFFSET {offset}"
+
+    # Simple case: append LIMIT/OFFSET
+    return f"{query} LIMIT {limit} OFFSET {offset}"
 
 
 @mcp.tool()
 @with_serializer
-async def run_select_query(query: str) -> dict[str, tuple | Sequence[str | Sequence[Any]]]:
-    """Run a SELECT query in a Hydrolix time-series database using the Clickhouse SQL dialect.
+async def run_select_query(
+    query: str, cursor: Optional[str] = None, paginate: bool = True
+) -> dict[str, Any]:
+    """Run a SELECT query in a Hydrolix time-series database using the Clickhouse SQL dialect with pagination support.
     Queries run using this tool will timeout after 30 seconds.
 
     MANDATORY PRE-QUERY CHECK - DO THIS FIRST BEFORE EVERY QUERY:
@@ -697,11 +825,104 @@ async def run_select_query(query: str) -> dict[str, tuple | Sequence[str | Seque
     table in the window between new year and valentine's day of 2024. Primary key: `timestamp`.
     Performance guard: date range filter.
      `SELECT app, count(*) FROM application.logs WHERE timestamp > '2024-01-01' AND timestamp < '2024-02-14' GROUP BY app ORDER BY count(*) DESC LIMIT 1`
+
+    Pagination:
+        This tool supports cursor-based pagination for large result sets.
+
+        When paginate=True (default):
+        - Results are returned in pages (default: 10,000 rows per page)
+        - Response includes:
+          - columns: List of column names
+          - rows: List of row data for current page
+          - nextCursor: Opaque cursor string (None if no more pages)
+          - pageSize: Number of rows in this page
+          - totalRetrieved: Total rows retrieved so far (including this page)
+          - hasMore: Boolean indicating if more pages exist
+        - To get next page, pass nextCursor to cursor parameter with same query
+        - Loop until nextCursor is None to fetch all results
+
+        When paginate=False:
+        - Returns all results in single response (legacy behavior)
+        - Returns HdxQueryResult dict with columns and rows only
+
+        Example pagination workflow:
+            # Get first page
+            result = await run_select_query('SELECT * FROM table ORDER BY id')
+            rows = result['rows']
+
+            # Get subsequent pages if more exist
+            while result['nextCursor']:
+                result = await run_select_query(
+                    'SELECT * FROM table ORDER BY id',
+                    cursor=result['nextCursor']
+                )
+                rows.extend(result['rows'])
+
+        IMPORTANT: When using pagination, always include ORDER BY in your query
+        to ensure consistent ordering across pages.
     """
-    logger.info(f"Executing SELECT query: {query}")
+    logger.info(f"Executing SELECT query: {query} (paginate={paginate}, cursor={cursor})")
+
+    # Import pagination utilities
+    from mcp_hydrolix.pagination import decode_cursor, encode_cursor, hash_query
+
+    # Decode cursor to get offset and validate query
+    offset = 0
+    if cursor:
+        try:
+            cursor_data = decode_cursor(cursor)
+            # Validate query hasn't changed
+            expected_hash = hash_query(query)
+            if cursor_data.get("query_hash") != expected_hash:
+                raise ValueError("Query has changed since cursor was generated")
+            offset = cursor_data.get("offset", 0)
+        except Exception as e:
+            raise ToolError(f"Invalid cursor: {str(e)}")
+
+    # Apply pagination if enabled
+    paginated_query = query
+    if paginate and HYDROLIX_CONFIG.enable_pagination:
+        page_size = HYDROLIX_CONFIG.query_result_page_size
+        # Fetch one extra row to detect if more pages exist
+        paginated_query = _add_pagination_to_query(query, page_size + 1, offset)
+
     try:
-        result = await execute_query(query=query)
-        return result
+        result = await execute_query(query=paginated_query)
+
+        # Check if we're in pagination mode
+        if not paginate or not HYDROLIX_CONFIG.enable_pagination:
+            # Legacy behavior: return HdxQueryResult directly
+            return result
+
+        # Pagination mode: return PaginatedQueryResult
+        page_size = HYDROLIX_CONFIG.query_result_page_size
+        rows = result["rows"]
+        columns = result["columns"]
+
+        # Check if more pages exist
+        has_more = len(rows) > page_size
+        if has_more:
+            rows = rows[:page_size]  # Trim extra row
+
+        # Generate next cursor if more data exists
+        next_cursor = None
+        if has_more:
+            next_cursor_data = {
+                "type": "query_result",
+                "offset": offset + page_size,
+                "query_hash": hash_query(query),
+            }
+            next_cursor = encode_cursor(next_cursor_data)
+
+        return PaginatedQueryResult(
+            columns=columns,
+            rows=rows,
+            nextCursor=next_cursor,
+            pageSize=len(rows),
+            totalRetrieved=offset + len(rows),
+            hasMore=has_more,
+        )
+
     except Exception as e:
         logger.error(f"Unexpected error in run_select_query: {str(e)}")
         raise ToolError(f"Unexpected error during query execution: {str(e)}")

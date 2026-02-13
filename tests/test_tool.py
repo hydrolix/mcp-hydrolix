@@ -58,17 +58,19 @@ class TestHydrolixTools(unittest.IsolatedAsyncioTestCase):
     async def test_list_tables_without_like(self):
         """Test listing tables without a 'LIKE' filter."""
         result = await list_tables.fn(self.test_db)
-        self.assertIsInstance(result, list)
-        self.assertEqual(len(result), 1)
-        table = result[0]
+        self.assertIsInstance(result, dict)
+        self.assertIn("tables", result)
+        self.assertEqual(len(result["tables"]), 1)
+        table = result["tables"][0]
         self.assertEqual(table.name, self.test_table)
 
     async def test_list_tables_with_like(self):
         """Test listing tables with a 'LIKE' filter."""
         result = await list_tables.fn(self.test_db, like=f"{self.test_table}%")
-        self.assertIsInstance(result, list)
-        self.assertEqual(len(result), 1)
-        table = result[0]
+        self.assertIsInstance(result, dict)
+        self.assertIn("tables", result)
+        self.assertEqual(len(result["tables"]), 1)
+        table = result["tables"][0]
         self.assertEqual(table.name, self.test_table)
 
     async def test_run_select_query_success(self):
@@ -93,10 +95,11 @@ class TestHydrolixTools(unittest.IsolatedAsyncioTestCase):
     async def test_column_comments(self):
         """Test that column comments are correctly retrieved."""
         result = await list_tables.fn(self.test_db)
-        self.assertIsInstance(result, list)
-        self.assertEqual(len(result), 1)
+        self.assertIsInstance(result, dict)
+        self.assertIn("tables", result)
+        self.assertEqual(len(result["tables"]), 1)
 
-        table_info = result[0]
+        table_info = result["tables"][0]
 
         # Get columns by name for easier testing
         columns = {col.name: col.__dict__ for col in table_info.columns}

@@ -55,6 +55,9 @@ class HydrolixConfig:
         HYDROLIX_MCP_MAX_REQUESTS 10000
         HYDROLIX_MCP_MAX_REQUESTS_JITTER 1000
         HYDROLIX_MCP_MAX_KEEPALIVE 10
+        HYDROLIX_LIST_TABLES_PAGE_SIZE 50
+        HYDROLIX_QUERY_RESULT_PAGE_SIZE 10000
+        HYDROLIX_ENABLE_PAGINATION true
     """
 
     def __init__(self) -> None:
@@ -245,6 +248,43 @@ class HydrolixConfig:
         Default: 10
         """
         return int(os.getenv("HYDROLIX_MCP_MAX_KEEPALIVE", 10))
+
+    @property
+    def list_tables_page_size(self) -> int:
+        """Get page size for list_tables pagination.
+
+        Controls how many tables are returned in a single page when
+        paginating through table lists. Smaller values reduce memory
+        usage and response time but require more requests to retrieve
+        all tables.
+
+        Default: 50 tables per page
+        """
+        return int(os.getenv("HYDROLIX_LIST_TABLES_PAGE_SIZE", "50"))
+
+    @property
+    def query_result_page_size(self) -> int:
+        """Get page size for run_select_query pagination.
+
+        Controls how many rows are returned in a single page when
+        paginating through query results. This value must be less than
+        or equal to hdx_query_max_result_rows (100,000).
+
+        Default: 10,000 rows per page
+        """
+        return int(os.getenv("HYDROLIX_QUERY_RESULT_PAGE_SIZE", "10000"))
+
+    @property
+    def enable_pagination(self) -> bool:
+        """Get whether pagination is enabled for tool results.
+
+        When enabled, tools like list_tables and run_select_query will
+        return paginated results with cursor support. When disabled,
+        tools return all results in a single response (legacy behavior).
+
+        Default: True
+        """
+        return os.getenv("HYDROLIX_ENABLE_PAGINATION", "true").lower() == "true"
 
     def get_client_config(self, request_credential: Optional[HydrolixCredential]) -> dict:
         """
