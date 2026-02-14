@@ -185,18 +185,19 @@ class TestListTablesPagination:
                 await list_tables_fn(database=test_db, cursor=cursor)
 
     @pytest.mark.asyncio
-    async def test_list_tables_each_table_has_columns(self, setup_pagination_test_database):
-        """Test that tables include column metadata."""
+    async def test_list_tables_each_table_has_empty_columns(self, setup_pagination_test_database):
+        """Test that list_tables returns empty columns for performance (use get_table_info for schema)."""
         test_db, _ = setup_pagination_test_database
 
         result = await list_tables_fn(database=test_db)
 
-        # Each table should have columns populated
+        # After HDX-10417 optimization, list_tables does NOT populate columns for performance
+        # Columns should be empty - use get_table_info() to get detailed schema
         for table in result["tables"]:
             assert table.columns is not None
-            assert len(table.columns) > 0
-            # Should have at least id, value, timestamp columns
-            assert len(table.columns) >= 3
+            assert len(table.columns) == 0, (
+                "list_tables should return empty columns (use get_table_info for schema)"
+            )
 
 
 class TestRunSelectQueryPagination:
