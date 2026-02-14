@@ -64,17 +64,19 @@ class TestHydrolixTools(unittest.IsolatedAsyncioTestCase):
     async def test_list_tables_without_like(self):
         """Test listing tables without a 'LIKE' filter."""
         result = await list_tables.fn(self.test_db)
-        self.assertIsInstance(result, list)
-        self.assertEqual(len(result), 1)
-        table = result[0]
+        self.assertIsInstance(result, dict)
+        self.assertIn("tables", result)
+        self.assertEqual(len(result["tables"]), 1)
+        table = result["tables"][0]
         self.assertEqual(table.name, self.test_table)
 
     async def test_list_tables_with_like(self):
         """Test listing tables with a 'LIKE' filter."""
         result = await list_tables.fn(self.test_db, like=f"{self.test_table}%")
-        self.assertIsInstance(result, list)
-        self.assertEqual(len(result), 1)
-        table = result[0]
+        self.assertIsInstance(result, dict)
+        self.assertIn("tables", result)
+        self.assertEqual(len(result["tables"]), 1)
+        table = result["tables"][0]
         self.assertEqual(table.name, self.test_table)
 
     async def test_run_select_query_success(self):
@@ -103,8 +105,11 @@ class TestHydrolixTools(unittest.IsolatedAsyncioTestCase):
         since list_tables() no longer returns column metadata.
         """
         # First verify the table exists
-        tables = await list_tables.fn(self.test_db)
-        self.assertIsInstance(tables, list)
+        result = await list_tables.fn(self.test_db)
+        # list_tables returns paginated results by default
+        self.assertIsInstance(result, dict)
+        self.assertIn("tables", result)
+        tables = result["tables"]
         self.assertEqual(len(tables), 1)
         self.assertEqual(tables[0].name, self.test_table)
 

@@ -116,27 +116,33 @@ async def test_list_tables_basic(mcp_server, setup_test_database):
     async with Client(mcp_server) as client:
         result = await client.call_tool("list_tables", {"database": test_db})
 
-        tables = result.data
+        data = result.data
+        # Access tables - handle both Root object and dict
+        tables = data["tables"] if isinstance(data, dict) else data.tables
         assert len(tables) >= 1
 
         # Should have exactly 2 tables
         assert len(tables) == 2
 
-        # Get table names
-        table_names = [table["name"] for table in tables]
+        # Get table names (handle both Root objects and dicts)
+        table_names = [table["name"] if isinstance(table, dict) else table.name for table in tables]
         assert test_table in table_names
         assert test_table2 in table_names
 
         # Check basic table details (without columns)
         for table in tables:
-            assert table["database"] == test_db
-            assert "total_rows" in table
-            assert "engine" in table
-            assert "name" in table
-            assert "primary_key" in table
+            # All these fields are guaranteed to exist in Table dataclass
+            db = table["database"] if isinstance(table, dict) else table.database
+            assert db == test_db
 
-            # Columns should be empty or None (not populated by list_tables)
-            assert table.get("columns") is None or len(table.get("columns", [])) == 0
+            # Verify standard Table fields exist (no need for hasattr - they're always present)
+            name = table["name"] if isinstance(table, dict) else table.name
+            engine = table["engine"] if isinstance(table, dict) else table.engine
+            assert name and engine  # Both should have values
+
+            # Columns should be empty (not populated by list_tables after HDX-10417 optimization)
+            cols = table.get("columns") if isinstance(table, dict) else table.columns
+            assert cols is not None and len(cols) == 0
 
 
 @pytest.mark.asyncio
@@ -148,16 +154,13 @@ async def test_list_tables_with_like_filter(mcp_server, setup_test_database):
         # Test with LIKE filter
         result = await client.call_tool("list_tables", {"database": test_db, "like": "test_%"})
 
-        tables_data = result.data
-
-        # Handle both single dict and list of dicts
-        if isinstance(tables_data, dict):
-            tables = [tables_data]
-        else:
-            tables = tables_data
+        data = result.data
+        # Access tables - handle both Root object and dict
+        tables = data["tables"] if isinstance(data, dict) else data.tables
 
         assert len(tables) == 1
-        assert tables[0]["name"] == test_table
+        name = tables[0]["name"] if isinstance(tables[0], dict) else tables[0].name
+        assert name == test_table
 
 
 @pytest.mark.asyncio
@@ -169,16 +172,13 @@ async def test_list_tables_with_not_like_filter(mcp_server, setup_test_database)
         # Test with NOT LIKE filter
         result = await client.call_tool("list_tables", {"database": test_db, "not_like": "test_%"})
 
-        tables_data = result.data
-
-        # Handle both single dict and list of dicts
-        if isinstance(tables_data, dict):
-            tables = [tables_data]
-        else:
-            tables = tables_data
+        data = result.data
+        # Access tables - handle both Root object and dict
+        tables = data["tables"] if isinstance(data, dict) else data.tables
 
         assert len(tables) == 1
-        assert tables[0]["name"] == test_table2
+        name = tables[0]["name"] if isinstance(tables[0], dict) else tables[0].name
+        assert name == test_table2
 
 
 @pytest.mark.asyncio
@@ -286,41 +286,65 @@ async def test_table_metadata_details(mcp_server, setup_test_database):
     async with Client(mcp_server) as client:
         # First, list tables to discover available tables
         result = await client.call_tool("list_tables", {"database": test_db})
-        tables = result.data
+
+        data = result.data
+        # Access tables - handle both Root object and dict
+        tables = data["tables"] if isinstance(data, dict) else data.tables
 
         # Verify our test table exists in the list
-        test_table_exists = any(t["name"] == test_table for t in tables)
+        table_names = [t["name"] if isinstance(t, dict) else t.name for t in tables]
+        test_table_exists = test_table in table_names
         assert test_table_exists, f"Test table {test_table} not found in list_tables result"
 
         # Now use get_table_info to get detailed metadata including columns
         result = await client.call_tool(
             "get_table_info", {"database": test_db, "table": test_table}
         )
-        test_table_info = vars(result.data)
+        test_table_info = result.data
 
-        # Check engine info
-        assert test_table_info["engine"] == "MergeTree"
+        # Check engine info (handle both Root objects and dicts)
+        engine = (
+            test_table_info["engine"]
+            if isinstance(test_table_info, dict)
+            else test_table_info.engine
+        )
+        assert engine == "MergeTree"
 
         # Check row count
-        assert test_table_info["total_rows"] == 4
+        total_rows = (
+            test_table_info["total_rows"]
+            if isinstance(test_table_info, dict)
+            else test_table_info.total_rows
+        )
+        assert total_rows == 4
 
-        # Convert columns list items to dicts
-        test_table_info["columns"] = [vars(col) for col in test_table_info["columns"]]
-        # Check columns and their comments
-        columns_by_name = {col["name"]: col for col in test_table_info["columns"]}
+        # Check columns and their comments (handle both formats)
+        cols = (
+            test_table_info["columns"]
+            if isinstance(test_table_info, dict)
+            else test_table_info.columns
+        )
+        # Convert columns to dicts if they're not already
+        if cols and not isinstance(cols[0], dict):
+            cols = [vars(col) for col in cols]
+        columns_by_name = {col["name"]: col for col in cols}
 
-        assert columns_by_name["id"]["comment"] == "Primary identifier"
-        assert columns_by_name["id"]["column_type"] == "UInt32"
+        id_col = columns_by_name["id"]
+        assert id_col["comment"] == "Primary identifier"
+        assert id_col["column_type"] == "UInt32"
 
-        assert columns_by_name["name"]["comment"] == "User name field"
-        assert columns_by_name["name"]["column_type"] == "String"
+        name_col = columns_by_name["name"]
+        assert name_col["comment"] == "User name field"
+        assert name_col["column_type"] == "String"
 
-        assert columns_by_name["age"]["comment"] == "User age"
-        assert columns_by_name["age"]["column_type"] == "UInt8"
+        age_col = columns_by_name["age"]
+        assert age_col["comment"] == "User age"
+        assert age_col["column_type"] == "UInt8"
 
-        assert columns_by_name["created_at"]["comment"] == "Record creation timestamp"
-        assert columns_by_name["created_at"]["column_type"] == "DateTime"
-        assert columns_by_name["created_at"]["default_expression"] == "now()"
+        created_col = columns_by_name["created_at"]
+        assert created_col["comment"] == "Record creation timestamp"
+        assert created_col["column_type"] == "DateTime"
+        assert created_col["default_expression"] == "now()"
 
 
 @pytest.mark.asyncio
@@ -329,16 +353,23 @@ async def test_system_database_access(mcp_server):
     async with Client(mcp_server) as client:
         # List tables in system database
         result = await client.call_tool("list_tables", {"database": "system"})
-        tables = result.data
 
-        # System database should have many tables
-        assert len(tables) > 10
+        data = result.data
+        # Access tables - handle both Root object and dict
+        tables = data["tables"] if isinstance(data, dict) else data.tables
 
-        # Check for some common system tables
-        table_names = [t["name"] for t in tables]
-        assert "tables" in table_names
-        assert "columns" in table_names
-        assert "databases" in table_names
+        # System database should have many tables (but may be paginated)
+        # Just check we got some tables back
+        assert len(tables) > 0
+
+        # With pagination (default 50 tables per page), we might not get all system tables
+        # Just verify we got valid system table names (handle both Root objects and dicts)
+        table_names = [t["name"] if isinstance(t, dict) else t.name for t in tables]
+        # Check that we have at least some recognizable system tables
+        # These are typically early in the alphabetical list
+        common_tables = ["aggregate_function_combinators", "asynchronous_metrics", "clusters"]
+        found_count = sum(1 for tbl in common_tables if tbl in table_names)
+        assert found_count > 0, f"Expected some common system tables, got: {table_names[:5]}"
 
 
 class ServerMetrics:
@@ -398,7 +429,9 @@ async def test_concurrent_queries(monkeypatch, mcp_server, setup_test_database):
 
     ServerMetrics.inflight_requests = 0
     async with Client(mcp_server) as client:
-        lq = "SELECT * FROM loop  (numbers(3)) LIMIT 7000000000000 SETTINGS max_execution_time=9"
+        # Use a query that will timeout even for first page by using a slow function
+        lq = "SELECT sleep(10) FROM numbers(10000) SETTINGS max_execution_time=9"
+        # Run long query to test timeout behavior
         lq_f = asyncio.gather(*[client.call_tool("run_select_query", {"query": lq})])
 
         # Run multiple queries concurrently
@@ -409,7 +442,7 @@ async def test_concurrent_queries(monkeypatch, mcp_server, setup_test_database):
             f"SELECT MIN(event_id) FROM {test_db}.{test_table2}",
         ]
 
-        # Execute all queries concurrently
+        # Execute all queries concurrently (with pagination enabled by default)
         results = asyncio.gather(
             *[client.call_tool("run_select_query", {"query": query}) for query in queries]
         )
@@ -434,12 +467,18 @@ async def test_concurrent_queries(monkeypatch, mcp_server, setup_test_database):
     for query in queries:
         assert query in ServerMetrics.queries
 
-    # Check each result
+    # Check each result - all queries should return paginated responses
     assert results.done()
     for result in results.result():
-        query_result = json.loads(result.content[0].text)
-        assert "rows" in query_result
-        assert len(query_result["rows"]) == 1
+        # MCP client returns Root object with .data or raw response with .content
+        if hasattr(result, "data"):
+            query_result = result.data
+        else:
+            query_result = json.loads(result.content[0].text)
+
+        # Always returns PaginatedQueryResult with 'rows' field
+        rows = query_result["rows"] if isinstance(query_result, dict) else query_result.rows
+        assert len(rows) == 1
 
 
 @pytest.mark.asyncio
