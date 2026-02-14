@@ -107,7 +107,10 @@ async def test_list_databases(mcp_server, setup_test_database):
 
 @pytest.mark.asyncio
 async def test_list_tables_basic(mcp_server, setup_test_database):
-    """Test the list_tables tool without filters."""
+    """Test the list_tables tool without filters.
+
+    Updated: list_tables() now returns only basic table info without columns.
+    """
     test_db, test_table, test_table2 = setup_test_database
 
     async with Client(mcp_server) as client:
@@ -127,17 +130,26 @@ async def test_list_tables_basic(mcp_server, setup_test_database):
         assert test_table in table_names
         assert test_table2 in table_names
 
-        # Check table details (handle both Root objects and dicts)
+        # Check basic table details (without columns)
         for table in tables:
             db = table["database"] if isinstance(table, dict) else table.database
             assert db == test_db
-            cols = table["columns"] if isinstance(table, dict) else table.columns
-            assert cols is not None and len(cols) > 0
-            # Just verify we got table data
             assert (
                 ("total_rows" in table) if isinstance(table, dict) else hasattr(table, "total_rows")
             )
             assert ("engine" in table) if isinstance(table, dict) else hasattr(table, "engine")
+            assert ("name" in table) if isinstance(table, dict) else hasattr(table, "name")
+            assert (
+                ("primary_key" in table)
+                if isinstance(table, dict)
+                else hasattr(table, "primary_key")
+            )
+
+            # Columns should be empty or None (not populated by list_tables)
+            cols = (
+                table.get("columns") if isinstance(table, dict) else getattr(table, "columns", None)
+            )
+            assert cols is None or len(cols) == 0
 
 
 @pytest.mark.asyncio
@@ -281,6 +293,7 @@ async def test_table_metadata_details(mcp_server, setup_test_database):
     test_db, test_table, _ = setup_test_database
 
     async with Client(mcp_server) as client:
+        # First, list tables to discover available tables
         result = await client.call_tool("list_tables", {"database": test_db})
 
         # Result is now PaginatedTableList (returned as Root object or dict by MCP)
@@ -288,10 +301,16 @@ async def test_table_metadata_details(mcp_server, setup_test_database):
         # Access tables - handle both Root object and dict
         tables = data["tables"] if isinstance(data, dict) else data.tables
 
-        # Find our test table (handle both Root objects and dicts)
-        test_table_info = next(
-            t for t in tables if (t["name"] if isinstance(t, dict) else t.name) == test_table
+        # Verify our test table exists in the list
+        table_names = [t["name"] if isinstance(t, dict) else t.name for t in tables]
+        test_table_exists = test_table in table_names
+        assert test_table_exists, f"Test table {test_table} not found in list_tables result"
+
+        # Now use get_table_info to get detailed metadata including columns
+        result = await client.call_tool(
+            "get_table_info", {"database": test_db, "table": test_table}
         )
+        test_table_info = result.data
 
         # Check engine info (handle both Root objects and dicts)
         engine = (
@@ -315,44 +334,27 @@ async def test_table_metadata_details(mcp_server, setup_test_database):
             if isinstance(test_table_info, dict)
             else test_table_info.columns
         )
-        columns_by_name = {
-            (col["name"] if isinstance(col, dict) else col.name): col for col in cols
-        }
+        # Convert columns to dicts if they're not already
+        if cols and not isinstance(cols[0], dict):
+            cols = [vars(col) for col in cols]
+        columns_by_name = {col["name"]: col for col in cols}
 
         id_col = columns_by_name["id"]
-        assert (
-            id_col["comment"] if isinstance(id_col, dict) else id_col.comment
-        ) == "Primary identifier"
-        assert (
-            id_col["column_type"] if isinstance(id_col, dict) else id_col.column_type
-        ) == "UInt32"
+        assert id_col["comment"] == "Primary identifier"
+        assert id_col["column_type"] == "UInt32"
 
         name_col = columns_by_name["name"]
-        assert (
-            name_col["comment"] if isinstance(name_col, dict) else name_col.comment
-        ) == "User name field"
-        assert (
-            name_col["column_type"] if isinstance(name_col, dict) else name_col.column_type
-        ) == "String"
+        assert name_col["comment"] == "User name field"
+        assert name_col["column_type"] == "String"
 
         age_col = columns_by_name["age"]
-        assert (age_col["comment"] if isinstance(age_col, dict) else age_col.comment) == "User age"
-        assert (
-            age_col["column_type"] if isinstance(age_col, dict) else age_col.column_type
-        ) == "UInt8"
+        assert age_col["comment"] == "User age"
+        assert age_col["column_type"] == "UInt8"
 
         created_col = columns_by_name["created_at"]
-        assert (
-            created_col["comment"] if isinstance(created_col, dict) else created_col.comment
-        ) == "Record creation timestamp"
-        assert (
-            created_col["column_type"] if isinstance(created_col, dict) else created_col.column_type
-        ) == "DateTime"
-        assert (
-            created_col["default_expression"]
-            if isinstance(created_col, dict)
-            else created_col.default_expression
-        ) == "now()"
+        assert created_col["comment"] == "Record creation timestamp"
+        assert created_col["column_type"] == "DateTime"
+        assert created_col["default_expression"] == "now()"
 
 
 @pytest.mark.asyncio
