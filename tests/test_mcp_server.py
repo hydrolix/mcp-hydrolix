@@ -116,7 +116,6 @@ async def test_list_tables_basic(mcp_server, setup_test_database):
     async with Client(mcp_server) as client:
         result = await client.call_tool("list_tables", {"database": test_db})
 
-        # Result is now PaginatedTableList (returned as Root object or dict by MCP)
         data = result.data
         # Access tables - handle both Root object and dict
         tables = data["tables"] if isinstance(data, dict) else data.tables
@@ -132,24 +131,18 @@ async def test_list_tables_basic(mcp_server, setup_test_database):
 
         # Check basic table details (without columns)
         for table in tables:
+            # All these fields are guaranteed to exist in Table dataclass
             db = table["database"] if isinstance(table, dict) else table.database
             assert db == test_db
-            assert (
-                ("total_rows" in table) if isinstance(table, dict) else hasattr(table, "total_rows")
-            )
-            assert ("engine" in table) if isinstance(table, dict) else hasattr(table, "engine")
-            assert ("name" in table) if isinstance(table, dict) else hasattr(table, "name")
-            assert (
-                ("primary_key" in table)
-                if isinstance(table, dict)
-                else hasattr(table, "primary_key")
-            )
 
-            # Columns should be empty or None (not populated by list_tables)
-            cols = (
-                table.get("columns") if isinstance(table, dict) else getattr(table, "columns", None)
-            )
-            assert cols is None or len(cols) == 0
+            # Verify standard Table fields exist (no need for hasattr - they're always present)
+            name = table["name"] if isinstance(table, dict) else table.name
+            engine = table["engine"] if isinstance(table, dict) else table.engine
+            assert name and engine  # Both should have values
+
+            # Columns should be empty (not populated by list_tables after HDX-10417 optimization)
+            cols = table.get("columns") if isinstance(table, dict) else table.columns
+            assert cols is not None and len(cols) == 0
 
 
 @pytest.mark.asyncio
@@ -161,7 +154,6 @@ async def test_list_tables_with_like_filter(mcp_server, setup_test_database):
         # Test with LIKE filter
         result = await client.call_tool("list_tables", {"database": test_db, "like": "test_%"})
 
-        # Result is now PaginatedTableList (returned as Root object or dict by MCP)
         data = result.data
         # Access tables - handle both Root object and dict
         tables = data["tables"] if isinstance(data, dict) else data.tables
@@ -180,7 +172,6 @@ async def test_list_tables_with_not_like_filter(mcp_server, setup_test_database)
         # Test with NOT LIKE filter
         result = await client.call_tool("list_tables", {"database": test_db, "not_like": "test_%"})
 
-        # Result is now PaginatedTableList (returned as Root object or dict by MCP)
         data = result.data
         # Access tables - handle both Root object and dict
         tables = data["tables"] if isinstance(data, dict) else data.tables
@@ -296,7 +287,6 @@ async def test_table_metadata_details(mcp_server, setup_test_database):
         # First, list tables to discover available tables
         result = await client.call_tool("list_tables", {"database": test_db})
 
-        # Result is now PaginatedTableList (returned as Root object or dict by MCP)
         data = result.data
         # Access tables - handle both Root object and dict
         tables = data["tables"] if isinstance(data, dict) else data.tables
@@ -364,7 +354,6 @@ async def test_system_database_access(mcp_server):
         # List tables in system database
         result = await client.call_tool("list_tables", {"database": "system"})
 
-        # Result is now PaginatedTableList (returned as Root object or dict by MCP)
         data = result.data
         # Access tables - handle both Root object and dict
         tables = data["tables"] if isinstance(data, dict) else data.tables
@@ -478,14 +467,16 @@ async def test_concurrent_queries(monkeypatch, mcp_server, setup_test_database):
     for query in queries:
         assert query in ServerMetrics.queries
 
-    # Check each result
+    # Check each result - all queries should return paginated responses
     assert results.done()
     for result in results.result():
-        # Result can be either Root object or dict from MCP client
-        query_result = (
-            result.data if hasattr(result, "data") else json.loads(result.content[0].text)
-        )
-        # With pagination, check for rows (paginated format)
+        # MCP client returns Root object with .data or raw response with .content
+        if hasattr(result, "data"):
+            query_result = result.data
+        else:
+            query_result = json.loads(result.content[0].text)
+
+        # Always returns PaginatedQueryResult with 'rows' field
         rows = query_result["rows"] if isinstance(query_result, dict) else query_result.rows
         assert len(rows) == 1
 
