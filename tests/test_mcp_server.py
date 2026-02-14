@@ -440,11 +440,10 @@ async def test_concurrent_queries(monkeypatch, mcp_server, setup_test_database):
 
     ServerMetrics.inflight_requests = 0
     async with Client(mcp_server) as client:
-        lq = "SELECT * FROM loop  (numbers(3)) LIMIT 7000000000000 SETTINGS max_execution_time=9"
-        # Disable pagination for this long query to test timeout behavior
-        lq_f = asyncio.gather(
-            *[client.call_tool("run_select_query", {"query": lq, "paginate": False})]
-        )
+        # Use a query that will timeout even for first page by using a slow function
+        lq = "SELECT sleep(10) FROM numbers(10000) SETTINGS max_execution_time=9"
+        # Run long query to test timeout behavior
+        lq_f = asyncio.gather(*[client.call_tool("run_select_query", {"query": lq})])
 
         # Run multiple queries concurrently
         queries = [
