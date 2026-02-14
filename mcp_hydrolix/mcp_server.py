@@ -1,3 +1,4 @@
+import json
 import logging
 import re
 import signal
@@ -11,7 +12,9 @@ from dotenv import load_dotenv
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from fastmcp.server.dependencies import get_access_token
+from fastmcp.tools.tool import ToolResult
 from jwt import DecodeError
+from mcp.types import Annotations, TextContent
 from pydantic import Field
 from pydantic.dataclasses import dataclass
 from starlette.requests import Request
@@ -670,11 +673,6 @@ async def get_summary_table_query_help():
         - critical_rules: 7 critical rules for querying summary tables
         - patterns: 6 common query patterns with examples
     """
-    import json
-
-    from fastmcp.tools.tool import ToolResult
-    from mcp.types import Annotations, TextContent
-
     help_text = {
         "overview": """Summary tables contain pre-computed aggregations stored in aggregate function state columns.
 These tables are identified by having columns with aggregate function names like count(...),
@@ -830,11 +828,6 @@ async def get_pagination_help():
         - workflow_example: Complete example of fetching all pages
         - best_practices: Important tips for using pagination
     """
-    import json
-
-    from fastmcp.tools.tool import ToolResult
-    from mcp.types import Annotations, TextContent
-
     help_text = {
         "overview": """Cursor-based pagination allows efficient retrieval of large result sets in pages.
 - Default page size: 50 tables (list_tables) or 10,000 rows (run_select_query)
