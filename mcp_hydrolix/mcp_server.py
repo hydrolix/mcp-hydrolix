@@ -2,7 +2,7 @@ import logging
 import re
 import signal
 from collections.abc import Sequence
-from typing import Any, Final, Optional, List, cast, TypedDict
+from typing import Any, Final, List, Optional, TypedDict, cast
 
 import clickhouse_connect
 from clickhouse_connect import common
@@ -167,7 +167,8 @@ def term(*args, **kwargs):
 
 signal.signal(signal.SIGTERM, term)
 signal.signal(signal.SIGINT, term)
-signal.signal(signal.SIGQUIT, term)
+if hasattr(signal, "SIGQUIT"):
+    signal.signal(signal.SIGQUIT, term)
 
 
 async def execute_query(query: str) -> HdxQueryResult:
