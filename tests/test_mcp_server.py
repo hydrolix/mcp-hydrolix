@@ -1,5 +1,4 @@
 import asyncio
-import json
 import os
 import time
 import uuid
@@ -437,7 +436,7 @@ async def test_concurrent_queries(monkeypatch, mcp_server, setup_test_database):
     # Check each result
     assert results.done()
     for result in results.result():
-        query_result = json.loads(result.content[0].text)
+        query_result = result.structured_content
         assert "rows" in query_result
         assert len(query_result["rows"]) == 1
 

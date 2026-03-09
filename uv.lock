@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.13"
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform == 'win32'",
@@ -805,6 +805,7 @@ dependencies = [
     { name = "pip-system-certs" },
     { name = "pyjwt" },
     { name = "python-dotenv" },
+    { name = "toon-format" },
 ]
 
 [package.optional-dependencies]
@@ -836,6 +837,7 @@ requires-dist = [
     { name = "pytest-xdist", marker = "extra == 'dev'" },
     { name = "python-dotenv", specifier = ">=1.1,<1.2" },
     { name = "ruff", marker = "extra == 'dev'" },
+    { name = "toon-format", git = "https://github.com/toon-format/toon-python.git" },
 ]
 provides-extras = ["dev"]
 
@@ -1671,6 +1673,11 @@ sdist = { url = "https://files.pythonhosted.org/packages/c4/68/79977123bb7be889a
 wheels = [
     { url = "https://files.pythonhosted.org/packages/81/0d/13d1d239a25cbfb19e740db83143e95c772a1fe10202dda4b76792b114dd/starlette-0.52.1-py3-none-any.whl", hash = "sha256:0029d43eb3d273bc4f83a08720b4912ea4b071087a3b48db01b7c839f7954d74", size = 74272, upload-time = "2026-01-18T13:34:09.188Z" },
 ]
+
+[[package]]
+name = "toon-format"
+version = "0.9.0b1"
+source = { git = "https://github.com/toon-format/toon-python.git#6b26984a01279defdcf40ab9d09bc418fe8133ac" }
 
 [[package]]
 name = "truststore"
