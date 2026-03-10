@@ -41,8 +41,13 @@ def _serialize_query_result(result: dict[str, Any]) -> tuple[str, dict[str, Any]
     :returns: (encoded_string, structured_dict) tuple
     """
     columns = result["columns"]
-    records = [dict(zip(columns, (_normalize_value(v) for v in row))) for row in result["rows"]]
-    structured = {"columns": columns, "rows": [list(record.values()) for record in records]}
+    records = [
+        {col: _normalize_value(val) for col, val in zip(columns, row)} for row in result["rows"]
+    ]
+    structured = {
+        "columns": columns,
+        "rows": [list(record.values()) for record in records],
+    }
     try:
         return toon_encode(records), structured
     except Exception as exc:
