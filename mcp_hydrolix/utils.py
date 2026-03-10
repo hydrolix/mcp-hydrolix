@@ -1,3 +1,4 @@
+import base64
 import inspect
 import ipaddress
 import json
@@ -23,7 +24,7 @@ def _normalize_value(val: Any) -> Any:
     if isinstance(val, (date, time)):
         return val.isoformat()
     if isinstance(val, bytes):
-        return val.decode("utf-8", errors="replace")
+        return base64.b64encode(val).decode("ascii")
     if isinstance(val, Decimal):
         return str(val)
     return val

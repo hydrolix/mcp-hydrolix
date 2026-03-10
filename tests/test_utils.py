@@ -27,12 +27,11 @@ class TestNormalizeValue:
     def test_time_midnight(self):
         assert _normalize_value(time(0, 0, 0)) == "00:00:00"
 
-    def test_bytes_utf8(self):
-        assert _normalize_value(b"hello world") == "hello world"
+    def test_bytes(self):
+        assert _normalize_value(b"hello") == "aGVsbG8="
 
-    def test_bytes_non_utf8(self):
-        result = _normalize_value(b"\xff\xfe")
-        assert isinstance(result, str)  # did not raise
+    def test_bytes_binary(self):
+        assert _normalize_value(b"\xff\xfe") == "//4="
 
     def test_decimal(self):
         assert _normalize_value(Decimal("123.456")) == "123.456"
@@ -138,7 +137,7 @@ class TestWithSerializerDecorator:
         row = result.structured_content["rows"][0]
         assert row[0] == "172.16.0.1"
         assert row[1] == "500.00"
-        assert row[2] == "encoded"
+        assert row[2] == "ZW5jb2RlZA=="
 
     @pytest.mark.asyncio
     async def test_async_custom_types_serialization(self):
@@ -247,14 +246,14 @@ class TestSerializeQueryResult:
         assert structured["rows"][0][0] == "1.2.3.4"
 
     def test_query_result_normalizes_bytes(self):
-        """bytes in rows are decoded to a UTF-8 string before TOON encoding."""
+        """bytes in rows are base64-encoded before TOON encoding."""
         from mcp_hydrolix.utils import _serialize_query_result
 
         result = {"columns": ["data"], "rows": [[b"hello"]]}
         toon_str, structured = _serialize_query_result(result)
 
-        assert "hello" in toon_str
-        assert structured["rows"][0][0] == "hello"
+        assert "aGVsbG8=" in toon_str
+        assert structured["rows"][0][0] == "aGVsbG8="
 
     def test_query_result_normalizes_ipv6(self):
         """IPv6Address in rows is converted to string before TOON encoding."""
