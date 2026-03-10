@@ -30,7 +30,7 @@ def _normalize_value(val: Any) -> Any:
     return val
 
 
-def _serialize_query_result(result: dict) -> tuple[str, dict]:
+def _serialize_query_result(result: dict[str, Any]) -> tuple[str, dict[str, Any]]:
     """
     Serialize a HdxQueryResult to TOON format for LLM consumption.
 

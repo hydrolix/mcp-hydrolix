@@ -1,7 +1,6 @@
 import logging
 import re
 import signal
-from collections.abc import Sequence
 from typing import Any, Final, List, Optional, TypedDict, cast
 
 import clickhouse_connect
@@ -11,6 +10,7 @@ from clickhouse_connect.driver.binding import format_query_value
 from dotenv import load_dotenv
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
+from fastmcp.tools.tool import ToolResult
 from fastmcp.server.dependencies import get_access_token
 from jwt import DecodeError
 from pydantic import Field
@@ -558,7 +558,7 @@ async def list_tables(
 
 @mcp.tool()
 @with_serializer
-async def run_select_query(query: str) -> dict[str, tuple | Sequence[str | Sequence[Any]]]:
+async def run_select_query(query: str) -> ToolResult:
     """Run a SELECT query in a Hydrolix time-series database using the Clickhouse SQL dialect.
     Queries run using this tool will timeout after 30 seconds.
 
