@@ -14,7 +14,7 @@ dependencies = [
      "certifi>=2026.1.4",
      "gunicorn>=23.0,<24.0",
      "pyjwt>=2.10,<2.11",
-     "toon-format",
+     "toon-format>=0.9.0b1",
 ]
 
 [project.scripts]
@@ -40,9 +40,6 @@ packages = ["mcp_hydrolix"]
 
 [tool.ruff]
 line-length = 100
-
-[tool.uv.sources]
-toon-format = { git = "https://github.com/toon-format/toon-python.git" }
 
 [build-system]
 requires = ["hatchling"]
