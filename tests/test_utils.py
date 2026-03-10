@@ -4,128 +4,57 @@ import pytest
 from datetime import datetime, time
 from decimal import Decimal
 
-from mcp_hydrolix.utils import ExtendedEncoder, with_serializer
+from mcp_hydrolix.utils import _normalize_value, with_serializer
 from fastmcp.tools.tool import ToolResult
 
 
-class TestExtendedEncoder:
-    """Test suite for ExtendedEncoder class."""
+class TestNormalizeValue:
+    """Test suite for _normalize_value."""
 
-    def test_ipv4_address_serialization(self):
-        """Test that IPv4 addresses are serialized to strings."""
-        ip = ipaddress.IPv4Address("192.168.1.1")
-        result = json.dumps({"ip": ip}, cls=ExtendedEncoder)
-        assert result == '{"ip": "192.168.1.1"}'
+    def test_ipv4_address(self):
+        assert _normalize_value(ipaddress.IPv4Address("192.168.1.1")) == "192.168.1.1"
 
-    def test_datetime_serialization(self):
-        """Test that datetime objects are converted to time objects."""
+    def test_ipv6_address(self):
+        assert _normalize_value(ipaddress.IPv6Address("2001:db8::1")) == "2001:db8::1"
+
+    def test_datetime(self):
         dt = datetime(2024, 1, 15, 14, 30, 45, 123456)
-        result = json.dumps({"timestamp": dt}, cls=ExtendedEncoder)
-        expected_time = dt.timestamp()
-        assert result == f'{{"timestamp": {expected_time}}}'
+        assert _normalize_value(dt) == dt.timestamp()
 
-    def test_time_serialization(self):
-        """Test that time objects are converted to seconds."""
-        t = time(14, 30, 45, 123456)
-        result = json.dumps({"time": t}, cls=ExtendedEncoder)
-        expected_time = "14:30:45.123456"
-        assert result == f'{{"time": "{expected_time}"}}'
+    def test_time(self):
+        assert _normalize_value(time(14, 30, 45, 123456)) == "14:30:45.123456"
 
-    def test_time_serialization_midnight(self):
-        """Test time serialization at midnight (edge case)."""
-        t = time(0, 0, 0, 0)
-        result = json.dumps({"time": t}, cls=ExtendedEncoder)
-        assert result == '{"time": "00:00:00"}'
+    def test_time_midnight(self):
+        assert _normalize_value(time(0, 0, 0)) == "00:00:00"
 
-    def test_time_serialization_end_of_day(self):
-        """Test time serialization at end of day (edge case)."""
-        t = time(23, 59, 59, 999999)
-        result = json.dumps({"time": t}, cls=ExtendedEncoder)
-        assert result == '{"time": "23:59:59.999999"}'
+    def test_bytes_utf8(self):
+        assert _normalize_value(b"hello world") == "hello world"
 
-    def test_bytes_serialization(self):
-        """Test that bytes are decoded to strings."""
-        data = b"hello world"
-        result = json.dumps({"data": data}, cls=ExtendedEncoder)
-        assert result == '{"data": "hello world"}'
+    def test_bytes_non_utf8(self):
+        result = _normalize_value(b"\xff\xfe")
+        assert isinstance(result, str)  # did not raise
 
-    def test_bytes_serialization_utf8(self):
-        """Test bytes serialization with UTF-8 characters."""
-        data = "hello 世界".encode("utf-8")
-        result = json.dumps({"data": data}, cls=ExtendedEncoder)
-        assert result == '{"data": "hello 世界"}'.encode("unicode-escape").decode("utf-8")
+    def test_decimal(self):
+        assert _normalize_value(Decimal("123.456")) == "123.456"
 
-    def test_decimal_serialization(self):
-        """Test that Decimal objects are converted to strings."""
-        dec = Decimal("123.456")
-        result = json.dumps({"amount": dec}, cls=ExtendedEncoder)
-        assert result == '{"amount": "123.456"}'
-
-    def test_decimal_serialization_precision(self):
-        """Test Decimal serialization preserves precision."""
+    def test_decimal_preserves_precision(self):
         dec = Decimal("0.123456789012345678901234567890")
-        result = json.dumps({"value": dec}, cls=ExtendedEncoder)
-        assert result == '{"value": "0.123456789012345678901234567890"}'
+        assert _normalize_value(dec) == str(dec)
 
-    def test_combined_types_serialization(self):
-        """Test serialization of multiple custom types together."""
-        data = {
-            "ip": ipaddress.IPv4Address("10.0.0.1"),
-            "time": time(12, 0, 0),
-            "data": b"test",
-            "amount": Decimal("99.99"),
-        }
-        result = json.dumps(data, cls=ExtendedEncoder)
-        parsed = json.loads(result)
+    def test_passthrough_string(self):
+        assert _normalize_value("hello") == "hello"
 
-        assert parsed["ip"] == "10.0.0.1"
-        assert parsed["time"] == "12:00:00"
-        assert parsed["data"] == "test"
-        assert parsed["amount"] == "99.99"
+    def test_passthrough_int(self):
+        assert _normalize_value(42) == 42
 
-    def test_nested_serialization(self):
-        """Test serialization of nested structures."""
-        data = {
-            "users": [
-                {"ip": ipaddress.IPv4Address("192.168.1.100"), "balance": Decimal("1000.50")},
-                {"ip": ipaddress.IPv4Address("192.168.1.101"), "balance": Decimal("2000.75")},
-            ]
-        }
-        result = json.dumps(data, cls=ExtendedEncoder)
-        parsed = json.loads(result)
+    def test_passthrough_float(self):
+        assert _normalize_value(3.14) == 3.14
 
-        assert parsed["users"][0]["ip"] == "192.168.1.100"
-        assert parsed["users"][0]["balance"] == "1000.50"
-        assert parsed["users"][1]["ip"] == "192.168.1.101"
-        assert parsed["users"][1]["balance"] == "2000.75"
+    def test_passthrough_none(self):
+        assert _normalize_value(None) is None
 
-    def test_ipv6_address_serialization(self):
-        """Test that IPv6 addresses are serialized to strings."""
-        ip = ipaddress.IPv6Address("2001:db8::1")
-        result = json.dumps({"ip": ip}, cls=ExtendedEncoder)
-        assert result == '{"ip": "2001:db8::1"}'
-
-    def test_bytes_non_utf8_serialization(self):
-        """Non-UTF-8 bytes are decoded with replacement rather than raising."""
-        data = b"\xff\xfe"  # invalid UTF-8
-        result = json.dumps({"data": data}, cls=ExtendedEncoder)
-        parsed = json.loads(result)
-        assert isinstance(parsed["data"], str)  # did not raise
-
-    def test_standard_types_unchanged(self):
-        """Test that standard JSON types are serialized normally."""
-        data = {
-            "string": "test",
-            "number": 42,
-            "float": 3.14,
-            "boolean": True,
-            "null": None,
-            "list": [1, 2, 3],
-            "dict": {"key": "value"},
-        }
-        result = json.dumps(data, cls=ExtendedEncoder)
-        parsed = json.loads(result)
-        assert parsed == data
+    def test_passthrough_bool(self):
+        assert _normalize_value(True) is True
 
 
 class TestWithSerializerDecorator:

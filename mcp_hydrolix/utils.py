@@ -14,23 +14,6 @@ from toon_format import encode as toon_encode
 logger = logging.getLogger(__name__)
 
 
-class ExtendedEncoder(json.JSONEncoder):
-    """Extends JSONEncoder to apply custom serialization of CH data types."""
-
-    def default(self, obj):
-        if isinstance(obj, (ipaddress.IPv4Address, ipaddress.IPv6Address)):
-            return str(obj)
-        if isinstance(obj, datetime):
-            return obj.timestamp()
-        if isinstance(obj, (date, time)):
-            return obj.isoformat()
-        if isinstance(obj, bytes):
-            return obj.decode("utf-8", errors="replace")
-        if isinstance(obj, Decimal):
-            return str(obj)
-        return super().default(obj)
-
-
 def _normalize_value(val: Any) -> Any:
     """Convert a CH-specific type to a TOON/JSON-safe primitive."""
     if isinstance(val, (ipaddress.IPv4Address, ipaddress.IPv6Address)):
@@ -57,9 +40,8 @@ def _serialize_query_result(result: dict) -> tuple[str, dict]:
     :returns: (encoded_string, structured_dict) tuple
     """
     columns = result["columns"]
-    normalized_rows = [[_normalize_value(v) for v in row] for row in result["rows"]]
-    records = [dict(zip(columns, row)) for row in normalized_rows]
-    structured = {"columns": columns, "rows": normalized_rows}
+    records = [dict(zip(columns, (_normalize_value(v) for v in row))) for row in result["rows"]]
+    structured = {"columns": columns, "rows": [list(record.values()) for record in records]}
     try:
         return toon_encode(records), structured
     except Exception as exc:
