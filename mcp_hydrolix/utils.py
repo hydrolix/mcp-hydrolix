@@ -5,6 +5,7 @@ import logging
 from datetime import date, datetime, time
 from decimal import Decimal
 from functools import wraps
+from typing import Any
 
 import fastmcp.utilities.types
 from fastmcp.tools.tool import ToolResult
@@ -30,24 +31,40 @@ class ExtendedEncoder(json.JSONEncoder):
         return super().default(obj)
 
 
+def _normalize_value(val: Any) -> Any:
+    """Convert a CH-specific type to a TOON/JSON-safe primitive."""
+    if isinstance(val, (ipaddress.IPv4Address, ipaddress.IPv6Address)):
+        return str(val)
+    if isinstance(val, datetime):
+        return val.timestamp()
+    if isinstance(val, (date, time)):
+        return val.isoformat()
+    if isinstance(val, bytes):
+        return val.decode("utf-8", errors="replace")
+    if isinstance(val, Decimal):
+        return str(val)
+    return val
+
+
 def _serialize_query_result(result: dict) -> tuple[str, dict]:
     """
     Serialize a HdxQueryResult to TOON format for LLM consumption.
 
-    Normalizes CH-specific types (datetime, Decimal, IPv4/6Address, bytes) via
-    ExtendedEncoder, converts the columnar structure to a list of records, then
-    encodes as TOON. Falls back to JSON if TOON encoding fails.
+    Normalizes CH-specific types (datetime, Decimal, IPv4/6Address, bytes) directly,
+    converts the columnar structure to a list of records, then encodes as TOON.
+    Falls back to JSON if TOON encoding fails.
 
     :returns: (encoded_string, structured_dict) tuple
     """
-    normalized: dict = json.loads(json.dumps(result, cls=ExtendedEncoder))
-
-    records = [dict(zip(normalized["columns"], row)) for row in normalized["rows"]]
+    columns = result["columns"]
+    normalized_rows = [[_normalize_value(v) for v in row] for row in result["rows"]]
+    records = [dict(zip(columns, row)) for row in normalized_rows]
+    structured = {"columns": columns, "rows": normalized_rows}
     try:
-        return toon_encode(records), normalized
+        return toon_encode(records), structured
     except Exception as exc:
         logger.warning("TOON encoding failed, falling back to JSON: %s", exc)
-        return json.dumps(records), normalized
+        return json.dumps(records), structured
 
 
 def with_serializer(fn):
