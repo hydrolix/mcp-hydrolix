@@ -5,7 +5,7 @@ from collections.abc import Sequence
 import dataclasses as _dc
 from dataclasses import dataclass
 from graphlib import CycleError, TopologicalSorter
-from typing import Any, Dict, Final, List, Optional, Set, TypedDict, Union, cast
+from typing import Any, ClassVar, Dict, Final, List, Optional, Set, TypedDict, Union, cast
 
 import sqlglot
 import sqlglot.errors as sqlglot_errors
@@ -39,6 +39,8 @@ from mcp_hydrolix.utils import with_serializer
 class Column:
     """A plain dimension column."""
 
+    column_category: ClassVar[str] ="Column"
+
     name: str
     type: str
     comment: Optional[str] = None
@@ -47,6 +49,8 @@ class Column:
 @dataclass(frozen=True)
 class AliasColumn:
     """A grouper/dimension alias."""
+
+    column_category: ClassVar[str] ="AliasColumn"
 
     name: str
     type: str
@@ -58,6 +62,8 @@ class AliasColumn:
 class AggregateColumn:
     """A column with AggregateFunction or SimpleAggregateFunction type."""
 
+    column_category: ClassVar[str] ="AggregateColumn"
+
     name: str
     type: str
     base_function: str
@@ -68,6 +74,8 @@ class AggregateColumn:
 @dataclass(frozen=True)
 class SummaryColumn:
     """An ALIAS column that transitively depends on aggregate functions."""
+
+    column_category: ClassVar[str] ="SummaryColumn"
 
     name: str
     type: str
@@ -100,7 +108,7 @@ class Table:
     @field_serializer("columns")
     def serialize_columns(self, columns: Optional[List[ColumnType]]) -> List[dict]:
         return [
-            {**_dc.asdict(col), "column_category": type(col).__name__} for col in (columns or [])
+            {**_dc.asdict(col), "column_category": type(col).column_category} for col in (columns or [])
         ]
 
 
@@ -321,7 +329,7 @@ def compute_aggregate_columns(alias_definitions: Dict[str, str]) -> Set[str]:
         try:
             parsed[name] = sqlglot.parse_one(sql, dialect="clickhouse")
         except sqlglot_errors.SqlglotError:
-            pass  # treat unparseable expressions as non-aggregate
+            logger.info("Could not parse ALIAS expression for %r, treating as non-aggregate", name)
 
     alias_names = set(alias_definitions)
 
@@ -380,11 +388,12 @@ def compute_aggregate_columns(alias_definitions: Dict[str, str]) -> Set[str]:
 
 def enrich_column_metadata(rows: List[Dict[str, str]]) -> List[ColumnType]:
     """
-    Classify DESCRIBE TABLE rows into typed column objects.
-    Mirrors hdxsearch's HdxClient.describe() structure:
-    - builds alias map
-    - calls compute_aggregate_columns for AST-based transitive detection
-    - local classify_column closure produces the final typed objects
+    Classify DESCRIBE TABLE rows into typed column objects (Column, AliasColumn,
+    AggregateColumn, SummaryColumn). ALIAS columns whose expressions transitively
+    depend on aggregate functions are detected via AST parsing and classified as
+    SummaryColumn; all other ALIAS columns become AliasColumn. Columns with
+    AggregateFunction/SimpleAggregateFunction types become AggregateColumn.
+    Everything else is a plain Column.
     """
     alias_columns: Dict[str, str] = {
         r["name"]: r["default_expression"]
