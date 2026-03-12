@@ -39,7 +39,7 @@ from mcp_hydrolix.utils import with_serializer
 class Column:
     """A plain dimension column."""
 
-    column_category: ClassVar[str] ="Column"
+    column_category: ClassVar[str] = "Column"
 
     name: str
     type: str
@@ -50,7 +50,7 @@ class Column:
 class AliasColumn:
     """A grouper/dimension alias."""
 
-    column_category: ClassVar[str] ="AliasColumn"
+    column_category: ClassVar[str] = "AliasColumn"
 
     name: str
     type: str
@@ -62,7 +62,7 @@ class AliasColumn:
 class AggregateColumn:
     """A column with AggregateFunction or SimpleAggregateFunction type."""
 
-    column_category: ClassVar[str] ="AggregateColumn"
+    column_category: ClassVar[str] = "AggregateColumn"
 
     name: str
     type: str
@@ -75,7 +75,7 @@ class AggregateColumn:
 class SummaryColumn:
     """An ALIAS column that transitively depends on aggregate functions."""
 
-    column_category: ClassVar[str] ="SummaryColumn"
+    column_category: ClassVar[str] = "SummaryColumn"
 
     name: str
     type: str
@@ -108,7 +108,8 @@ class Table:
     @field_serializer("columns")
     def serialize_columns(self, columns: Optional[List[ColumnType]]) -> List[dict]:
         return [
-            {**_dc.asdict(col), "column_category": type(col).column_category} for col in (columns or [])
+            {**_dc.asdict(col), "column_category": type(col).column_category}
+            for col in (columns or [])
         ]
 
 
