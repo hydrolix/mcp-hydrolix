@@ -206,6 +206,10 @@ async def test_run_select_query_success(mcp_server, setup_test_database):
         assert query_result["rows"][2] == [3, "Charlie", 35]
         assert query_result["rows"][3] == [4, "Diana", 28]
 
+        # Verify truncation metadata is present even when not truncated
+        assert query_result["truncated"] is False
+        assert query_result["row_count"] == 4
+
 
 @pytest.mark.asyncio
 async def test_run_select_query_with_aggregation(mcp_server, setup_test_database):
@@ -481,3 +485,97 @@ async def test_concurrent_queries_isolation(monkeypatch, mcp_server, setup_test_
         user_row = indata[0]
         for res_row in res:
             assert res_row == user_row
+
+
+@pytest.mark.asyncio
+async def test_run_select_query_no_truncation(mcp_server, setup_test_database):
+    """Test that results within the cell budget are returned without truncation."""
+    test_db, test_table, _ = setup_test_database
+
+    async with Client(mcp_server) as client:
+        # test_table has 4 rows × 3 selected columns = 12 cells; max_cells=100 won't truncate
+        query = f"SELECT id, name, age FROM {test_db}.{test_table} ORDER BY id"
+        result = await client.call_tool("run_select_query", {"query": query, "max_cells": 100})
+
+        query_result = result.data
+        assert query_result["truncated"] is False
+        assert query_result["row_count"] == 4
+        assert len(query_result["rows"]) == 4
+        assert "total_row_count" not in query_result
+        assert "message" not in query_result
+
+
+@pytest.mark.asyncio
+async def test_run_select_query_truncation_triggered(mcp_server, setup_test_database):
+    """Test that results exceeding the cell budget are truncated with metadata."""
+    test_db, test_table, _ = setup_test_database
+
+    async with Client(mcp_server) as client:
+        # test_table has 4 rows × 4 columns = 16 cells; max_cells=4 forces max_rows = 4//4 = 1
+        query = f"SELECT id, name, age, created_at FROM {test_db}.{test_table} ORDER BY id"
+        result = await client.call_tool("run_select_query", {"query": query, "max_cells": 4})
+
+        query_result = result.data
+        assert query_result["truncated"] is True
+        assert query_result["row_count"] == 1
+        assert query_result["total_row_count"] == 4
+        assert len(query_result["rows"]) == 1
+        assert "message" in query_result
+        assert "max_cells" in query_result["message"]
+
+
+@pytest.mark.asyncio
+async def test_run_select_query_truncation_disabled(mcp_server, setup_test_database):
+    """Test that max_cells=0 disables truncation and returns the full result."""
+    test_db, test_table, _ = setup_test_database
+
+    async with Client(mcp_server) as client:
+        query = f"SELECT id, name, age, created_at FROM {test_db}.{test_table} ORDER BY id"
+        result = await client.call_tool("run_select_query", {"query": query, "max_cells": 0})
+
+        query_result = result.data
+        assert query_result["truncated"] is False
+        assert query_result["row_count"] == 4
+        assert len(query_result["rows"]) == 4
+
+
+@pytest.mark.asyncio
+async def test_run_select_query_negative_max_cells_rejected(mcp_server, setup_test_database):
+    """Test that a negative max_cells value raises a ToolError."""
+    test_db, test_table, _ = setup_test_database
+
+    async with Client(mcp_server) as client:
+        query = f"SELECT id FROM {test_db}.{test_table}"
+        with pytest.raises(ToolError) as exc_info:
+            await client.call_tool("run_select_query", {"query": query, "max_cells": -1})
+        assert "max_cells" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_run_select_query_truncation_max_rows_zero(mcp_server, setup_test_database):
+    """Test truncation when cell limit is smaller than the column count (max_rows=0)."""
+    test_db, test_table, _ = setup_test_database
+
+    async with Client(mcp_server) as client:
+        # test_table has 4 columns; max_cells=2 → max_rows = 2//4 = 0
+        query = f"SELECT id, name, age, created_at FROM {test_db}.{test_table} ORDER BY id"
+        result = await client.call_tool("run_select_query", {"query": query, "max_cells": 2})
+
+        query_result = result.data
+        assert query_result["truncated"] is True
+        assert query_result["row_count"] == 0
+        assert len(query_result["rows"]) == 0
+        assert query_result["total_row_count"] == 4
+        assert "max_cells" in query_result["message"]
+
+
+@pytest.mark.asyncio
+async def test_run_select_query_max_cells_in_tool_schema(mcp_server):
+    """Test that max_cells is visible in the tool schema advertised to MCP clients."""
+    async with Client(mcp_server) as client:
+        tools = await client.list_tools()
+        run_query_tool = next(t for t in tools if t.name == "run_select_query")
+        schema_props = run_query_tool.inputSchema.get("properties", {})
+        assert "max_cells" in schema_props, (
+            "max_cells parameter must appear in the tool schema so LLM clients can use it"
+        )

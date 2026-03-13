@@ -558,9 +558,31 @@ async def list_tables(
 
 @mcp.tool()
 @with_serializer
-async def run_select_query(query: str) -> dict[str, tuple | Sequence[str | Sequence[Any]]]:
+async def run_select_query(
+    query: str,
+    max_cells: Optional[int] = None,
+) -> dict[str, tuple | Sequence[str | Sequence[Any]]]:
     """Run a SELECT query in a Hydrolix time-series database using the Clickhouse SQL dialect.
     Queries run using this tool will timeout after 30 seconds.
+
+    RESULT TRUNCATION:
+
+    Query results are automatically truncated when the total cell count (rows × columns)
+    exceeds the configured limit.
+
+    Response shape:
+      - Always present: columns, rows, truncated (bool), row_count
+      - Only when truncated=true: total_row_count, message
+
+    When truncation occurs the message explains the situation and suggests query refinements.
+    Note: if the cell limit is smaller than the number of columns, row_count will be 0 —
+    in that case you must either refine the query (fewer columns, stricter filters) or
+    increase max_cells.
+
+    If your task requires more data than the default limit, pass a larger value:
+      run_select_query(query="...", max_cells=200000)
+
+    Set max_cells=0 to disable truncation entirely (subject to any server-side limit).
 
     MANDATORY PRE-QUERY CHECK - DO THIS FIRST BEFORE EVERY QUERY:
 
@@ -740,10 +762,52 @@ async def run_select_query(query: str) -> dict[str, tuple | Sequence[str | Seque
     Performance guard: date range filter.
      `SELECT app, count(*) FROM application.logs WHERE timestamp > '2024-01-01' AND timestamp < '2024-02-14' GROUP BY app ORDER BY count(*) DESC LIMIT 1`
     """
+    if max_cells is not None and max_cells < 0:
+        raise ToolError("max_cells must be 0 (to disable truncation) or a positive integer.")
+
     logger.info(f"Executing SELECT query: {query}")
     try:
         result = await execute_query(query=query)
-        return result
+        columns = result["columns"]
+        rows = result["rows"]
+        num_rows = len(rows)
+        num_cols = len(columns)
+
+        cell_limit = max_cells if max_cells is not None else HYDROLIX_CONFIG.max_result_cells
+
+        # Enforce the operator-configured upper bound regardless of what the caller requested.
+        upper_limit = HYDROLIX_CONFIG.max_result_cells_limit
+        if upper_limit > 0 and (cell_limit == 0 or cell_limit > upper_limit):
+            cell_limit = upper_limit
+
+        if cell_limit > 0 and num_cols > 0 and num_rows * num_cols > cell_limit:
+            max_rows = cell_limit // num_cols
+            logger.info(
+                f"Truncating result from {num_rows} to {max_rows} rows "
+                f"(cell limit: {cell_limit}, columns: {num_cols})"
+            )
+            return {
+                "columns": columns,
+                "rows": rows[:max_rows],
+                "truncated": True,
+                "row_count": max_rows,
+                "total_row_count": num_rows,
+                "message": (
+                    f"Result truncated: showing {max_rows:,} of {num_rows:,} rows "
+                    f"({num_cols} columns). "
+                    f"Exceeded the cell limit of {cell_limit:,} "
+                    f"({num_rows * num_cols:,} cells in full result). "
+                    f"Consider refining your query with LIMIT, WHERE filters, or GROUP BY. "
+                    f"To retrieve more data, call run_select_query with a larger max_cells value."
+                ),
+            }
+
+        return {
+            "columns": columns,
+            "rows": rows,
+            "truncated": False,
+            "row_count": num_rows,
+        }
     except Exception as e:
         logger.error(f"Unexpected error in run_select_query: {str(e)}")
         raise ToolError(f"Unexpected error during query execution: {str(e)}")

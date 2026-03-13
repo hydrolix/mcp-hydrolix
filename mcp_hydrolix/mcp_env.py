@@ -55,6 +55,11 @@ class HydrolixConfig:
         HYDROLIX_MCP_MAX_REQUESTS 10000
         HYDROLIX_MCP_MAX_REQUESTS_JITTER 1000
         HYDROLIX_MCP_MAX_KEEPALIVE 10
+        HYDROLIX_MAX_RESULT_CELLS: Maximum number of cells (rows × columns) to return in a
+            query result before truncating (default: 50000)
+        HYDROLIX_MAX_RESULT_CELLS_LIMIT: Hard upper bound on max_cells that callers may request.
+            0 means no limit is enforced (default: 50000). Set this in multi-tenant HTTP/SSE
+            deployments to prevent a single session from materialising very large result sets.
     """
 
     def __init__(self) -> None:
@@ -154,6 +159,28 @@ class HydrolixConfig:
         Default: 300 (Hydrolix default)
         """
         return int(os.getenv("HYDROLIX_QUERY_TIMEOUT_SECS", 30))
+
+    @property
+    def max_result_cells(self) -> int:
+        """Get the default cell budget (rows × columns) for query result truncation.
+
+        Default: 50000
+        Can be overridden by HYDROLIX_MAX_RESULT_CELLS environment variable.
+        """
+        return int(os.getenv("HYDROLIX_MAX_RESULT_CELLS", "50000"))
+
+    @property
+    def max_result_cells_limit(self) -> int:
+        """Get the hard upper bound on the max_cells value callers may request.
+
+        When > 0, any per-call max_cells value above this limit is silently capped to this
+        value, preventing callers from requesting unbounded result sets.
+
+        Default: 50000
+        Can be overridden by HYDROLIX_MAX_RESULT_CELLS_LIMIT environment variable.
+        Set to 0 to disable the upper bound entirely.
+        """
+        return int(os.getenv("HYDROLIX_MAX_RESULT_CELLS_LIMIT", "50000"))
 
     @property
     def proxy_path(self) -> Optional[str]:
