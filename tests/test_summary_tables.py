@@ -5,7 +5,7 @@ from mcp_hydrolix.mcp_server import (
     AliasColumn,
     Column,
     SummaryColumn,
-    compute_aggregate_columns,
+    detect_aggregate_aliases,
     enrich_column_metadata,
     extract_function_from_type,
     get_merge_function,
@@ -50,12 +50,12 @@ class TestGetMergeFunction:
         assert get_merge_function("quantile(0.5, 0.9)") == "quantileMerge(0.5, 0.9)"
 
 
-class TestComputeAggregateColumns:
-    """Tests for compute_aggregate_columns - AST-based aggregate alias detection."""
+class TestDetectAggregateAliases:
+    """Tests for detect_aggregate_aliases - AST-based aggregate alias detection."""
 
     def test_direct_aggregate_alias(self):
         """Test alias directly wrapping a -Merge function is detected as aggregate."""
-        result = compute_aggregate_columns({"cnt_all": "countMerge(`count()`)"})
+        result = detect_aggregate_aliases({"cnt_all": "countMerge(`count()`)"})
         assert "cnt_all" in result
 
     def test_compound_merge_combinator(self):
@@ -65,17 +65,17 @@ class TestComputeAggregateColumns:
         to Anonymous.  The _is_agg_node helper catches these via the 'endswith Merge'
         name check so they are not silently misclassified as plain aliases.
         """
-        result = compute_aggregate_columns({"cached_count": "countIfMerge(`countIf(cached)`)"})
+        result = detect_aggregate_aliases({"cached_count": "countIfMerge(`countIf(cached)`)"})
         assert "cached_count" in result
 
     def test_non_aggregate_alias(self):
         """Test alias with no aggregate function is not flagged."""
-        result = compute_aggregate_columns({"full_name": "concat(first_name, ' ', last_name)"})
+        result = detect_aggregate_aliases({"full_name": "concat(first_name, ' ', last_name)"})
         assert "full_name" not in result
 
     def test_transitive_aggregate_alias(self):
         """Test alias referencing aggregate aliases is transitively detected."""
-        result = compute_aggregate_columns(
+        result = detect_aggregate_aliases(
             {
                 "cnt_errors": "countMerge(`count(errors)`)",
                 "cnt_all": "countMerge(`count()`)",
@@ -88,11 +88,11 @@ class TestComputeAggregateColumns:
 
     def test_empty_aliases(self):
         """Test empty input returns empty set."""
-        assert compute_aggregate_columns({}) == set()
+        assert detect_aggregate_aliases({}) == set()
 
     def test_non_transitive_alias_not_flagged(self):
         """Test alias referencing only non-aggregate aliases is not flagged."""
-        result = compute_aggregate_columns(
+        result = detect_aggregate_aliases(
             {
                 "full_name": "concat(first_name, ' ', last_name)",
                 "upper_name": "upper(full_name)",  # depends on full_name, which is not aggregate

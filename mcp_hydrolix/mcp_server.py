@@ -317,7 +317,7 @@ def get_merge_function(base_function: str) -> str:
         return f"{base_function}Merge"
 
 
-def compute_aggregate_columns(alias_definitions: Dict[str, str]) -> Set[str]:
+def detect_aggregate_aliases(alias_definitions: Dict[str, str]) -> Set[str]:
     """
     Parse ALIAS column expressions via sqlglot AST, build alias dependency graph,
     topologically sort, and return the set of alias names that are aggregate
@@ -325,7 +325,7 @@ def compute_aggregate_columns(alias_definitions: Dict[str, str]) -> Set[str]:
     Unparseable expressions are treated as non-aggregate. Circular dependencies
     return an empty set as a safe fallback.
     """
-    parsed = {}
+    parsed: dict[str, sqlglot_exp.Expression] = {}
     for name, sql in alias_definitions.items():
         try:
             parsed[name] = sqlglot.parse_one(sql, dialect="clickhouse")
@@ -401,7 +401,7 @@ def enrich_column_metadata(rows: List[Dict[str, str]]) -> List[ColumnType]:
         for r in rows
         if r.get("default_type") == "ALIAS" and r.get("default_expression")
     }
-    aggregate_alias_names = compute_aggregate_columns(alias_columns) if alias_columns else set()
+    aggregate_alias_names = detect_aggregate_aliases(alias_columns) if alias_columns else set()
 
     def classify_column(r: Dict[str, str]) -> ColumnType:
         name = r["name"]
