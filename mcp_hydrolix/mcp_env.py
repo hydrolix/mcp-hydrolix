@@ -58,7 +58,7 @@ class HydrolixConfig:
         HYDROLIX_MAX_RESULT_CELLS: Maximum number of cells (rows × columns) to return in a
             query result before truncating (default: 50000)
         HYDROLIX_MAX_RESULT_CELLS_LIMIT: Hard upper bound on max_cells that callers may request.
-            0 means no limit is enforced (default: 50000). Set this in multi-tenant HTTP/SSE
+            0 means no limit is enforced (default: 0). Set this in multi-tenant HTTP/SSE
             deployments to prevent a single session from materialising very large result sets.
     """
 
@@ -176,11 +176,11 @@ class HydrolixConfig:
         When > 0, any per-call max_cells value above this limit is silently capped to this
         value, preventing callers from requesting unbounded result sets.
 
-        Default: 50000
+        Default: 0 (no cap enforced)
         Can be overridden by HYDROLIX_MAX_RESULT_CELLS_LIMIT environment variable.
-        Set to 0 to disable the upper bound entirely.
+        Set to a positive integer to enforce a cap in multi-tenant HTTP/SSE deployments.
         """
-        return int(os.getenv("HYDROLIX_MAX_RESULT_CELLS_LIMIT", "50000"))
+        return int(os.getenv("HYDROLIX_MAX_RESULT_CELLS_LIMIT", "0"))
 
     @property
     def proxy_path(self) -> Optional[str]:

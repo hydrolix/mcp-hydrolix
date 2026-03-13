@@ -573,6 +573,8 @@ async def run_select_query(
     Response shape:
       - Always present: columns, rows, truncated (bool), row_count
       - Only when truncated=true: total_row_count, message
+      Note: total_row_count is the number of rows fetched from the server, which is
+      capped at 100,000. The actual table may contain more rows than this value suggests.
 
     When truncation occurs the message explains the situation and suggests query refinements.
     Note: if the cell limit is smaller than the number of columns, row_count will be 0 —
@@ -793,10 +795,12 @@ async def run_select_query(
                 "row_count": max_rows,
                 "total_row_count": num_rows,
                 "message": (
-                    f"Result truncated: showing {max_rows:,} of {num_rows:,} rows "
+                    f"Result truncated: showing {max_rows:,} of {num_rows:,} fetched rows "
                     f"({num_cols} columns). "
                     f"Exceeded the cell limit of {cell_limit:,} "
                     f"({num_rows * num_cols:,} cells in full result). "
+                    f"Note: total_row_count reflects rows fetched from the server "
+                    f"(capped at 100,000) — the actual table may contain more rows. "
                     f"Consider refining your query with LIMIT, WHERE filters, or GROUP BY. "
                     f"To retrieve more data, call run_select_query with a larger max_cells value."
                 ),

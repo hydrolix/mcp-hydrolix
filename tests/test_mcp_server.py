@@ -526,10 +526,11 @@ async def test_run_select_query_truncation_triggered(mcp_server, setup_test_data
 
 @pytest.mark.asyncio
 async def test_run_select_query_truncation_disabled(mcp_server, setup_test_database):
-    """Test that max_cells=0 disables truncation and returns the full result."""
+    """Test that max_cells=0 disables truncation even when the result would otherwise be truncated."""
     test_db, test_table, _ = setup_test_database
 
     async with Client(mcp_server) as client:
+        # 4 rows × 4 columns = 16 cells, which exceeds max_cells=4 but max_cells=0 disables truncation
         query = f"SELECT id, name, age, created_at FROM {test_db}.{test_table} ORDER BY id"
         result = await client.call_tool("run_select_query", {"query": query, "max_cells": 0})
 
