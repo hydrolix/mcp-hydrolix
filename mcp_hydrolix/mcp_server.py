@@ -387,7 +387,7 @@ def detect_aggregate_aliases(alias_definitions: Dict[str, str]) -> Set[str]:
     return {name for name, is_agg in is_aggregation.items() if is_agg}
 
 
-def enrich_column_metadata(rows: List[Dict[str, str]]) -> List[ColumnType]:
+def _enrich_column_metadata(rows: List[Dict[str, str]]) -> List[ColumnType]:
     """
     Classify DESCRIBE TABLE rows into typed column objects (Column, AliasColumn,
     AggregateColumn, SummaryColumn). ALIAS columns whose expressions transitively
@@ -431,7 +431,7 @@ async def _populate_table_metadata(database: str, table: Table) -> None:
     col_names = result["columns"]
     rows = [dict(zip(col_names, row)) for row in result["rows"]]
 
-    columns = enrich_column_metadata(rows)
+    columns = _enrich_column_metadata(rows)
 
     aggregate_cols = [c for c in columns if isinstance(c, (AggregateColumn, SummaryColumn))]
     dimension_cols = [c for c in columns if isinstance(c, (Column, AliasColumn))]

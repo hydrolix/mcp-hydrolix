@@ -6,7 +6,7 @@ from mcp_hydrolix.mcp_server import (
     Column,
     SummaryColumn,
     detect_aggregate_aliases,
-    enrich_column_metadata,
+    _enrich_column_metadata,
     extract_function_from_type,
     get_merge_function,
 )
@@ -103,7 +103,7 @@ class TestDetectAggregateAliases:
 
 
 class TestEnrichColumnMetadata:
-    """Tests for enrich_column_metadata - DESCRIBE TABLE row classification."""
+    """Tests for _enrich_column_metadata - DESCRIBE TABLE row classification."""
 
     def test_plain_column(self):
         """Test plain column without default type is classified as Column."""
@@ -116,7 +116,7 @@ class TestEnrichColumnMetadata:
                 "comment": "",
             }
         ]
-        result = enrich_column_metadata(rows)
+        result = _enrich_column_metadata(rows)
         assert isinstance(result[0], Column)
         assert result[0].name == "vendor_id"
         assert result[0].type == "String"
@@ -132,7 +132,7 @@ class TestEnrichColumnMetadata:
                 "comment": "",
             }
         ]
-        result = enrich_column_metadata(rows)
+        result = _enrich_column_metadata(rows)
         col = result[0]
         assert isinstance(col, AggregateColumn)
         assert col.base_function == "count"
@@ -149,7 +149,7 @@ class TestEnrichColumnMetadata:
                 "comment": "",
             }
         ]
-        result = enrich_column_metadata(rows)
+        result = _enrich_column_metadata(rows)
         col = result[0]
         assert isinstance(col, AliasColumn)
         assert col.default_expr == "concat(first, last)"
@@ -165,7 +165,7 @@ class TestEnrichColumnMetadata:
                 "comment": "",
             }
         ]
-        result = enrich_column_metadata(rows)
+        result = _enrich_column_metadata(rows)
         assert isinstance(result[0], SummaryColumn)
 
     def test_transitive_summary_column(self):
@@ -193,7 +193,7 @@ class TestEnrichColumnMetadata:
                 "comment": "",
             },
         ]
-        by_name = {c.name: c for c in enrich_column_metadata(rows)}
+        by_name = {c.name: c for c in _enrich_column_metadata(rows)}
         assert isinstance(by_name["cnt_errors"], SummaryColumn)
         assert isinstance(by_name["cnt_all"], SummaryColumn)
         assert isinstance(by_name["pct_errors"], SummaryColumn)
@@ -230,7 +230,7 @@ class TestEnrichColumnMetadata:
                 "comment": "",
             },
         ]
-        by_name = {c.name: c for c in enrich_column_metadata(rows)}
+        by_name = {c.name: c for c in _enrich_column_metadata(rows)}
         assert isinstance(by_name["vendor_id"], Column)
         assert isinstance(by_name["cnt"], AggregateColumn)
         assert isinstance(by_name["full_name"], AliasColumn)
