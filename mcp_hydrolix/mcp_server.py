@@ -1,7 +1,6 @@
 import logging
 import re
 import signal
-from collections.abc import Sequence
 from typing import Any, Final, List, Optional, TypedDict, cast
 
 import clickhouse_connect
@@ -800,8 +799,8 @@ async def run_select_query(
                 )
             else:
                 retrieve_more = (
-                    f"Consider refining your query with LIMIT, WHERE filters, or GROUP BY. "
-                    f"To retrieve more data, call run_select_query with a larger max_cells value."
+                    "Consider refining your query with LIMIT, WHERE filters, or GROUP BY. "
+                    "To retrieve more data, call run_select_query with a larger max_cells value."
                 )
             return {
                 "columns": columns,

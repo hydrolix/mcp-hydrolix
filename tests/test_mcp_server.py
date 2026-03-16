@@ -571,7 +571,9 @@ async def test_run_select_query_truncation_max_rows_zero(mcp_server, setup_test_
 
 
 @pytest.mark.asyncio
-async def test_run_select_query_operator_limit_caps_max_cells(monkeypatch, mcp_server, setup_test_database):
+async def test_run_select_query_operator_limit_caps_max_cells(
+    monkeypatch, mcp_server, setup_test_database
+):
     """Test that HYDROLIX_MAX_RESULT_CELLS_LIMIT caps a caller-supplied max_cells value."""
     test_db, test_table, _ = setup_test_database
 
@@ -593,7 +595,9 @@ async def test_run_select_query_operator_limit_caps_max_cells(monkeypatch, mcp_s
 
 
 @pytest.mark.asyncio
-async def test_run_select_query_operator_limit_overrides_max_cells_zero(monkeypatch, mcp_server, setup_test_database):
+async def test_run_select_query_operator_limit_overrides_max_cells_zero(
+    monkeypatch, mcp_server, setup_test_database
+):
     """Test that HYDROLIX_MAX_RESULT_CELLS_LIMIT is enforced even when max_cells=0."""
     test_db, test_table, _ = setup_test_database
 
