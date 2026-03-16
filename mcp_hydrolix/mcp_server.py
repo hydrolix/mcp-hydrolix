@@ -1,6 +1,7 @@
 import logging
 import re
 import signal
+import time
 from collections.abc import Sequence
 import dataclasses as _dc
 from dataclasses import dataclass
@@ -18,12 +19,14 @@ from dotenv import load_dotenv
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from fastmcp.server.dependencies import get_access_token
+from fastmcp.server.middleware import Middleware, MiddlewareContext
 from jwt import DecodeError
 from pydantic import Field, field_serializer
 from pydantic.dataclasses import dataclass as pydantic_dataclass
 from starlette.requests import Request
-from starlette.responses import PlainTextResponse
+from starlette.responses import PlainTextResponse, Response
 
+from mcp_hydrolix import metrics
 from mcp_hydrolix.auth import (
     AccessToken,
     HydrolixCredential,
@@ -211,6 +214,9 @@ if hasattr(signal, "SIGQUIT"):
 
 
 async def execute_query(query: str) -> HdxQueryResult:
+    m = metrics.get_instance()
+    start = time.perf_counter()
+    status = "success"
     try:
         async with await create_hydrolix_client(
             client_shared_pool, get_request_credential()
@@ -227,13 +233,21 @@ async def execute_query(query: str) -> HdxQueryResult:
                 },
             )
             logger.info(f"Query returned {len(res.result_rows)} rows")
-            return HdxQueryResult(columns=res.column_names, rows=res.result_rows)
+            return HdxQueryResult(columns=list(res.column_names), rows=[list(row) for row in res.result_rows])
     except Exception as err:
         logger.error(f"Error executing query: {err}")
+        status = "error"
         raise ToolError(f"Query execution failed: {str(err)}")
+    finally:
+        if m is not None:
+            m.queries_total.labels(status=status).inc()
+            m.query_duration_seconds.observe(time.perf_counter() - start)
 
 
 async def execute_cmd(query: str):
+    m = metrics.get_instance()
+    start = time.perf_counter()
+    status = "success"
     try:
         async with await create_hydrolix_client(
             client_shared_pool, get_request_credential()
@@ -243,7 +257,12 @@ async def execute_cmd(query: str):
             return res
     except Exception as err:
         logger.error(f"Error executing command: {err}")
+        status = "error"
         raise ToolError(f"Command execution failed: {str(err)}")
+    finally:
+        if m is not None:
+            m.queries_total.labels(status=status).inc()
+            m.query_duration_seconds.observe(time.perf_counter() - start)
 
 
 @mcp.custom_route("/health", methods=["GET"])
@@ -262,6 +281,38 @@ async def health_check(request: Request) -> PlainTextResponse:
     except Exception as e:
         # Return 503 Service Unavailable if we can't connect to Hydrolix
         return PlainTextResponse(f"ERROR - Cannot connect to Hydrolix: {str(e)}", status_code=503)
+
+
+if HYDROLIX_CONFIG.metrics_enabled:
+
+    @mcp.custom_route("/metrics", methods=["GET"])
+    async def metrics_endpoint(_request: Request) -> Response:
+        data, content_type = metrics.generate_metrics()
+        return Response(content=data, media_type=content_type)
+
+    class MetricsMiddleware(Middleware):
+        async def on_request(self, context: MiddlewareContext, call_next) -> Any:
+            m = metrics.get_instance()
+            if m is None:  # defensive — should not happen since middleware is only added when metrics are enabled
+                return await call_next(context)
+            tool_name = getattr(context.message, "name", "unknown")
+            m.active_requests.inc()
+            start = time.perf_counter()
+            status = "success"
+            try:
+                result = await call_next(context)
+                return result
+            except Exception:
+                status = "error"
+                raise
+            finally:
+                m.tool_calls_total.labels(tool=tool_name, status=status).inc()
+                m.tool_call_duration_seconds.labels(tool=tool_name).observe(
+                    time.perf_counter() - start
+                )
+                m.active_requests.dec()
+
+    mcp.add_middleware(MetricsMiddleware())
 
 
 def result_to_table(query_columns, result) -> List[Table]:
