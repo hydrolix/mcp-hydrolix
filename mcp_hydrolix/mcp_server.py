@@ -26,6 +26,8 @@ from mcp_hydrolix.auth import (
     UsernamePassword,
 )
 from mcp_hydrolix.mcp_env import HydrolixConfig, get_config
+from fastmcp.tools.tool import ToolResult
+
 from mcp_hydrolix.utils import with_serializer
 
 
@@ -561,7 +563,7 @@ async def list_tables(
 async def run_select_query(
     query: str,
     max_cells: Optional[int] = None,
-) -> dict[str, tuple | Sequence[str | Sequence[Any]]]:
+) -> ToolResult:
     """Run a SELECT query in a Hydrolix time-series database using the Clickhouse SQL dialect.
     Queries run using this tool will timeout after 30 seconds.
 
@@ -779,8 +781,10 @@ async def run_select_query(
 
         # Enforce the operator-configured upper bound regardless of what the caller requested.
         upper_limit = HYDROLIX_CONFIG.max_result_cells_limit
+        capped_by_operator = False
         if upper_limit > 0 and (cell_limit == 0 or cell_limit > upper_limit):
             cell_limit = upper_limit
+            capped_by_operator = True
 
         if cell_limit > 0 and num_cols > 0 and num_rows * num_cols > cell_limit:
             max_rows = cell_limit // num_cols
@@ -788,6 +792,17 @@ async def run_select_query(
                 f"Truncating result from {num_rows} to {max_rows} rows "
                 f"(cell limit: {cell_limit}, columns: {num_cols})"
             )
+            if capped_by_operator:
+                retrieve_more = (
+                    f"This limit is enforced by the server (max_cells capped at {cell_limit:,}). "
+                    f"Contact your administrator to adjust HYDROLIX_MAX_RESULT_CELLS_LIMIT, "
+                    f"or refine your query with LIMIT, WHERE filters, or GROUP BY."
+                )
+            else:
+                retrieve_more = (
+                    f"Consider refining your query with LIMIT, WHERE filters, or GROUP BY. "
+                    f"To retrieve more data, call run_select_query with a larger max_cells value."
+                )
             return {
                 "columns": columns,
                 "rows": rows[:max_rows],
@@ -801,8 +816,7 @@ async def run_select_query(
                     f"({num_rows * num_cols:,} cells in full result). "
                     f"Note: total_row_count reflects rows fetched from the server "
                     f"(capped at 100,000) — the actual table may contain more rows. "
-                    f"Consider refining your query with LIMIT, WHERE filters, or GROUP BY. "
-                    f"To retrieve more data, call run_select_query with a larger max_cells value."
+                    + retrieve_more
                 ),
             }
 
