@@ -1,17 +1,15 @@
+import dataclasses as _dc
 import logging
 import re
 import signal
-from typing import Any, Final, List, Optional, TypedDict, cast
-from collections.abc import Sequence
-import dataclasses as _dc
 from dataclasses import dataclass
 from graphlib import CycleError, TopologicalSorter
 from typing import Any, ClassVar, Dict, Final, List, Optional, Set, TypedDict, Union, cast
 
+import clickhouse_connect
 import sqlglot
 import sqlglot.errors as sqlglot_errors
 import sqlglot.expressions as sqlglot_exp
-import clickhouse_connect
 from clickhouse_connect import common
 from clickhouse_connect.driver import httputil
 from clickhouse_connect.driver.binding import format_query_value
@@ -19,6 +17,7 @@ from dotenv import load_dotenv
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from fastmcp.server.dependencies import get_access_token
+from fastmcp.tools.tool import ToolResult
 from jwt import DecodeError
 from pydantic import Field, field_serializer
 from pydantic.dataclasses import dataclass as pydantic_dataclass
@@ -33,8 +32,6 @@ from mcp_hydrolix.auth import (
     UsernamePassword,
 )
 from mcp_hydrolix.mcp_env import HydrolixConfig, get_config
-from fastmcp.tools.tool import ToolResult
-
 from mcp_hydrolix.utils import with_serializer
 
 
@@ -590,6 +587,27 @@ async def run_select_query(
 ) -> ToolResult:
     """Run a SELECT query in a Hydrolix time-series database using the Clickhouse SQL dialect.
     Queries run using this tool will timeout after 30 seconds.
+
+    RESULT TRUNCATION:
+
+    Query results are automatically truncated when the total cell count (rows × columns)
+    exceeds the configured limit.
+
+    Response shape:
+        - Always present: columns, rows, truncated (bool), row_count
+        - Only when truncated=true: total_row_count, message
+        Note: total_row_count is the number of rows fetched from the server, which is
+        capped at 100,000. The actual table may contain more rows than this value suggests.
+
+    When truncation occurs the message explains the situation and suggests query refinements.
+    Note: if the cell limit is smaller than the number of columns, row_count will be 0 —
+    in that case you must either refine the query (fewer columns, stricter filters) or
+    increase max_cells.
+
+    If your task requires more data than the default limit, pass a larger value:
+        run_select_query(query="...", max_cells=200000)
+
+    Set max_cells=0 to disable truncation entirely (subject to any server-side limit).
 
     MANDATORY PRE-QUERY CHECK:
 
