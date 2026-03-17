@@ -330,7 +330,7 @@ def detect_aggregate_aliases(alias_definitions: Dict[str, str]) -> Set[str]:
         try:
             parsed[name] = sqlglot.parse_one(sql, dialect="clickhouse")
         except sqlglot_errors.SqlglotError:
-            logger.info("Could not parse ALIAS expression for %r, treating as non-aggregate", name)
+            logger.info(f"Could not parse ALIAS expression for {name!r}, treating as non-aggregate")
 
     alias_names = set(alias_definitions)
 
@@ -339,14 +339,14 @@ def detect_aggregate_aliases(alias_definitions: Dict[str, str]) -> Set[str]:
         is_direct_aggregation: bool
         alias_dependencies: Set[str]
 
-    def _is_agg_node(node: sqlglot_exp.Expression) -> bool:
+    def _is_agg_node(n: sqlglot_exp.Expression) -> bool:
         # sqlglot recognises simple -Merge combinators (countMerge, sumMerge, …) as
         # CombinedAggFunc (a subclass of AggFunc).  Compound combinators such as
         # countIfMerge (-If + -Merge) are unknown to sqlglot and fall back to Anonymous.
         # We catch both: the subclass check covers known functions; the name suffix
         # check covers any -Merge variant that sqlglot does not have in its registry.
-        return isinstance(node, sqlglot_exp.AggFunc) or (
-            isinstance(node, sqlglot_exp.Anonymous) and str(node.this).endswith("Merge")
+        return isinstance(n, sqlglot_exp.AggFunc) or (
+            isinstance(n, sqlglot_exp.Anonymous) and str(n.this).endswith("Merge")
         )
 
     alias_dependency_meta: Dict[str, _AliasInfo] = {}
