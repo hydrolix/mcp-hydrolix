@@ -300,7 +300,10 @@ async def test_table_metadata_details(mcp_server, setup_test_database):
         result = await client.call_tool(
             "get_table_info", {"database": test_db, "table": test_table}
         )
-        test_table_info = vars(result.data)
+        # Use structured_content (raw JSON) to reliably access column fields
+        # result.data goes through fastmcp's schema reconstruction which produces
+        # opaque Root objects for anyOf union types
+        test_table_info = result.structured_content
 
         # Check engine info
         assert test_table_info["engine"] == "MergeTree"
@@ -308,23 +311,25 @@ async def test_table_metadata_details(mcp_server, setup_test_database):
         # Check row count
         assert test_table_info["total_rows"] == 4
 
-        # Convert columns list items to dicts
-        test_table_info["columns"] = [vars(col) for col in test_table_info["columns"]]
-        # Check columns and their comments
+        # Columns are plain dicts from @field_serializer with column_category injected
         columns_by_name = {col["name"]: col for col in test_table_info["columns"]}
 
         assert columns_by_name["id"]["comment"] == "Primary identifier"
-        assert columns_by_name["id"]["column_type"] == "UInt32"
+        assert columns_by_name["id"]["type"] == "UInt32"
+        assert columns_by_name["id"]["column_category"] == "Column"
 
         assert columns_by_name["name"]["comment"] == "User name field"
-        assert columns_by_name["name"]["column_type"] == "String"
+        assert columns_by_name["name"]["type"] == "String"
+        assert columns_by_name["name"]["column_category"] == "Column"
 
         assert columns_by_name["age"]["comment"] == "User age"
-        assert columns_by_name["age"]["column_type"] == "UInt8"
+        assert columns_by_name["age"]["type"] == "UInt8"
+        assert columns_by_name["age"]["column_category"] == "Column"
 
         assert columns_by_name["created_at"]["comment"] == "Record creation timestamp"
-        assert columns_by_name["created_at"]["column_type"] == "DateTime"
-        assert columns_by_name["created_at"]["default_expression"] == "now()"
+        assert columns_by_name["created_at"]["type"] == "DateTime"
+        # DEFAULT columns are classified as plain Column — default_expression not exposed
+        assert columns_by_name["created_at"]["column_category"] == "Column"
 
 
 @pytest.mark.asyncio
