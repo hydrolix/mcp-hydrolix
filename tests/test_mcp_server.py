@@ -616,6 +616,30 @@ async def test_run_select_query_operator_limit_overrides_max_cells_zero(
 
 
 @pytest.mark.asyncio
+async def test_run_select_query_operator_limit_caps_default(
+    monkeypatch, mcp_server, setup_test_database
+):
+    """Test that HYDROLIX_MAX_RESULT_CELLS_LIMIT caps results even when caller omits max_cells."""
+    test_db, test_table, _ = setup_test_database
+
+    # Operator sets a hard cap of 4 cells; caller supplies no max_cells at all.
+    monkeypatch.setenv("HYDROLIX_MAX_RESULT_CELLS_LIMIT", "4")
+
+    async with Client(mcp_server) as client:
+        # 4 rows × 4 columns = 16 cells; operator cap of 4 → max_rows = 4//4 = 1
+        query = f"SELECT id, name, age, created_at FROM {test_db}.{test_table} ORDER BY id"
+        result = await client.call_tool("run_select_query", {"query": query})
+
+        query_result = result.data
+        assert query_result["truncated"] is True
+        assert query_result["row_count"] == 1
+        assert query_result["total_row_count"] == 4
+        # Must show operator-cap guidance, NOT "use a larger max_cells value"
+        assert "administrator" in query_result["message"]
+        assert "max_cells value" not in query_result["message"]
+
+
+@pytest.mark.asyncio
 async def test_run_select_query_max_cells_in_tool_schema(mcp_server):
     """Test that max_cells is visible in the tool schema advertised to MCP clients."""
     async with Client(mcp_server) as client:

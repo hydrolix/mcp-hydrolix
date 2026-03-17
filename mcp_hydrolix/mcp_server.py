@@ -784,7 +784,7 @@ async def run_select_query(
         capped_by_operator = False
         if upper_limit > 0 and (cell_limit == 0 or cell_limit > upper_limit):
             cell_limit = upper_limit
-            capped_by_operator = caller_supplied_max_cells
+            capped_by_operator = True
 
         if cell_limit > 0 and num_cols > 0 and num_rows * num_cols > cell_limit:
             max_rows = cell_limit // num_cols
@@ -830,6 +830,8 @@ async def run_select_query(
             "truncated": False,
             "row_count": num_rows,
         }
+    except ToolError:
+        raise
     except Exception as e:
         logger.error(f"Unexpected error in run_select_query: {str(e)}")
         raise ToolError(f"Unexpected error during query execution: {str(e)}")
