@@ -1,9 +1,12 @@
 """Unit tests for summary table detection and classification."""
 
 from mcp_hydrolix.mcp_server import (
+    AggregateColumn,
+    AliasColumn,
     Column,
-    classify_table_columns,
-    enrich_column_metadata,
+    SummaryColumn,
+    detect_aggregate_aliases,
+    _enrich_column_metadata,
     extract_function_from_type,
     get_merge_function,
 )
@@ -47,136 +50,188 @@ class TestGetMergeFunction:
         assert get_merge_function("quantile(0.5, 0.9)") == "quantileMerge(0.5, 0.9)"
 
 
+class TestDetectAggregateAliases:
+    """Tests for detect_aggregate_aliases - AST-based aggregate alias detection."""
+
+    def test_direct_aggregate_alias(self):
+        """Test alias directly wrapping a -Merge function is detected as aggregate."""
+        result = detect_aggregate_aliases({"cnt_all": "countMerge(`count()`)"})
+        assert "cnt_all" in result
+
+    def test_compound_merge_combinator(self):
+        """Test compound -Merge combinators (e.g. countIfMerge) are detected.
+
+        sqlglot does not register countIfMerge as a known AggFunc — it falls back
+        to Anonymous.  The _is_agg_node helper catches these via the 'endswith Merge'
+        name check so they are not silently misclassified as plain aliases.
+        """
+        result = detect_aggregate_aliases({"cached_count": "countIfMerge(`countIf(cached)`)"})
+        assert "cached_count" in result
+
+    def test_non_aggregate_alias(self):
+        """Test alias with no aggregate function is not flagged."""
+        result = detect_aggregate_aliases({"full_name": "concat(first_name, ' ', last_name)"})
+        assert "full_name" not in result
+
+    def test_transitive_aggregate_alias(self):
+        """Test alias referencing aggregate aliases is transitively detected."""
+        result = detect_aggregate_aliases(
+            {
+                "cnt_errors": "countMerge(`count(errors)`)",
+                "cnt_all": "countMerge(`count()`)",
+                "pct_errors": "cnt_errors / cnt_all * 100",  # no Merge, but depends on aggregates
+            }
+        )
+        assert "cnt_errors" in result
+        assert "cnt_all" in result
+        assert "pct_errors" in result
+
+    def test_empty_aliases(self):
+        """Test empty input returns empty set."""
+        assert detect_aggregate_aliases({}) == set()
+
+    def test_non_transitive_alias_not_flagged(self):
+        """Test alias referencing only non-aggregate aliases is not flagged."""
+        result = detect_aggregate_aliases(
+            {
+                "full_name": "concat(first_name, ' ', last_name)",
+                "upper_name": "upper(full_name)",  # depends on full_name, which is not aggregate
+            }
+        )
+        assert "full_name" not in result
+        assert "upper_name" not in result
+
+
 class TestEnrichColumnMetadata:
-    """Tests for enrich_column_metadata function."""
+    """Tests for _enrich_column_metadata - DESCRIBE TABLE row classification."""
 
-    def test_detects_aggregate_from_type(self):
-        """Test aggregate columns are detected from AggregateFunction type."""
-        col = Column(
-            database="test_db",
-            table="test_table",
-            name="any_name",
-            column_type="AggregateFunction(count, String)",
-            default_kind="",
-            default_expression="",
-            comment="",
-        )
-
-        enriched = enrich_column_metadata(col)
-
-        assert enriched.column_category == "aggregate"
-        assert enriched.base_function == "count"
-        assert enriched.merge_function == "countMerge"
-
-    def test_classifies_as_dimension_without_aggregate_type(self):
-        """Test columns without AggregateFunction type are dimensions."""
-        col = Column(
-            database="test_db",
-            table="test_table",
-            name="vendor_id",
-            column_type="String",
-            default_kind="",
-            default_expression="",
-            comment="",
-        )
-
-        enriched = enrich_column_metadata(col)
-
-        assert enriched.column_category == "dimension"
-        assert enriched.base_function is None
-        assert enriched.merge_function is None
-
-    def test_detects_alias_aggregates(self):
-        """Test ALIAS columns with -Merge functions are detected."""
-        col = Column(
-            database="test_db",
-            table="test_table",
-            name="cnt_all",
-            column_type="",
-            default_kind="ALIAS",
-            default_expression="countMerge(`count()`)",
-            comment="",
-        )
-
-        enriched = enrich_column_metadata(col)
-
-        assert enriched.column_category == "alias_aggregate"
-        assert enriched.base_function is None
-        assert enriched.merge_function is None
-
-    def test_alias_without_merge_is_dimension(self):
-        """Test ALIAS columns without -Merge are dimensions."""
-        col = Column(
-            database="test_db",
-            table="test_table",
-            name="full_name",
-            column_type="",
-            default_kind="ALIAS",
-            default_expression="concat(first_name, ' ', last_name)",
-            comment="",
-        )
-
-        enriched = enrich_column_metadata(col)
-
-        assert enriched.column_category == "dimension"
-        assert enriched.base_function is None
-        assert enriched.merge_function is None
-
-
-class TestClassifyTableColumns:
-    """Tests for classify_table_columns function."""
-
-    def test_table_with_aggregates_is_summary_table(self):
-        """Test table with aggregate columns is classified as summary table."""
-        columns = [
-            enrich_column_metadata(
-                Column(
-                    database="test_db",
-                    table="test",
-                    name="count(vendor_id)",
-                    column_type="AggregateFunction(count, String)",
-                    default_kind="",
-                    default_expression="",
-                    comment="",
-                )
-            ),
-            enrich_column_metadata(
-                Column(
-                    database="test_db",
-                    table="test",
-                    name="cdn",
-                    column_type="String",
-                    default_kind="",
-                    default_expression="",
-                    comment="",
-                )
-            ),
+    def test_plain_column(self):
+        """Test plain column without default type is classified as Column."""
+        rows = [
+            {
+                "name": "vendor_id",
+                "type": "String",
+                "default_type": "",
+                "default_expression": "",
+                "comment": "",
+            }
         ]
+        result = _enrich_column_metadata(rows)
+        assert isinstance(result[0], Column)
+        assert result[0].name == "vendor_id"
+        assert result[0].type == "String"
 
-        result = classify_table_columns(columns)
-
-        assert result.is_summary_table is True
-        assert len(result.aggregate_columns) == 1
-        assert len(result.dimension_columns) == 1
-
-    def test_table_without_aggregates_is_regular_table(self):
-        """Test table with only dimensions is not a summary table."""
-        columns = [
-            enrich_column_metadata(
-                Column(
-                    database="test_db",
-                    table="test",
-                    name="vendor_id",
-                    column_type="String",
-                    default_kind="",
-                    default_expression="",
-                    comment="",
-                )
-            ),
+    def test_aggregate_column_from_type(self):
+        """Test AggregateFunction type is detected and merge_function populated."""
+        rows = [
+            {
+                "name": "cnt",
+                "type": "AggregateFunction(count, String)",
+                "default_type": "",
+                "default_expression": "",
+                "comment": "",
+            }
         ]
+        result = _enrich_column_metadata(rows)
+        col = result[0]
+        assert isinstance(col, AggregateColumn)
+        assert col.base_function == "count"
+        assert col.merge_function == "countMerge"
 
-        result = classify_table_columns(columns)
+    def test_alias_column(self):
+        """Test ALIAS column without aggregate expression is classified as AliasColumn."""
+        rows = [
+            {
+                "name": "full_name",
+                "type": "String",
+                "default_type": "ALIAS",
+                "default_expression": "concat(first, last)",
+                "comment": "",
+            }
+        ]
+        result = _enrich_column_metadata(rows)
+        col = result[0]
+        assert isinstance(col, AliasColumn)
+        assert col.default_expr == "concat(first, last)"
 
-        assert result.is_summary_table is False
-        assert len(result.aggregate_columns) == 0
-        assert len(result.dimension_columns) == 1
+    def test_summary_column(self):
+        """Test ALIAS column wrapping a -Merge function is classified as SummaryColumn."""
+        rows = [
+            {
+                "name": "cnt_all",
+                "type": "UInt64",
+                "default_type": "ALIAS",
+                "default_expression": "countMerge(`count()`)",
+                "comment": "",
+            }
+        ]
+        result = _enrich_column_metadata(rows)
+        assert isinstance(result[0], SummaryColumn)
+
+    def test_transitive_summary_column(self):
+        """Test ALIAS column transitively depending on aggregates is classified as SummaryColumn."""
+        rows = [
+            {
+                "name": "cnt_errors",
+                "type": "UInt64",
+                "default_type": "ALIAS",
+                "default_expression": "countMerge(`count(errors)`)",
+                "comment": "",
+            },
+            {
+                "name": "cnt_all",
+                "type": "UInt64",
+                "default_type": "ALIAS",
+                "default_expression": "countMerge(`count()`)",
+                "comment": "",
+            },
+            {
+                "name": "pct_errors",
+                "type": "Float64",
+                "default_type": "ALIAS",
+                "default_expression": "cnt_errors / cnt_all * 100",
+                "comment": "",
+            },
+        ]
+        by_name = {c.name: c for c in _enrich_column_metadata(rows)}
+        assert isinstance(by_name["cnt_errors"], SummaryColumn)
+        assert isinstance(by_name["cnt_all"], SummaryColumn)
+        assert isinstance(by_name["pct_errors"], SummaryColumn)
+
+    def test_column_types(self):
+        """Test each column kind maps to the correct dataclass type."""
+        rows = [
+            {
+                "name": "vendor_id",
+                "type": "String",
+                "default_type": "",
+                "default_expression": "",
+                "comment": "",
+            },
+            {
+                "name": "cnt",
+                "type": "AggregateFunction(count, String)",
+                "default_type": "",
+                "default_expression": "",
+                "comment": "",
+            },
+            {
+                "name": "full_name",
+                "type": "String",
+                "default_type": "ALIAS",
+                "default_expression": "concat(a, b)",
+                "comment": "",
+            },
+            {
+                "name": "cnt_all",
+                "type": "UInt64",
+                "default_type": "ALIAS",
+                "default_expression": "countMerge(`count()`)",
+                "comment": "",
+            },
+        ]
+        by_name = {c.name: c for c in _enrich_column_metadata(rows)}
+        assert isinstance(by_name["vendor_id"], Column)
+        assert isinstance(by_name["cnt"], AggregateColumn)
+        assert isinstance(by_name["full_name"], AliasColumn)
+        assert isinstance(by_name["cnt_all"], SummaryColumn)
