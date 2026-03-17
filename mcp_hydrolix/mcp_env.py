@@ -50,7 +50,7 @@ class HydrolixConfig:
         HYDROLIX_MCP_BIND_PORT: Port to bind the MCP server to when using HTTP or SSE transport (default: 8000)
         HYDROLIX_QUERIES_POOL_SIZE 100
         HYDROLIX_MCP_REQUEST_TIMEOUT 120
-        HYDROLIX_MCP_WORKERS 3
+        HYDROLIX_MCP_WORKERS 1
         HYDROLIX_MCP_WORKER_CONNECTIONS 200
         HYDROLIX_MCP_MAX_REQUESTS 10000
         HYDROLIX_MCP_MAX_REQUESTS_JITTER 1000
@@ -146,17 +146,17 @@ class HydrolixConfig:
 
     @property
     def query_pool_size(self) -> int:
-        """Get the send/receive timeout in seconds.
+        """Get the query executor thread pool size.
 
-        Default: 300 (Hydrolix default)
+        Default: 100
         """
         return int(os.getenv("HYDROLIX_QUERIES_POOL_SIZE", 100))
 
     @property
     def query_timeout_sec(self) -> int:
-        """Get the send/receive timeout in seconds.
+        """Get the per-query execution timeout in seconds.
 
-        Default: 300 (Hydrolix default)
+        Default: 30
         """
         return int(os.getenv("HYDROLIX_QUERY_TIMEOUT_SECS", 30))
 
@@ -164,8 +164,7 @@ class HydrolixConfig:
     def max_result_cells(self) -> int:
         """Get the default cell budget (rows × columns) for query result truncation.
 
-        Default: 50000
-        Can be overridden by HYDROLIX_MAX_RESULT_CELLS environment variable.
+        Configured via HYDROLIX_MAX_RESULT_CELLS (default: 50000).
         """
         return int(os.getenv("HYDROLIX_MAX_RESULT_CELLS", "50000"))
 
@@ -173,11 +172,10 @@ class HydrolixConfig:
     def max_result_cells_limit(self) -> int:
         """Get the hard upper bound on the max_cells value callers may request.
 
-        When > 0, any per-call max_cells value above this limit is silently capped to this
+        When > 0, any per-call max_cells value above this limit is capped to this
         value, preventing callers from requesting unbounded result sets.
 
-        Default: 0 (no cap enforced)
-        Can be overridden by HYDROLIX_MAX_RESULT_CELLS_LIMIT environment variable.
+        Configured via HYDROLIX_MAX_RESULT_CELLS_LIMIT (default: 0, no cap enforced).
         Set to a positive integer to enforce a cap in multi-tenant HTTP/SSE deployments.
         """
         return int(os.getenv("HYDROLIX_MAX_RESULT_CELLS_LIMIT", "0"))
@@ -221,7 +219,7 @@ class HydrolixConfig:
 
     @property
     def mcp_timeout(self) -> int:
-        """Get the request timeout secunds.
+        """Get the request timeout seconds.
 
         Only used when transport is "http" or "sse".
         Default: 120
@@ -242,7 +240,7 @@ class HydrolixConfig:
         """Get the max number of concurrent requests per worker.
 
         Only used when transport is "http" or "sse".
-        Default: 200
+        Default: 100
         """
         return int(os.getenv("HYDROLIX_MCP_WORKER_CONNECTIONS", 100))
 
@@ -251,7 +249,7 @@ class HydrolixConfig:
         """Get the random parameter to randomize time process is reloaded after max_requests.
 
         Only used when transport is "http" or "sse".
-        Default: 10000
+        Default: 1000
         """
         return int(os.getenv("HYDROLIX_MCP_MAX_REQUESTS_JITTER", 1000))
 
@@ -260,7 +258,7 @@ class HydrolixConfig:
         """Get the max number of requests handled by worker before it is restarted.
 
         Only used when transport is "http" or "sse".
-        Default: 1000
+        Default: 10000
         """
         return int(os.getenv("HYDROLIX_MCP_MAX_REQUESTS", 10000))
 

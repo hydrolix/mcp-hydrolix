@@ -776,14 +776,15 @@ async def run_select_query(
         num_rows = len(rows)
         num_cols = len(columns)
 
-        cell_limit = max_cells if max_cells is not None else HYDROLIX_CONFIG.max_result_cells
+        caller_supplied_max_cells = max_cells is not None
+        cell_limit = max_cells if caller_supplied_max_cells else HYDROLIX_CONFIG.max_result_cells
 
-        # Enforce the operator-configured upper bound regardless of what the caller requested.
+        # Enforce the operator-configured upper bound if the caller requested more than allowed.
         upper_limit = HYDROLIX_CONFIG.max_result_cells_limit
         capped_by_operator = False
         if upper_limit > 0 and (cell_limit == 0 or cell_limit > upper_limit):
             cell_limit = upper_limit
-            capped_by_operator = True
+            capped_by_operator = caller_supplied_max_cells
 
         if cell_limit > 0 and num_cols > 0 and num_rows * num_cols > cell_limit:
             max_rows = cell_limit // num_cols
@@ -813,8 +814,12 @@ async def run_select_query(
                     f"({num_cols} columns). "
                     f"Exceeded the cell limit of {cell_limit:,} "
                     f"({num_rows * num_cols:,} cells in full result). "
-                    f"Note: total_row_count reflects rows fetched from the server "
-                    f"(capped at 100,000) — the actual table may contain more rows. "
+                    + (
+                        "Note: total_row_count reflects rows fetched from the server "
+                        "(capped at 100,000) — the actual table may contain more rows. "
+                        if num_rows >= 100_000
+                        else ""
+                    )
                     + retrieve_more
                 ),
             }
