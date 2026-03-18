@@ -233,7 +233,9 @@ async def execute_query(query: str) -> HdxQueryResult:
                 },
             )
             logger.info(f"Query returned {len(res.result_rows)} rows")
-            return HdxQueryResult(columns=list(res.column_names), rows=[list(row) for row in res.result_rows])
+            return HdxQueryResult(
+                columns=list(res.column_names), rows=[list(row) for row in res.result_rows]
+            )
     except Exception as err:
         logger.error(f"Error executing query: {err}")
         status = "error"
@@ -293,7 +295,9 @@ if HYDROLIX_CONFIG.metrics_enabled:
     class MetricsMiddleware(Middleware):
         async def on_request(self, context: MiddlewareContext, call_next) -> Any:
             m = metrics.get_instance()
-            if m is None:  # defensive — should not happen since middleware is only added when metrics are enabled
+            if (
+                m is None
+            ):  # defensive — should not happen since middleware is only added when metrics are enabled
                 return await call_next(context)
             tool_name = getattr(context.message, "name", "unknown")
             m.active_requests.inc()

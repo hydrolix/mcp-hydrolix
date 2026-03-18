@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 2
 requires-python = ">=3.13"
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform == 'win32'",
@@ -831,9 +831,8 @@ requires-dist = [
     { name = "mcp-clickhouse", marker = "extra == 'dev'", specifier = "==0.1.13" },
     { name = "pip-system-certs", specifier = ">=4.0,<5.0" },
     { name = "pre-commit", marker = "extra == 'dev'" },
-    { name = "pyjwt", specifier = ">=2.10,<2.13" },
     { name = "prometheus-client", specifier = ">=0.21,<1.0" },
-    { name = "pyjwt", specifier = ">=2.10,<2.11" },
+    { name = "pyjwt", specifier = ">=2.10,<2.13" },
     { name = "pytest", marker = "extra == 'dev'" },
     { name = "pytest-asyncio", marker = "extra == 'dev'" },
     { name = "pytest-repeat", marker = "extra == 'dev'" },
