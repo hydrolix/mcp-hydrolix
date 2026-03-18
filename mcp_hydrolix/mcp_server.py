@@ -299,7 +299,9 @@ if HYDROLIX_CONFIG.metrics_enabled:
                 m is None
             ):  # defensive — should not happen since middleware is only added when metrics are enabled
                 return await call_next(context)
-            tool_name = getattr(context.message, "name", "unknown")
+            if context.method != "tools/call":
+                return await call_next(context)
+            tool_name = context.message.name
             m.active_requests.inc()
             start = time.perf_counter()
             status = "success"
