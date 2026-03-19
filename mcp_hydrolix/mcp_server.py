@@ -612,8 +612,52 @@ def _build_truncation_response(
     cell_limit: int,
     capped_by_operator: bool,
 ) -> dict:
-    """Build a ToolResult that truncates result cells and appends a truncation notice."""
-    raise NotImplementedError("_build_truncation_response is not yet implemented")
+    """Build the truncated response dict, logging the truncation event.
+
+    Precondition: len(columns) > 0 (caller already guards this).
+    """
+    num_rows = len(rows)
+    num_cols = len(columns)
+    max_rows = cell_limit // num_cols
+    total_cells = num_rows * num_cols
+
+    logger.info(
+        f"Truncating result from {num_rows} to {max_rows} rows "
+        f"(cell limit: {cell_limit}, columns: {num_cols})"
+    )
+
+    if capped_by_operator:
+        retrieve_more = (
+            f"This limit is enforced by the server (max_cells capped at {cell_limit:,}). "
+            f"Contact your administrator to adjust HYDROLIX_MAX_RESULT_CELLS_LIMIT, "
+            f"or refine your query with LIMIT, WHERE filters, or GROUP BY."
+        )
+    else:
+        retrieve_more = (
+            "Consider refining your query with LIMIT, WHERE filters, or GROUP BY. "
+            "To retrieve more data, call run_select_query with a larger max_cells value."
+        )
+
+    return {
+        "columns": columns,
+        "rows": rows[:max_rows],
+        "truncated": True,
+        "row_count": max_rows,
+        "total_row_count": num_rows,
+        "message": (
+            f"Result truncated: showing {max_rows:,} of {num_rows:,} fetched rows "
+            f"({num_cols} columns). "
+            f"Exceeded the cell limit of {cell_limit:,} "
+            f"({total_cells:,} cells in full result). "
+            + (
+                "Note: total_row_count reflects rows fetched from the server "
+                "(capped at 100,000) — the actual table may contain more rows. "
+                if num_rows >= 100_000
+                else ""
+            )
+            + retrieve_more
+        ),
+    }
 
 
 @mcp.tool()
