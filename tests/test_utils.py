@@ -6,7 +6,7 @@ from decimal import Decimal
 
 from mcp.types import TextContent
 
-from mcp_hydrolix.utils import ExtendedEncoder, with_serializer
+from mcp_hydrolix.utils import ExtendedEncoder, with_serializer, inject_limit
 from fastmcp.tools.tool import ToolResult
 
 
@@ -286,6 +286,42 @@ class TestWithSerializerDecorator:
         assert isinstance(result, ToolResult)
         assert result.content == [TextContent(type="text", text='{"result": [1, 2, 3, 4, 5]}')]
         assert result.structured_content == {"result": [1, 2, 3, 4, 5]}
+
+
+class TestInjectLimit:
+    def test_adds_limit_when_none_present(self):
+        result = inject_limit("SELECT * FROM t", 10)
+        assert "LIMIT 10" in result
+
+    def test_takes_min_when_existing_limit_is_larger(self):
+        result = inject_limit("SELECT * FROM t LIMIT 100", 10)
+        assert "LIMIT 10" in result
+        assert "LIMIT 100" not in result
+
+    def test_preserves_smaller_existing_limit(self):
+        result = inject_limit("SELECT * FROM t LIMIT 5", 10)
+        assert "LIMIT 5" in result
+        assert "LIMIT 10" not in result
+
+    def test_only_affects_outermost_limit(self):
+        query = "SELECT * FROM (SELECT * FROM t LIMIT 1000) AS sub"
+        result = inject_limit(query, 10)
+        assert "LIMIT 1000" in result  # inner limit preserved
+        assert result.strip().endswith("LIMIT 10")  # outer limit added, not inner
+
+    def test_preserves_offset_when_capping_limit(self):
+        result = inject_limit("SELECT * FROM t LIMIT 100 OFFSET 50", 10)
+        assert "LIMIT 10" in result
+        assert "50" in result  # offset preserved
+
+    def test_equal_limit_is_unchanged(self):
+        result = inject_limit("SELECT * FROM t LIMIT 10", 10)
+        assert "LIMIT 10" in result
+
+    def test_non_literal_existing_limit_is_left_unchanged(self):
+        # A LIMIT with a parenthesized or non-literal expression should not crash
+        result = inject_limit("SELECT * FROM t LIMIT (100)", 10)
+        assert result is not None  # must not raise
 
 
 if __name__ == "__main__":

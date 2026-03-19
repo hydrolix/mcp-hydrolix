@@ -68,3 +68,21 @@ def with_serializer(fn):
     async_wrapper.__signature__ = sig
     wrapper.__signature__ = sig
     return async_wrapper if inspect.iscoroutinefunction(fn) else wrapper
+
+
+def inject_limit(query: str, max_rows: int) -> str:
+    """Rewrite query to enforce a row limit, taking the minimum of any existing LIMIT."""
+    import sqlglot
+    import sqlglot.expressions as exp
+
+    ast = sqlglot.parse_one(query, dialect="clickhouse")
+    existing = ast.args.get("limit")
+    if existing:
+        try:
+            current = int(existing.args["expression"].this)
+            existing.set("expression", exp.Literal.number(min(current, max_rows)))
+        except (TypeError, ValueError, AttributeError):
+            pass  # non-literal LIMIT (e.g. expression or parameter) — leave unchanged
+    else:
+        ast.set("limit", exp.Limit(expression=exp.Literal.number(max_rows)))
+    return ast.sql(dialect="clickhouse")
