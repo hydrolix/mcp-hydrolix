@@ -587,7 +587,7 @@ async def test_run_select_query_truncation_max_rows_zero(mcp_server, setup_test_
         assert query_result["truncated"] is True
         assert query_result["row_count"] == 0
         assert len(query_result["rows"]) == 0
-        assert query_result["total_row_count"] == 4
+        assert query_result["total_row_count"] == 2  # inject_limit caps the fetch to LIMIT 2
         assert "run_select_query" in query_result["message"]
         assert "max_cells" in query_result["message"]
 
