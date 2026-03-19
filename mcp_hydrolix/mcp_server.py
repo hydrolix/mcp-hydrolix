@@ -804,17 +804,7 @@ async def run_select_query(
     Performance guard: date range filter.
      `SELECT app, count(*) FROM application.logs WHERE timestamp > '2024-01-01' AND timestamp < '2024-02-14' GROUP BY app ORDER BY count(*) DESC LIMIT 1`
     """
-    if max_cells is not None and max_cells < 0:
-        raise ToolError("max_cells must be 0 (to disable truncation) or a positive integer.")
-
-    cell_limit = max_cells if max_cells is not None else HYDROLIX_CONFIG.max_result_cells
-
-    # Enforce the operator-configured upper bound if the caller requested more than allowed.
-    upper_limit = HYDROLIX_CONFIG.max_result_cells_limit
-    capped_by_operator = False
-    if upper_limit > 0 and (cell_limit == 0 or cell_limit > upper_limit):
-        cell_limit = upper_limit
-        capped_by_operator = True
+    cell_limit, capped_by_operator = _resolve_cell_limit(max_cells)
 
     # Rewrite the query to add a server-side LIMIT before hitting the DB, so we don't
     # materialise more rows than needed. inject_limit takes the min of any existing LIMIT
@@ -832,53 +822,10 @@ async def run_select_query(
         logger.exception(f"Unexpected error in run_select_query: {str(e)}")
         raise ToolError(f"Unexpected error during query execution: {str(e)}")
 
-    columns = result["columns"]
-    rows = result["rows"]
-    num_rows = len(rows)
-    num_cols = len(columns)
+    columns, rows = result["columns"], result["rows"]
+    num_rows, num_cols = len(rows), len(columns)
 
-    total_cells = num_rows * num_cols
-    if cell_limit > 0 and num_cols > 0 and total_cells > cell_limit:
-        max_rows = cell_limit // num_cols
-        logger.info(
-            f"Truncating result from {num_rows} to {max_rows} rows "
-            f"(cell limit: {cell_limit}, columns: {num_cols})"
-        )
-        if capped_by_operator:
-            retrieve_more = (
-                f"This limit is enforced by the server (max_cells capped at {cell_limit:,}). "
-                f"Contact your administrator to adjust HYDROLIX_MAX_RESULT_CELLS_LIMIT, "
-                f"or refine your query with LIMIT, WHERE filters, or GROUP BY."
-            )
-        else:
-            retrieve_more = (
-                "Consider refining your query with LIMIT, WHERE filters, or GROUP BY. "
-                "To retrieve more data, call run_select_query with a larger max_cells value."
-            )
-        return {
-            "columns": columns,
-            "rows": rows[:max_rows],
-            "truncated": True,
-            "row_count": max_rows,
-            "total_row_count": num_rows,
-            "message": (
-                f"Result truncated: showing {max_rows:,} of {num_rows:,} fetched rows "
-                f"({num_cols} columns). "
-                f"Exceeded the cell limit of {cell_limit:,} "
-                f"({total_cells:,} cells in full result). "
-                + (
-                    "Note: total_row_count reflects rows fetched from the server "
-                    "(capped at 100,000) — the actual table may contain more rows. "
-                    if num_rows >= 100_000
-                    else ""
-                )
-                + retrieve_more
-            ),
-        }
+    if cell_limit > 0 and num_cols > 0 and num_rows * num_cols > cell_limit:
+        return _build_truncation_response(columns, rows, cell_limit, capped_by_operator)
 
-    return {
-        "columns": columns,
-        "rows": rows,
-        "truncated": False,
-        "row_count": num_rows,
-    }
+    return {"columns": columns, "rows": rows, "truncated": False, "row_count": num_rows}
