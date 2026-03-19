@@ -408,14 +408,14 @@ def _enrich_column_metadata(rows: List[Dict[str, str]]) -> List[ColumnType]:
     Everything else is a plain Column.
     """
     alias_columns: Dict[str, str] = {
-        r.get("name", ""): r["default_expression"]
+        r["name"]: r["default_expression"]
         for r in rows
-        if r.get("default_type") == "ALIAS" and r.get("default_expression") and r.get("name")
+        if r.get("default_type") == "ALIAS" and r.get("default_expression")
     }
     aggregate_alias_names = detect_aggregate_aliases(alias_columns) if alias_columns else set()
 
     def classify_column(r: Dict[str, str]) -> ColumnType:
-        name = r.get("name", "")
+        name = r["name"]
         col_type = r.get("type", "")
         comment = r.get("comment") or None
 
@@ -590,6 +590,31 @@ async def list_tables(
     return tables
 
 
+def _build_truncation_response(
+    result: Any,
+    cell_limit: int,
+    capped_by_operator: bool,
+) -> ToolResult:
+    """Build a ToolResult that truncates result cells and appends a truncation notice."""
+    raise NotImplementedError("_build_truncation_response is not yet implemented")
+
+
+def _resolve_cell_limit(max_cells: Optional[int]) -> tuple[int, bool]:
+    """Validate max_cells and resolve the effective cell limit and operator-cap flag."""
+    if max_cells is not None and max_cells < 0:
+        raise ToolError("max_cells must be 0 (to disable truncation) or a positive integer.")
+
+    cell_limit = max_cells if max_cells is not None else HYDROLIX_CONFIG.max_result_cells
+
+    upper_limit = HYDROLIX_CONFIG.max_result_cells_limit
+    capped_by_operator = False
+    if upper_limit > 0 and (cell_limit == 0 or cell_limit > upper_limit):
+        cell_limit = upper_limit
+        capped_by_operator = True
+
+    return cell_limit, capped_by_operator
+
+
 @mcp.tool()
 @with_serializer
 async def run_select_query(
@@ -737,8 +762,7 @@ async def run_select_query(
     if max_cells is not None and max_cells < 0:
         raise ToolError("max_cells must be 0 (to disable truncation) or a positive integer.")
 
-    caller_supplied_max_cells = max_cells is not None
-    cell_limit = max_cells if caller_supplied_max_cells else HYDROLIX_CONFIG.max_result_cells
+    cell_limit = max_cells if max_cells is not None else HYDROLIX_CONFIG.max_result_cells
 
     # Enforce the operator-configured upper bound if the caller requested more than allowed.
     upper_limit = HYDROLIX_CONFIG.max_result_cells_limit
@@ -752,9 +776,7 @@ async def run_select_query(
     # and our budget. We pass cell_limit as a loose upper bound on rows — the exact
     # column count is only known after execution, so we can't be precise here;
     # post-fetch cell-based truncation below handles the final slice.
-    effective_query = query
-    if cell_limit > 0:
-        effective_query = inject_limit(query, cell_limit)
+    effective_query = inject_limit(query, cell_limit) if cell_limit > 0 else query
 
     logger.info(f"Executing SELECT query: {effective_query}")
     try:
@@ -770,7 +792,8 @@ async def run_select_query(
     num_rows = len(rows)
     num_cols = len(columns)
 
-    if cell_limit > 0 and num_cols > 0 and num_rows * num_cols > cell_limit:
+    total_cells = num_rows * num_cols
+    if cell_limit > 0 and num_cols > 0 and total_cells > cell_limit:
         max_rows = cell_limit // num_cols
         logger.info(
             f"Truncating result from {num_rows} to {max_rows} rows "
@@ -797,7 +820,7 @@ async def run_select_query(
                 f"Result truncated: showing {max_rows:,} of {num_rows:,} fetched rows "
                 f"({num_cols} columns). "
                 f"Exceeded the cell limit of {cell_limit:,} "
-                f"({num_rows * num_cols:,} cells in full result). "
+                f"({total_cells:,} cells in full result). "
                 + (
                     "Note: total_row_count reflects rows fetched from the server "
                     "(capped at 100,000) — the actual table may contain more rows. "

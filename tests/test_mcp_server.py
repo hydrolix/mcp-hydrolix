@@ -12,7 +12,7 @@ from fastmcp.exceptions import ToolError
 from fastmcp.server.middleware import Middleware, MiddlewareContext
 from mcp_clickhouse.mcp_server import create_clickhouse_client
 
-from mcp_hydrolix.mcp_server import mcp
+from mcp_hydrolix.mcp_server import _resolve_cell_limit, mcp
 
 
 @pytest.fixture(scope="module")
@@ -781,3 +781,45 @@ class TestHydrolixConfigValidation:
         monkeypatch.setenv("HYDROLIX_MAX_RESULT_CELLS", "12345")
         config = HydrolixConfig()
         assert config.max_result_cells == 12345
+
+
+def test_resolve_cell_limit_negative_raises():
+    with pytest.raises(ToolError, match="max_cells must be 0"):
+        _resolve_cell_limit(-1)
+
+
+def test_resolve_cell_limit_uses_default(monkeypatch):
+    monkeypatch.setenv("HYDROLIX_MAX_RESULT_CELLS", "12345")
+    monkeypatch.setenv("HYDROLIX_MAX_RESULT_CELLS_LIMIT", "0")
+    cell_limit, capped = _resolve_cell_limit(None)
+    assert cell_limit == 12345
+    assert capped is False
+
+
+def test_resolve_cell_limit_caller_value(monkeypatch):
+    monkeypatch.setenv("HYDROLIX_MAX_RESULT_CELLS_LIMIT", "0")
+    cell_limit, capped = _resolve_cell_limit(500)
+    assert cell_limit == 500
+    assert capped is False
+
+
+def test_resolve_cell_limit_operator_cap_applied(monkeypatch):
+    monkeypatch.setenv("HYDROLIX_MAX_RESULT_CELLS_LIMIT", "1000")
+    cell_limit, capped = _resolve_cell_limit(9999)
+    assert cell_limit == 1000
+    assert capped is True
+
+
+def test_resolve_cell_limit_zero_capped_by_operator(monkeypatch):
+    # max_cells=0 means "no limit" from caller; operator cap overrides it
+    monkeypatch.setenv("HYDROLIX_MAX_RESULT_CELLS_LIMIT", "1000")
+    cell_limit, capped = _resolve_cell_limit(0)
+    assert cell_limit == 1000
+    assert capped is True
+
+
+def test_resolve_cell_limit_operator_cap_not_applied_when_below(monkeypatch):
+    monkeypatch.setenv("HYDROLIX_MAX_RESULT_CELLS_LIMIT", "1000")
+    cell_limit, capped = _resolve_cell_limit(500)
+    assert cell_limit == 500
+    assert capped is False
