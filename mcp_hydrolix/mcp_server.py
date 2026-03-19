@@ -749,20 +749,20 @@ async def run_select_query(
 
     # Rewrite the query to add a server-side LIMIT before hitting the DB, so we don't
     # materialise more rows than needed. inject_limit takes the min of any existing LIMIT
-    # and our budget. We use cell_limit // 1 as a conservative upper bound on rows (the
-    # exact column count is only known after execution, so we can't be precise here);
+    # and our budget. We pass cell_limit as a loose upper bound on rows — the exact
+    # column count is only known after execution, so we can't be precise here;
     # post-fetch cell-based truncation below handles the final slice.
     effective_query = query
     if cell_limit > 0:
         effective_query = inject_limit(query, cell_limit)
 
-    logger.info(f"Executing SELECT query: {query}")
+    logger.info(f"Executing SELECT query: {effective_query}")
     try:
         result = await execute_query(query=effective_query)
     except ToolError:
         raise
     except Exception as e:
-        logger.error(f"Unexpected error in run_select_query: {str(e)}")
+        logger.exception(f"Unexpected error in run_select_query: {str(e)}")
         raise ToolError(f"Unexpected error during query execution: {str(e)}")
 
     columns = result["columns"]

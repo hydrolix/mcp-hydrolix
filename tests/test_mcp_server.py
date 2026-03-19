@@ -702,3 +702,57 @@ async def test_run_select_query_truncation_message_100k_note(monkeypatch, mcp_se
     assert query_result["total_row_count"] == 100_000
     assert "total_row_count" in query_result["message"]
     assert "100,000" in query_result["message"]
+
+
+class TestHydrolixConfigValidation:
+    """Tests for HydrolixConfig startup validation of result-cell env vars."""
+
+    @pytest.fixture(autouse=True)
+    def _base_env(self, monkeypatch):
+        """Set the minimum required env vars for HydrolixConfig construction."""
+        monkeypatch.setenv("HYDROLIX_HOST", "localhost")
+        monkeypatch.setenv("HYDROLIX_USER", "user")
+        monkeypatch.setenv("HYDROLIX_PASSWORD", "pass")
+
+    def test_max_result_cells_zero_rejected(self, monkeypatch):
+        from mcp_hydrolix.mcp_env import HydrolixConfig
+
+        monkeypatch.setenv("HYDROLIX_MAX_RESULT_CELLS", "0")
+        with pytest.raises(ValueError, match="HYDROLIX_MAX_RESULT_CELLS"):
+            HydrolixConfig()
+
+    def test_max_result_cells_negative_rejected(self, monkeypatch):
+        from mcp_hydrolix.mcp_env import HydrolixConfig
+
+        monkeypatch.setenv("HYDROLIX_MAX_RESULT_CELLS", "-1")
+        with pytest.raises(ValueError, match="HYDROLIX_MAX_RESULT_CELLS"):
+            HydrolixConfig()
+
+    def test_max_result_cells_non_integer_rejected(self, monkeypatch):
+        from mcp_hydrolix.mcp_env import HydrolixConfig
+
+        monkeypatch.setenv("HYDROLIX_MAX_RESULT_CELLS", "abc")
+        with pytest.raises(ValueError, match="HYDROLIX_MAX_RESULT_CELLS"):
+            HydrolixConfig()
+
+    def test_max_result_cells_limit_negative_rejected(self, monkeypatch):
+        from mcp_hydrolix.mcp_env import HydrolixConfig
+
+        monkeypatch.setenv("HYDROLIX_MAX_RESULT_CELLS_LIMIT", "-1")
+        with pytest.raises(ValueError, match="HYDROLIX_MAX_RESULT_CELLS_LIMIT"):
+            HydrolixConfig()
+
+    def test_max_result_cells_limit_non_integer_rejected(self, monkeypatch):
+        from mcp_hydrolix.mcp_env import HydrolixConfig
+
+        monkeypatch.setenv("HYDROLIX_MAX_RESULT_CELLS_LIMIT", "bad")
+        with pytest.raises(ValueError, match="HYDROLIX_MAX_RESULT_CELLS_LIMIT"):
+            HydrolixConfig()
+
+    def test_max_result_cells_limit_zero_is_valid(self, monkeypatch):
+        """Zero is explicitly valid for LIMIT (means no cap)."""
+        from mcp_hydrolix.mcp_env import HydrolixConfig
+
+        monkeypatch.setenv("HYDROLIX_MAX_RESULT_CELLS_LIMIT", "0")
+        config = HydrolixConfig()  # must not raise
+        assert config.max_result_cells_limit == 0

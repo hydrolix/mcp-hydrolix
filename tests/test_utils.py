@@ -326,6 +326,13 @@ class TestInjectLimit:
         assert "LIMIT" in result  # LIMIT clause must still be present
         assert "100" in result  # original value must be preserved
 
+    def test_unparseable_query_returned_unchanged(self):
+        # A query sqlglot cannot parse must be returned as-is without raising, so the
+        # caller can still execute it (limit injection is best-effort).
+        bad_sql = "THIS IS NOT VALID SQL @@@@"
+        result = inject_limit(bad_sql, 10)
+        assert result == bad_sql
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

@@ -107,6 +107,18 @@ class TestDetectAggregateAliases:
         result = detect_aggregate_aliases({"a": "b + 1", "b": "a + 1"})
         assert result == set()  # must not raise; all treated as non-aggregate
 
+    def test_unparseable_expression_treated_as_non_aggregate(self):
+        """Test that an ALIAS expression sqlglot cannot parse does not raise and is excluded."""
+        # The bad expression must be silently skipped; the parseable column is unaffected.
+        result = detect_aggregate_aliases(
+            {
+                "bad_col": "@@@INVALID@@@",
+                "good_col": "countMerge(`count()`)",
+            }
+        )
+        assert "bad_col" not in result
+        assert "good_col" in result
+
 
 class TestEnrichColumnMetadata:
     """Tests for _enrich_column_metadata - DESCRIBE TABLE row classification."""
