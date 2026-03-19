@@ -590,15 +590,6 @@ async def list_tables(
     return tables
 
 
-def _build_truncation_response(
-    result: Any,
-    cell_limit: int,
-    capped_by_operator: bool,
-) -> ToolResult:
-    """Build a ToolResult that truncates result cells and appends a truncation notice."""
-    raise NotImplementedError("_build_truncation_response is not yet implemented")
-
-
 def _resolve_cell_limit(max_cells: Optional[int]) -> tuple[int, bool]:
     """Validate max_cells and resolve the effective cell limit and operator-cap flag."""
     if max_cells is not None and max_cells < 0:
@@ -613,6 +604,16 @@ def _resolve_cell_limit(max_cells: Optional[int]) -> tuple[int, bool]:
         capped_by_operator = True
 
     return cell_limit, capped_by_operator
+
+
+def _build_truncation_response(
+    columns: list,
+    rows: list,
+    cell_limit: int,
+    capped_by_operator: bool,
+) -> dict:
+    """Build a ToolResult that truncates result cells and appends a truncation notice."""
+    raise NotImplementedError("_build_truncation_response is not yet implemented")
 
 
 @mcp.tool()
