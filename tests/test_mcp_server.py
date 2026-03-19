@@ -511,6 +511,21 @@ async def test_run_select_query_no_truncation(mcp_server, setup_test_database):
 
 
 @pytest.mark.asyncio
+async def test_run_select_query_no_truncation_at_exact_budget(mcp_server, setup_test_database):
+    """Test that a result exactly at the cell budget is not truncated (boundary: > not >=)."""
+    test_db, test_table, _ = setup_test_database
+
+    async with Client(mcp_server) as client:
+        # test_table has 4 rows × 3 selected columns = 12 cells; max_cells=12 must NOT truncate.
+        query = f"SELECT id, name, age FROM {test_db}.{test_table} ORDER BY id"
+        result = await client.call_tool("run_select_query", {"query": query, "max_cells": 12})
+
+        query_result = result.data
+        assert query_result["truncated"] is False
+        assert query_result["row_count"] == 4
+
+
+@pytest.mark.asyncio
 async def test_run_select_query_truncation_triggered(mcp_server, setup_test_database):
     """Test that results exceeding the cell budget are truncated with metadata."""
     test_db, test_table, _ = setup_test_database
@@ -756,3 +771,11 @@ class TestHydrolixConfigValidation:
         monkeypatch.setenv("HYDROLIX_MAX_RESULT_CELLS_LIMIT", "0")
         config = HydrolixConfig()  # must not raise
         assert config.max_result_cells_limit == 0
+
+    def test_max_result_cells_positive_value_is_read(self, monkeypatch):
+        """Configured value is returned by the property (not a hardcoded default)."""
+        from mcp_hydrolix.mcp_env import HydrolixConfig
+
+        monkeypatch.setenv("HYDROLIX_MAX_RESULT_CELLS", "12345")
+        config = HydrolixConfig()
+        assert config.max_result_cells == 12345

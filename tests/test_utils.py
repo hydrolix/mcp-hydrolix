@@ -325,6 +325,7 @@ class TestInjectLimit:
         assert result is not None  # must not raise
         assert "LIMIT" in result  # LIMIT clause must still be present
         assert "100" in result  # original value must be preserved
+        assert "LIMIT 10" not in result  # cap must NOT have been applied
 
     def test_unparseable_query_returned_unchanged(self):
         # A query sqlglot cannot parse must be returned as-is without raising, so the
