@@ -319,9 +319,12 @@ class TestInjectLimit:
         assert "LIMIT 10" in result
 
     def test_non_literal_existing_limit_is_left_unchanged(self):
-        # A LIMIT with a parenthesized or non-literal expression should not crash
+        # A LIMIT with a parenthesized or non-literal expression should not crash,
+        # and the original LIMIT expression must be preserved (not dropped or mangled).
         result = inject_limit("SELECT * FROM t LIMIT (100)", 10)
         assert result is not None  # must not raise
+        assert "LIMIT" in result  # LIMIT clause must still be present
+        assert "100" in result  # original value must be preserved
 
 
 if __name__ == "__main__":

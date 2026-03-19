@@ -526,6 +526,7 @@ async def test_run_select_query_truncation_triggered(mcp_server, setup_test_data
         assert query_result["total_row_count"] == 4
         assert len(query_result["rows"]) == 1
         assert "message" in query_result
+        assert "run_select_query" in query_result["message"]
         assert "max_cells" in query_result["message"]
 
 
@@ -572,6 +573,7 @@ async def test_run_select_query_truncation_max_rows_zero(mcp_server, setup_test_
         assert query_result["row_count"] == 0
         assert len(query_result["rows"]) == 0
         assert query_result["total_row_count"] == 4
+        assert "run_select_query" in query_result["message"]
         assert "max_cells" in query_result["message"]
 
 
@@ -654,3 +656,49 @@ async def test_run_select_query_max_cells_in_tool_schema(mcp_server):
         assert "max_cells" in schema_props, (
             "max_cells parameter must appear in the tool schema so LLM clients can use it"
         )
+
+
+@pytest.mark.asyncio
+async def test_run_select_query_env_default_max_cells(monkeypatch, mcp_server, setup_test_database):
+    """Test that HYDROLIX_MAX_RESULT_CELLS env var is respected as the default cell budget."""
+    test_db, test_table, _ = setup_test_database
+
+    # Set the default budget to 4 cells; the query returns 4 rows × 4 columns = 16 cells.
+    # With this budget, truncation must trigger even though no max_cells arg is supplied.
+    monkeypatch.setenv("HYDROLIX_MAX_RESULT_CELLS", "4")
+
+    async with Client(mcp_server) as client:
+        query = f"SELECT id, name, age, created_at FROM {test_db}.{test_table} ORDER BY id"
+        result = await client.call_tool("run_select_query", {"query": query})
+
+        query_result = result.data
+        assert query_result["truncated"] is True
+        assert query_result["row_count"] == 1  # 4 cells // 4 columns = 1 row
+        assert query_result["total_row_count"] == 4
+        assert "run_select_query" in query_result["message"]
+        assert "max_cells" in query_result["message"]
+
+
+@pytest.mark.asyncio
+async def test_run_select_query_truncation_message_100k_note(monkeypatch, mcp_server):
+    """Test that the 100k-row advisory note appears when total_row_count >= 100,000."""
+    from unittest.mock import AsyncMock, patch
+
+    large_result = {
+        "columns": ["a", "b"],
+        "rows": [["x", "y"]] * 100_000,
+    }
+
+    with patch("mcp_hydrolix.mcp_server.execute_query", new=AsyncMock(return_value=large_result)):
+        async with Client(mcp_server) as client:
+            # 100,000 rows × 2 columns = 200,000 cells; max_cells=4 → max_rows=2
+            result = await client.call_tool(
+                "run_select_query",
+                {"query": "SELECT a, b FROM t", "max_cells": 4},
+            )
+
+    query_result = result.data
+    assert query_result["truncated"] is True
+    assert query_result["total_row_count"] == 100_000
+    assert "total_row_count" in query_result["message"]
+    assert "100,000" in query_result["message"]

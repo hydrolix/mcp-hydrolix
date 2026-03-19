@@ -32,7 +32,7 @@ from mcp_hydrolix.auth import (
     UsernamePassword,
 )
 from mcp_hydrolix.mcp_env import HydrolixConfig, get_config
-from mcp_hydrolix.utils import with_serializer
+from mcp_hydrolix.utils import inject_limit, with_serializer
 
 
 @dataclass(frozen=True)
@@ -330,7 +330,11 @@ def detect_aggregate_aliases(alias_definitions: Dict[str, str]) -> Set[str]:
         try:
             parsed[name] = sqlglot.parse_one(sql, dialect="clickhouse")
         except sqlglot_errors.SqlglotError:
-            logger.info(f"Could not parse ALIAS expression for {name!r}, treating as non-aggregate")
+            logger.warning(
+                "detect_aggregate_aliases: could not parse ALIAS expression for %r, "
+                "treating as non-aggregate (column classification may be incorrect)",
+                name,
+            )
 
     alias_names = set(alias_definitions)
 
@@ -371,10 +375,17 @@ def detect_aggregate_aliases(alias_definitions: Dict[str, str]) -> Set[str]:
         )
 
     try:
-        order = TopologicalSorter(
-            {name: m.alias_dependencies - {name} for name, m in alias_dependency_meta.items()}
-        ).static_order()
+        order = list(
+            TopologicalSorter(
+                {name: m.alias_dependencies - {name} for name, m in alias_dependency_meta.items()}
+            ).static_order()
+        )
     except CycleError:
+        logger.warning(
+            "detect_aggregate_aliases: circular dependency detected among ALIAS columns %r; "
+            "treating all as non-aggregate (column classification may be incorrect)",
+            list(alias_dependency_meta),
+        )
         return set()  # circular dependency — safe fallback, treat all as non-aggregate
 
     is_aggregation: Dict[str, bool] = {}
@@ -397,14 +408,14 @@ def _enrich_column_metadata(rows: List[Dict[str, str]]) -> List[ColumnType]:
     Everything else is a plain Column.
     """
     alias_columns: Dict[str, str] = {
-        r["name"]: r["default_expression"]
+        r.get("name", ""): r["default_expression"]
         for r in rows
-        if r.get("default_type") == "ALIAS" and r.get("default_expression")
+        if r.get("default_type") == "ALIAS" and r.get("default_expression") and r.get("name")
     }
     aggregate_alias_names = detect_aggregate_aliases(alias_columns) if alias_columns else set()
 
     def classify_column(r: Dict[str, str]) -> ColumnType:
-        name = r["name"]
+        name = r.get("name", "")
         col_type = r.get("type", "")
         comment = r.get("comment") or None
 
@@ -726,70 +737,80 @@ async def run_select_query(
     if max_cells is not None and max_cells < 0:
         raise ToolError("max_cells must be 0 (to disable truncation) or a positive integer.")
 
+    caller_supplied_max_cells = max_cells is not None
+    cell_limit = max_cells if caller_supplied_max_cells else HYDROLIX_CONFIG.max_result_cells
+
+    # Enforce the operator-configured upper bound if the caller requested more than allowed.
+    upper_limit = HYDROLIX_CONFIG.max_result_cells_limit
+    capped_by_operator = False
+    if upper_limit > 0 and (cell_limit == 0 or cell_limit > upper_limit):
+        cell_limit = upper_limit
+        capped_by_operator = True
+
+    # Rewrite the query to add a server-side LIMIT before hitting the DB, so we don't
+    # materialise more rows than needed. inject_limit takes the min of any existing LIMIT
+    # and our budget. We use cell_limit // 1 as a conservative upper bound on rows (the
+    # exact column count is only known after execution, so we can't be precise here);
+    # post-fetch cell-based truncation below handles the final slice.
+    effective_query = query
+    if cell_limit > 0:
+        effective_query = inject_limit(query, cell_limit)
+
     logger.info(f"Executing SELECT query: {query}")
     try:
-        result = await execute_query(query=query)
-        columns = result["columns"]
-        rows = result["rows"]
-        num_rows = len(rows)
-        num_cols = len(columns)
-
-        caller_supplied_max_cells = max_cells is not None
-        cell_limit = max_cells if caller_supplied_max_cells else HYDROLIX_CONFIG.max_result_cells
-
-        # Enforce the operator-configured upper bound if the caller requested more than allowed.
-        upper_limit = HYDROLIX_CONFIG.max_result_cells_limit
-        capped_by_operator = False
-        if upper_limit > 0 and (cell_limit == 0 or cell_limit > upper_limit):
-            cell_limit = upper_limit
-            capped_by_operator = True
-
-        if cell_limit > 0 and num_cols > 0 and num_rows * num_cols > cell_limit:
-            max_rows = cell_limit // num_cols
-            logger.info(
-                f"Truncating result from {num_rows} to {max_rows} rows "
-                f"(cell limit: {cell_limit}, columns: {num_cols})"
-            )
-            if capped_by_operator:
-                retrieve_more = (
-                    f"This limit is enforced by the server (max_cells capped at {cell_limit:,}). "
-                    f"Contact your administrator to adjust HYDROLIX_MAX_RESULT_CELLS_LIMIT, "
-                    f"or refine your query with LIMIT, WHERE filters, or GROUP BY."
-                )
-            else:
-                retrieve_more = (
-                    "Consider refining your query with LIMIT, WHERE filters, or GROUP BY. "
-                    "To retrieve more data, call run_select_query with a larger max_cells value."
-                )
-            return {
-                "columns": columns,
-                "rows": rows[:max_rows],
-                "truncated": True,
-                "row_count": max_rows,
-                "total_row_count": num_rows,
-                "message": (
-                    f"Result truncated: showing {max_rows:,} of {num_rows:,} fetched rows "
-                    f"({num_cols} columns). "
-                    f"Exceeded the cell limit of {cell_limit:,} "
-                    f"({num_rows * num_cols:,} cells in full result). "
-                    + (
-                        "Note: total_row_count reflects rows fetched from the server "
-                        "(capped at 100,000) — the actual table may contain more rows. "
-                        if num_rows >= 100_000
-                        else ""
-                    )
-                    + retrieve_more
-                ),
-            }
-
-        return {
-            "columns": columns,
-            "rows": rows,
-            "truncated": False,
-            "row_count": num_rows,
-        }
+        result = await execute_query(query=effective_query)
     except ToolError:
         raise
     except Exception as e:
         logger.error(f"Unexpected error in run_select_query: {str(e)}")
         raise ToolError(f"Unexpected error during query execution: {str(e)}")
+
+    columns = result["columns"]
+    rows = result["rows"]
+    num_rows = len(rows)
+    num_cols = len(columns)
+
+    if cell_limit > 0 and num_cols > 0 and num_rows * num_cols > cell_limit:
+        max_rows = cell_limit // num_cols
+        logger.info(
+            f"Truncating result from {num_rows} to {max_rows} rows "
+            f"(cell limit: {cell_limit}, columns: {num_cols})"
+        )
+        if capped_by_operator:
+            retrieve_more = (
+                f"This limit is enforced by the server (max_cells capped at {cell_limit:,}). "
+                f"Contact your administrator to adjust HYDROLIX_MAX_RESULT_CELLS_LIMIT, "
+                f"or refine your query with LIMIT, WHERE filters, or GROUP BY."
+            )
+        else:
+            retrieve_more = (
+                "Consider refining your query with LIMIT, WHERE filters, or GROUP BY. "
+                "To retrieve more data, call run_select_query with a larger max_cells value."
+            )
+        return {
+            "columns": columns,
+            "rows": rows[:max_rows],
+            "truncated": True,
+            "row_count": max_rows,
+            "total_row_count": num_rows,
+            "message": (
+                f"Result truncated: showing {max_rows:,} of {num_rows:,} fetched rows "
+                f"({num_cols} columns). "
+                f"Exceeded the cell limit of {cell_limit:,} "
+                f"({num_rows * num_cols:,} cells in full result). "
+                + (
+                    "Note: total_row_count reflects rows fetched from the server "
+                    "(capped at 100,000) — the actual table may contain more rows. "
+                    if num_rows >= 100_000
+                    else ""
+                )
+                + retrieve_more
+            ),
+        }
+
+    return {
+        "columns": columns,
+        "rows": rows,
+        "truncated": False,
+        "row_count": num_rows,
+    }

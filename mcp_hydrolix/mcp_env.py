@@ -330,6 +330,32 @@ class HydrolixConfig:
         if missing_vars:
             raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
 
+        # Validate HYDROLIX_MAX_RESULT_CELLS: must be a positive integer if set.
+        raw_cells = os.getenv("HYDROLIX_MAX_RESULT_CELLS")
+        if raw_cells is not None:
+            try:
+                val = int(raw_cells)
+                if val <= 0:
+                    raise ValueError()
+            except (ValueError, TypeError):
+                raise ValueError(
+                    f"Invalid HYDROLIX_MAX_RESULT_CELLS={raw_cells!r}: "
+                    "must be a positive integer (e.g. 50000)."
+                )
+
+        # Validate HYDROLIX_MAX_RESULT_CELLS_LIMIT: must be a non-negative integer if set.
+        raw_limit = os.getenv("HYDROLIX_MAX_RESULT_CELLS_LIMIT")
+        if raw_limit is not None:
+            try:
+                val = int(raw_limit)
+                if val < 0:
+                    raise ValueError()
+            except (ValueError, TypeError):
+                raise ValueError(
+                    f"Invalid HYDROLIX_MAX_RESULT_CELLS_LIMIT={raw_limit!r}: "
+                    "must be a non-negative integer (0 means no cap)."
+                )
+
 
 # Global instance placeholder for the singleton pattern
 _CONFIG_INSTANCE = None
