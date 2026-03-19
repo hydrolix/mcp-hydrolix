@@ -408,7 +408,9 @@ async def test_concurrent_queries(monkeypatch, mcp_server, setup_test_database):
     ServerMetrics.inflight_requests = 0
     async with Client(mcp_server) as client:
         lq = "SELECT * FROM loop  (numbers(3)) LIMIT 7000000000000 SETTINGS max_execution_time=9"
-        lq_f = asyncio.gather(*[client.call_tool("run_select_query", {"query": lq})])
+        lq_f = asyncio.gather(
+            *[client.call_tool("run_select_query", {"query": lq, "max_cells": 0})]
+        )
 
         # Run multiple queries concurrently
         queries = [
