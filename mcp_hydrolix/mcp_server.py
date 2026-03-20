@@ -608,7 +608,7 @@ async def list_tables(
     """
     logger.info(f"Listing tables in database '{database}'")
     query = f"""
-        SELECT {Table.sql_fields()}
+        SELECT {", ".join(Table.sql_fields())}
         FROM system.tables WHERE database = {format_query_value(database)}"""
     if like:
         query += f" AND name LIKE {format_query_value(like)}"
