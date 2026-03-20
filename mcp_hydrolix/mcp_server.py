@@ -5,7 +5,20 @@ from collections.abc import Sequence
 import dataclasses as _dc
 from dataclasses import dataclass
 from graphlib import CycleError, TopologicalSorter
-from typing import Any, ClassVar, Dict, Final, List, Optional, Set, TypedDict, Union, cast
+from typing import (
+    Annotated,
+    Any,
+    ClassVar,
+    Dict,
+    Final,
+    List,
+    Optional,
+    Set,
+    TypedDict,
+    Union,
+    cast,
+    get_type_hints,
+)
 
 import sqlglot
 import sqlglot.errors as sqlglot_errors
@@ -86,21 +99,28 @@ class SummaryColumn:
 ColumnType = Union[Column, AliasColumn, AggregateColumn, SummaryColumn]
 
 
+class _SystemCol:
+    """Marker: this field corresponds to a column in system.tables."""
+
+
+SystemCol = _SystemCol()
+
+
 @pydantic_dataclass
 class Table:
     """Table with summary table detection (is_summary_table=True if aggregate
     columns are present)."""
 
-    database: str
-    name: str
-    engine: str
-    sorting_key: str
-    primary_key: str
-    total_rows: Optional[int]
-    total_bytes: Optional[int]
-    total_bytes_uncompressed: Optional[int]
-    parts: Optional[int]
-    active_parts: Optional[int]
+    database: Annotated[str, SystemCol]
+    name: Annotated[str, SystemCol]
+    engine: Annotated[str, SystemCol]
+    sorting_key: Annotated[str, SystemCol]
+    primary_key: Annotated[str, SystemCol]
+    total_rows: Annotated[Optional[int], SystemCol]
+    total_bytes: Annotated[Optional[int], SystemCol]
+    total_bytes_uncompressed: Annotated[Optional[int], SystemCol]
+    parts: Annotated[Optional[int], SystemCol]
+    active_parts: Annotated[Optional[int], SystemCol]
     columns: Optional[List[ColumnType]] = Field(default_factory=list)
     is_summary_table: Optional[bool] = None
     summary_table_info: Optional[str] = None
@@ -110,6 +130,16 @@ class Table:
         return [
             {**_dc.asdict(col), "column_category": type(col).column_category}
             for col in (columns or [])
+        ]
+
+    @classmethod
+    def sql_fields(cls) -> List[str]:
+        """Comma-separated column names for SELECT from system.tables."""
+        hints = get_type_hints(cls, include_extras=True)
+        return [
+            name
+            for name, hint in hints.items()
+            if any(isinstance(m, _SystemCol) for m in getattr(hint, "__metadata__", ()))
         ]
 
 
@@ -210,21 +240,22 @@ if hasattr(signal, "SIGQUIT"):
     signal.signal(signal.SIGQUIT, term)
 
 
-async def execute_query(query: str) -> HdxQueryResult:
+async def execute_query(query: str, extra_settings: Dict[str, Any] = {}) -> HdxQueryResult:
     try:
         async with await create_hydrolix_client(
             client_shared_pool, get_request_credential()
         ) as client:
+            settings: dict[str, Any] = {
+                "readonly": 1,
+                "hdx_query_max_execution_time": HYDROLIX_CONFIG.query_timeout_sec,
+                "hdx_query_max_attempts": 1,
+                "hdx_query_max_result_rows": 100_000,
+                "hdx_query_max_memory_usage": 2 * 1024 * 1024 * 1024,  # 2GiB
+                "hdx_query_admin_comment": f"User: {MCP_SERVER_NAME}",
+            } | extra_settings
             res = await client.query(
                 query,
-                settings={
-                    "readonly": 1,
-                    "hdx_query_max_execution_time": HYDROLIX_CONFIG.query_timeout_sec,
-                    "hdx_query_max_attempts": 1,
-                    "hdx_query_max_result_rows": 100_000,
-                    "hdx_query_max_memory_usage": 2 * 1024 * 1024 * 1024,  # 2GiB
-                    "hdx_query_admin_comment": f"User: {MCP_SERVER_NAME}",
-                },
+                settings=settings,
             )
             logger.info(f"Query returned {len(res.result_rows)} rows")
             return HdxQueryResult(columns=res.column_names, rows=res.result_rows)
@@ -265,12 +296,10 @@ async def health_check(request: Request) -> PlainTextResponse:
 
 
 def result_to_table(query_columns, result) -> List[Table]:
-    return [Table(**dict(zip(query_columns, row))) for row in result]
-
-
-# system.tables query fields for fetching table metadata
-SYSTEM_TABLES_FIELDS = """database, name, engine, sorting_key, primary_key, total_rows, total_bytes,
-    total_bytes_uncompressed, parts, active_parts"""
+    sql_fields = Table.sql_fields()
+    return [
+        Table(**{k: v for k, v in zip(query_columns, row) if k in sql_fields}) for row in result
+    ]
 
 
 # Summary Table Support - Helper Functions
@@ -387,6 +416,28 @@ def detect_aggregate_aliases(alias_definitions: Dict[str, str]) -> Set[str]:
     return {name for name, is_agg in is_aggregation.items() if is_agg}
 
 
+async def _query_targets_summary_table(query: str) -> bool:
+    """Return True if any table referenced in the query is a summary table.
+
+    Fetches column metadata via DESCRIBE TABLE for each referenced table and
+    checks for SummaryColumn instances.
+    """
+    try:
+        parsed = sqlglot.parse_one(query, dialect="clickhouse")
+    except sqlglot_errors.SqlglotError:
+        return False
+    for table_node in parsed.find_all(sqlglot_exp.Table):
+        if not table_node.db or not table_node.name:
+            continue
+        try:
+            columns = await _describe_columns(table_node.db, table_node.name)
+            if any(isinstance(c, SummaryColumn) for c in columns):
+                return True
+        except Exception:
+            continue
+    return False
+
+
 def _enrich_column_metadata(rows: List[Dict[str, str]]) -> List[ColumnType]:
     """
     Classify DESCRIBE TABLE rows into typed column objects (Column, AliasColumn,
@@ -422,49 +473,46 @@ def _enrich_column_metadata(rows: List[Dict[str, str]]) -> List[ColumnType]:
     return [classify_column(r) for r in rows]
 
 
-async def _populate_table_metadata(database: str, table: Table) -> None:
-    """Fetch and populate table with column metadata from Hydrolix."""
-    # Use DESCRIBE TABLE to get full AggregateFunction types
-    # (system.columns returns simplified types)
-    result = await execute_query(f"DESCRIBE TABLE `{database}`.`{table.name}`")
+async def _describe_columns(database: str, table_name: str) -> list[ColumnType]:
+    """Fetch and classify columns for a table via DESCRIBE TABLE.
 
+    Uses DESCRIBE TABLE to get full AggregateFunction types.
+    """
+    result = await execute_query(f"DESCRIBE TABLE `{database}`.`{table_name}`")
     col_names = result["columns"]
     rows = [dict(zip(col_names, row)) for row in result["rows"]]
+    return _enrich_column_metadata(rows)
 
-    columns = _enrich_column_metadata(rows)
 
+def summary_tips_for_columns(columns: list[ColumnType]) -> Optional[str]:
+    """Build human-readable summary-table guidance from classified columns, or None if not a summary table."""
     aggregate_cols = [c for c in columns if isinstance(c, (AggregateColumn, SummaryColumn))]
+    if len(aggregate_cols) == 0:
+        # not a summary table
+        return None
     dimension_cols = [c for c in columns if isinstance(c, (Column, AliasColumn))]
-    is_summary_table = len(aggregate_cols) > 0
-
-    summary_table_info = None
-    if is_summary_table:
-        summary_table_info = (
-            f"This is a SUMMARY TABLE with {len(aggregate_cols)} aggregate column(s) and {len(dimension_cols)} dimension column(s). "
-            "Columns with column_category='AggregateColumn' MUST be wrapped in their corresponding merge_function. "
-            "Columns with column_category='SummaryColumn' are ALIAS columns that transitively depend on aggregates - use directly without wrapping. "
-            "IMPORTANT: SummaryColumns are per-row values, not pre-totalled across the whole table. "
-            "To aggregate across ALL rows (e.g. total count for the entire table), use the corresponding AggregateColumn with its merge_function (e.g. countMerge(`count()`)), NOT a SummaryColumn. "
-            "Selecting a SummaryColumn without GROUP BY returns one value per row, not a single grand total. "
-            "NEVER wrap a SummaryColumn in sum(), count(), avg() or any other aggregate - this causes ILLEGAL_AGGREGATION errors. "
-            "Columns with column_category='Column' or column_category='AliasColumn' are dimensions - use directly and MUST appear in GROUP BY when mixed with aggregates. "
-            "IMPORTANT: Dimension columns may have function-like names (e.g., 'toStartOfHour(col)') - these are LITERAL column names, use them exactly as-is with backticks. "
-            "WRONG: SELECT toStartOfHour(col). RIGHT: SELECT `toStartOfHour(col)`. Also use in GROUP BY: GROUP BY `toStartOfHour(col)`. "
-            "CRITICAL RULE: If your SELECT includes ANY dimension columns (column_category='Column' or 'AliasColumn') "
-            "AND ANY aggregate columns (column_category='AggregateColumn' or 'SummaryColumn'), "
-            "you MUST include 'GROUP BY <all dimension columns from SELECT>'. "
-            "WITHOUT GROUP BY, the query will FAIL with 'NOT_AN_AGGREGATE' error. "
-            "column_category='SummaryColumn' are NOT dimensions - do NOT include them in GROUP BY. "
-            "Example: SELECT reqHost, cnt_all FROM table GROUP BY reqHost (reqHost has column_category='Column', cnt_all has column_category='SummaryColumn'). "
-            "CRITICAL: You MUST use the EXACT merge_function value from each column with column_category='AggregateColumn'. "
-            "DO NOT infer the merge function from the column name - always check the merge_function field. "
-            "For example, if column `avgIf(col, condition)` has merge_function='avgIfMerge', "
-            "you MUST use avgIfMerge(`avgIf(col, condition)`), NOT avgMerge(...)."
-        )
-
-    table.columns = columns
-    table.is_summary_table = is_summary_table
-    table.summary_table_info = summary_table_info
+    return (
+        f"This is a SUMMARY TABLE with {len(aggregate_cols)} aggregate column(s) and {len(dimension_cols)} dimension column(s). "
+        "Columns with column_category='AggregateColumn' MUST be wrapped in their corresponding merge_function. "
+        "Columns with column_category='SummaryColumn' are ALIAS columns that transitively depend on aggregates - use directly without wrapping. "
+        "IMPORTANT: SummaryColumns are per-row values, not pre-totalled across the whole table. "
+        "To aggregate across ALL rows (e.g. total count for the entire table), use the corresponding AggregateColumn with its merge_function (e.g. countMerge(`count()`)), NOT a SummaryColumn. "
+        "Selecting a SummaryColumn without GROUP BY returns one value per row, not a single grand total. "
+        "NEVER wrap a SummaryColumn in sum(), count(), avg() or any other aggregate - this causes ILLEGAL_AGGREGATION errors. "
+        "Columns with column_category='Column' or column_category='AliasColumn' are dimensions - use directly and MUST appear in GROUP BY when mixed with aggregates. "
+        "IMPORTANT: Dimension columns may have function-like names (e.g., 'toStartOfHour(col)') - these are LITERAL column names, use them exactly as-is with backticks. "
+        "WRONG: SELECT toStartOfHour(col). RIGHT: SELECT `toStartOfHour(col)`. Also use in GROUP BY: GROUP BY `toStartOfHour(col)`. "
+        "CRITICAL RULE: If your SELECT includes ANY dimension columns (column_category='Column' or 'AliasColumn') "
+        "AND ANY aggregate columns (column_category='AggregateColumn' or 'SummaryColumn'), "
+        "you MUST include 'GROUP BY <all dimension columns from SELECT>'. "
+        "WITHOUT GROUP BY, the query will FAIL with 'NOT_AN_AGGREGATE' error. "
+        "column_category='SummaryColumn' are NOT dimensions - do NOT include them in GROUP BY. "
+        "Example: SELECT reqHost, cnt_all FROM table GROUP BY reqHost (reqHost has column_category='Column', cnt_all has column_category='SummaryColumn'). "
+        "CRITICAL: You MUST use the EXACT merge_function value from each column with column_category='AggregateColumn'. "
+        "DO NOT infer the merge function from the column name - always check the merge_function field. "
+        "For example, if column `avgIf(col, condition)` has merge_function='avgIfMerge', "
+        "you MUST use avgIfMerge(`avgIf(col, condition)`), NOT avgMerge(...)."
+    )
 
 
 @mcp.tool()
@@ -515,8 +563,9 @@ async def get_table_info(database: str, table: str) -> Table:
     from the merge_function field. Querying without checking this metadata first will cause errors.
     """
     # Fetch table metadata (row counts, sizes, etc.)
+    sql_fields_for_table: List[str] = Table.sql_fields()
     query = f"""
-        SELECT {SYSTEM_TABLES_FIELDS}
+        SELECT {", ".join(sql_fields_for_table)}
         FROM system.tables
         WHERE database = {format_query_value(database)} AND name = {format_query_value(table)}"""
 
@@ -525,14 +574,17 @@ async def get_table_info(database: str, table: str) -> Table:
     if not result["rows"]:
         raise ToolError(f"Table {database}.{table} not found")
 
-    # Create Table object from first (and only) row
-    tables = result_to_table(result["columns"], result["rows"])
-    table_obj = tables[0]
-
-    # Populate table with column metadata
-    await _populate_table_metadata(database, table_obj)
-
-    return table_obj
+    params_from_metadata_table = {
+        k: v for k, v in zip(result["columns"], result["rows"][0]) if k in sql_fields_for_table
+    }
+    columns = await _describe_columns(database, table)
+    usage_guide = summary_tips_for_columns(columns)
+    return Table(
+        **params_from_metadata_table,
+        columns=columns,
+        is_summary_table=any(isinstance(c, SummaryColumn) for c in columns),
+        summary_table_info=usage_guide,
+    )
 
 
 @mcp.tool()
@@ -556,7 +608,7 @@ async def list_tables(
     """
     logger.info(f"Listing tables in database '{database}'")
     query = f"""
-        SELECT {SYSTEM_TABLES_FIELDS}
+        SELECT {Table.sql_fields()}
         FROM system.tables WHERE database = {format_query_value(database)}"""
     if like:
         query += f" AND name LIKE {format_query_value(like)}"
@@ -701,7 +753,10 @@ async def run_select_query(query: str) -> dict[str, tuple | Sequence[str | Seque
     """
     logger.info(f"Executing SELECT query: {query}")
     try:
-        result = await execute_query(query=query)
+        extra_settings: dict[str, Any] = {"hdx_query_timerange_required": True}
+        if not await _query_targets_summary_table(query):
+            extra_settings["hdx_query_max_timerange_sec"] = 6 * 60 * 60
+        result = await execute_query(query=query, extra_settings=extra_settings)
         return result
     except Exception as e:
         logger.error(f"Unexpected error in run_select_query: {str(e)}")

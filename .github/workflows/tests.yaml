@@ -32,8 +32,7 @@ jobs:
       - name: Run tests
         working-directory: .
         run: |
-          uv sync --frozen --no-editable
-          uv pip install '.[dev]'
+          uv sync --frozen --no-editable --all-extras
           uv run pytest
       - name: Stop Docker Compose services
         if: always()
