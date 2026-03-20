@@ -26,16 +26,18 @@ class TestQuerySettings:
     @patch(
         "mcp_hydrolix.mcp_server._query_targets_summary_table",
         new_callable=AsyncMock,
+        return_value=False,
     )
-    @patch("mcp_hydrolix.mcp_server.execute_query", new_callable=AsyncMock)
+    @patch(
+        "mcp_hydrolix.mcp_server.execute_query",
+        new_callable=AsyncMock,
+        return_value=_fake_result(),
+    )
     async def test_non_summary_table_includes_max_timerange(
         self, mock_execute, mock_targets_summary
     ):
         """When the query does NOT target a summary table,
         extra_settings must contain hdx_query_max_timerange_sec = 6*60*60."""
-        mock_targets_summary.return_value = False
-        mock_execute.return_value = _fake_result()
-
         query = "SELECT id FROM db.plain_table WHERE ts > now() - INTERVAL 1 HOUR"
         await inspect.unwrap(run_select_query.fn)(query)
 
@@ -48,14 +50,16 @@ class TestQuerySettings:
     @patch(
         "mcp_hydrolix.mcp_server._query_targets_summary_table",
         new_callable=AsyncMock,
+        return_value=True,
     )
-    @patch("mcp_hydrolix.mcp_server.execute_query", new_callable=AsyncMock)
+    @patch(
+        "mcp_hydrolix.mcp_server.execute_query",
+        new_callable=AsyncMock,
+        return_value=_fake_result(),
+    )
     async def test_summary_table_omits_max_timerange(self, mock_execute, mock_targets_summary):
         """When the query targets a summary table,
         hdx_query_max_timerange_sec must NOT be present."""
-        mock_targets_summary.return_value = True
-        mock_execute.return_value = _fake_result()
-
         query = "SELECT cnt_all FROM db.summary_table WHERE ts > now() - INTERVAL 1 DAY"
         await inspect.unwrap(run_select_query.fn)(query)
 
@@ -69,7 +73,11 @@ class TestQuerySettings:
         "mcp_hydrolix.mcp_server._query_targets_summary_table",
         new_callable=AsyncMock,
     )
-    @patch("mcp_hydrolix.mcp_server.execute_query", new_callable=AsyncMock)
+    @patch(
+        "mcp_hydrolix.mcp_server.execute_query",
+        new_callable=AsyncMock,
+        return_value=_fake_result(),
+    )
     @pytest.mark.parametrize("is_summary", [True, False])
     async def test_timerange_required_always_true(
         self, mock_execute, mock_targets_summary, is_summary
@@ -77,7 +85,6 @@ class TestQuerySettings:
         """hdx_query_timerange_required must always be True,
         regardless of summary table status."""
         mock_targets_summary.return_value = is_summary
-        mock_execute.return_value = _fake_result()
 
         await inspect.unwrap(run_select_query.fn)(
             "SELECT x FROM db.t WHERE ts > now() - INTERVAL 1 HOUR"
@@ -91,14 +98,16 @@ class TestQuerySettings:
     @patch(
         "mcp_hydrolix.mcp_server._query_targets_summary_table",
         new_callable=AsyncMock,
+        return_value=False,
     )
-    @patch("mcp_hydrolix.mcp_server.execute_query", new_callable=AsyncMock)
+    @patch(
+        "mcp_hydrolix.mcp_server.execute_query",
+        new_callable=AsyncMock,
+        return_value=_fake_result(),
+    )
     async def test_non_summary_settings_exact_keys(self, mock_execute, mock_targets_summary):
         """For non-summary queries, extra_settings should contain exactly
         hdx_query_timerange_required and hdx_query_max_timerange_sec."""
-        mock_targets_summary.return_value = False
-        mock_execute.return_value = _fake_result()
-
         await inspect.unwrap(run_select_query.fn)(
             "SELECT id FROM db.t WHERE ts > now() - INTERVAL 1 HOUR"
         )
@@ -114,13 +123,16 @@ class TestQuerySettings:
     @patch(
         "mcp_hydrolix.mcp_server._query_targets_summary_table",
         new_callable=AsyncMock,
+        return_value=True,
     )
-    @patch("mcp_hydrolix.mcp_server.execute_query", new_callable=AsyncMock)
+    @patch(
+        "mcp_hydrolix.mcp_server.execute_query",
+        new_callable=AsyncMock,
+        return_value=_fake_result(),
+    )
     async def test_summary_settings_exact_keys(self, mock_execute, mock_targets_summary):
         """For summary queries, extra_settings should contain only
         hdx_query_timerange_required."""
-        mock_targets_summary.return_value = True
-        mock_execute.return_value = _fake_result()
 
         await inspect.unwrap(run_select_query.fn)(
             "SELECT cnt_all FROM db.t WHERE ts > now() - INTERVAL 1 DAY"
