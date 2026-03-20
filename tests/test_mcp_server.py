@@ -148,13 +148,9 @@ async def test_list_tables_with_like_filter(mcp_server, setup_test_database):
         # Test with LIKE filter
         result = await client.call_tool("list_tables", {"database": test_db, "like": "test_%"})
 
-        tables_data = result.data
-
-        # Handle both single dict and list of dicts
-        if isinstance(tables_data, dict):
-            tables = [tables_data]
-        else:
-            tables = tables_data
+        # Use structured_content (raw JSON) to avoid fastmcp schema reconstruction
+        # issues with Pydantic models containing Annotated/union types
+        tables = result.structured_content
 
         assert len(tables) == 1
         assert tables[0]["name"] == test_table
@@ -169,13 +165,9 @@ async def test_list_tables_with_not_like_filter(mcp_server, setup_test_database)
         # Test with NOT LIKE filter
         result = await client.call_tool("list_tables", {"database": test_db, "not_like": "test_%"})
 
-        tables_data = result.data
-
-        # Handle both single dict and list of dicts
-        if isinstance(tables_data, dict):
-            tables = [tables_data]
-        else:
-            tables = tables_data
+        # Use structured_content (raw JSON) to avoid fastmcp schema reconstruction
+        # issues with Pydantic models containing Annotated/union types
+        tables = result.structured_content
 
         assert len(tables) == 1
         assert tables[0]["name"] == test_table2
