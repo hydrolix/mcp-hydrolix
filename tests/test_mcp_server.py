@@ -116,7 +116,7 @@ async def test_list_tables_basic(mcp_server, setup_test_database):
     async with Client(mcp_server) as client:
         result = await client.call_tool("list_tables", {"database": test_db})
 
-        tables = result.data
+        tables = result.structured_content["result"]
         assert len(tables) >= 1
 
         # Should have exactly 2 tables
@@ -148,13 +148,7 @@ async def test_list_tables_with_like_filter(mcp_server, setup_test_database):
         # Test with LIKE filter
         result = await client.call_tool("list_tables", {"database": test_db, "like": "test_%"})
 
-        tables_data = result.data
-
-        # Handle both single dict and list of dicts
-        if isinstance(tables_data, dict):
-            tables = [tables_data]
-        else:
-            tables = tables_data
+        tables = result.structured_content["result"]
 
         assert len(tables) == 1
         assert tables[0]["name"] == test_table
@@ -169,13 +163,7 @@ async def test_list_tables_with_not_like_filter(mcp_server, setup_test_database)
         # Test with NOT LIKE filter
         result = await client.call_tool("list_tables", {"database": test_db, "not_like": "test_%"})
 
-        tables_data = result.data
-
-        # Handle both single dict and list of dicts
-        if isinstance(tables_data, dict):
-            tables = [tables_data]
-        else:
-            tables = tables_data
+        tables = result.structured_content["result"]
 
         assert len(tables) == 1
         assert tables[0]["name"] == test_table2
@@ -290,7 +278,7 @@ async def test_table_metadata_details(mcp_server, setup_test_database):
     async with Client(mcp_server) as client:
         # First, list tables to discover available tables
         result = await client.call_tool("list_tables", {"database": test_db})
-        tables = result.data
+        tables = result.structured_content["result"]
 
         # Verify our test table exists in the list
         test_table_exists = any(t["name"] == test_table for t in tables)
@@ -338,7 +326,7 @@ async def test_system_database_access(mcp_server):
     async with Client(mcp_server) as client:
         # List tables in system database
         result = await client.call_tool("list_tables", {"database": "system"})
-        tables = result.data
+        tables = result.structured_content["result"]
 
         # System database should have many tables
         assert len(tables) > 10
