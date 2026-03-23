@@ -55,6 +55,7 @@ class HydrolixConfig:
         HYDROLIX_MCP_MAX_REQUESTS 10000
         HYDROLIX_MCP_MAX_REQUESTS_JITTER 1000
         HYDROLIX_MCP_MAX_KEEPALIVE 10
+        HYDROLIX_MAX_RAW_TIMERANGE: Max timerange in seconds for non-summary queries (default: 21600 = 6 hours)
     """
 
     def __init__(self) -> None:
@@ -236,6 +237,14 @@ class HydrolixConfig:
         Default: 1000
         """
         return int(os.getenv("HYDROLIX_MCP_MAX_REQUESTS", 10000))
+
+    @property
+    def max_raw_timerange(self) -> int:
+        """Get the max timerange in seconds for non-summary queries.
+
+        Default: 21600 (6 hours)
+        """
+        return int(os.getenv("HYDROLIX_MAX_RAW_TIMERANGE", "21600"))
 
     @property
     def mcp_keepalive(self) -> int:

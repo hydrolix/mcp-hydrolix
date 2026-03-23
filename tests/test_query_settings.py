@@ -2,7 +2,7 @@
 
 Verifies that:
 - hdx_query_timerange_required is always True on the final query
-- hdx_query_max_timerange_sec is set to 6*60*60 only when the query
+- hdx_query_max_timerange_sec is set to the configured max_raw_timerange only when the query
   targets no SummaryColumns
 - Neither setting leaks into non-final queries (execute_query base settings)
 """
@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from mcp_hydrolix.mcp_env import get_config
 from mcp_hydrolix.mcp_server import HdxQueryResult, run_select_query
 
 
@@ -37,14 +38,14 @@ class TestQuerySettings:
         self, mock_execute, mock_targets_summary
     ):
         """When the query does NOT target a summary table,
-        extra_settings must contain hdx_query_max_timerange_sec = 6*60*60."""
+        extra_settings must contain hdx_query_max_timerange_sec matching config."""
         query = "SELECT id FROM db.plain_table WHERE ts > now() - INTERVAL 1 HOUR"
         await inspect.unwrap(run_select_query.fn)(query)
 
         mock_execute.assert_awaited_once()
         _, kwargs = mock_execute.call_args
         extra = kwargs["extra_settings"]
-        assert extra["hdx_query_max_timerange_sec"] == 6 * 60 * 60
+        assert extra["hdx_query_max_timerange_sec"] == get_config().max_raw_timerange
 
     @pytest.mark.asyncio
     @patch(

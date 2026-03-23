@@ -755,7 +755,7 @@ async def run_select_query(query: str) -> dict[str, tuple | Sequence[str | Seque
     try:
         extra_settings: dict[str, Any] = {"hdx_query_timerange_required": True}
         if not await _query_targets_summary_table(query):
-            extra_settings["hdx_query_max_timerange_sec"] = 6 * 60 * 60
+            extra_settings["hdx_query_max_timerange_sec"] = get_config().max_raw_timerange
         result = await execute_query(query=query, extra_settings=extra_settings)
         return result
     except Exception as e:
