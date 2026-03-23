@@ -56,14 +56,14 @@ class TestHydrolixTools(unittest.IsolatedAsyncioTestCase):
 
     async def test_list_databases(self):
         """Test listing databases."""
-        result = await list_databases.fn()
+        result = await list_databases()
         # Parse JSON response
         databases = result
         self.assertIn(self.test_db, databases)
 
     async def test_list_tables_without_like(self):
         """Test listing tables without a 'LIKE' filter."""
-        result = await list_tables.fn(self.test_db)
+        result = await list_tables(self.test_db)
         self.assertIsInstance(result, list)
         self.assertEqual(len(result), 1)
         table = result[0]
@@ -71,7 +71,7 @@ class TestHydrolixTools(unittest.IsolatedAsyncioTestCase):
 
     async def test_list_tables_with_like(self):
         """Test listing tables with a 'LIKE' filter."""
-        result = await list_tables.fn(self.test_db, like=f"{self.test_table}%")
+        result = await list_tables(self.test_db, like=f"{self.test_table}%")
         self.assertIsInstance(result, list)
         self.assertEqual(len(result), 1)
         table = result[0]
@@ -80,7 +80,7 @@ class TestHydrolixTools(unittest.IsolatedAsyncioTestCase):
     async def test_run_select_query_success(self):
         """Test running a SELECT query successfully."""
         query = f"SELECT * FROM {self.test_db}.{self.test_table}"
-        result = await inspect.unwrap(run_select_query.fn)(query)
+        result = await inspect.unwrap(run_select_query)(query)
         self.assertIsInstance(result, dict)
         self.assertEqual(len(result["rows"]), 2)
         self.assertEqual(result["rows"][0][0], 1)
@@ -92,7 +92,7 @@ class TestHydrolixTools(unittest.IsolatedAsyncioTestCase):
 
         # Should raise ToolError
         with self.assertRaises(ToolError) as context:
-            await run_select_query.fn(query)
+            await run_select_query(query)
 
         self.assertIn("Query execution failed", str(context.exception))
 
@@ -103,13 +103,13 @@ class TestHydrolixTools(unittest.IsolatedAsyncioTestCase):
         since list_tables() no longer returns column metadata.
         """
         # First verify the table exists
-        tables = await list_tables.fn(self.test_db)
+        tables = await list_tables(self.test_db)
         self.assertIsInstance(tables, list)
         self.assertEqual(len(tables), 1)
         self.assertEqual(tables[0].name, self.test_table)
 
         # Now get detailed table info including columns
-        table_info = await get_table_info.fn(self.test_db, self.test_table)
+        table_info = await get_table_info(self.test_db, self.test_table)
 
         # Get columns by name for easier testing
         columns = {col.name: col.__dict__ for col in table_info.columns}
