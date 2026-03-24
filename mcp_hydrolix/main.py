@@ -1,11 +1,21 @@
+import atexit
 import logging.config as lconfig
+import os
+import shutil
+import tempfile
 
 from fastmcp.server.http import StarletteWithLifespan
 from gunicorn.app.base import BaseApplication
+from prometheus_client import multiprocess as prom_multiprocess
 
+from . import metrics
 from .log import setup_logging
 from .mcp_env import TransportType, get_config
 from .mcp_server import mcp
+
+
+def _child_exit(_server, worker) -> None:
+    prom_multiprocess.mark_process_dead(worker.pid)
 
 
 class CoreApplication(BaseApplication):
@@ -34,6 +44,22 @@ class CoreApplication(BaseApplication):
 
 def main():
     config = get_config()
+
+    if "PROMETHEUS_MULTIPROC_DIR" in os.environ:
+        # Wipe on startup — clears stale files from any previous run
+        shutil.rmtree(os.environ["PROMETHEUS_MULTIPROC_DIR"], ignore_errors=True)
+
+    if config.metrics_enabled and config.mcp_workers > 1:
+        if "PROMETHEUS_MULTIPROC_DIR" not in os.environ:
+            # Local multi-worker: create a temp dir and clean it up on exit
+            tmpdir = tempfile.mkdtemp(prefix="prom_mcp_")
+            os.environ["PROMETHEUS_MULTIPROC_DIR"] = tmpdir
+            atexit.register(lambda: shutil.rmtree(tmpdir, ignore_errors=True))
+        os.makedirs(os.environ["PROMETHEUS_MULTIPROC_DIR"], exist_ok=True)
+
+    if config.metrics_enabled:
+        metrics.enable()
+
     transport = config.mcp_server_transport
 
     # For HTTP and SSE transports, we need to specify host and port
@@ -55,6 +81,7 @@ def main():
         else:
             log_dict_config = setup_logging(None, "INFO", "json")
             lconfig.dictConfig(log_dict_config)
+
             options = {
                 "bind": f"{config.mcp_bind_host}:{config.mcp_bind_port}",
                 "timeout": config.mcp_timeout,
@@ -66,6 +93,10 @@ def main():
                 "keepalive": config.mcp_keepalive,
                 "logconfig_dict": log_dict_config,
             }
+
+            if config.metrics_enabled:
+                options["child_exit"] = _child_exit
+
             CoreApplication(
                 mcp.http_app(path="/mcp", stateless_http=True, transport=transport), options
             ).run()
