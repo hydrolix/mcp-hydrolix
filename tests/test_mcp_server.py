@@ -12,6 +12,58 @@ from fastmcp.server.middleware import Middleware, MiddlewareContext
 from mcp_clickhouse.mcp_server import create_clickhouse_client
 
 
+def _assert_structured_matches_content(result, tool_name: str):
+    """Assert that structured_content and content[0].text agree."""
+    assert result.content, f"{tool_name}: content is empty"
+    text_parsed = json.loads(result.content[0].text)
+    structured_content = result.structured_content
+    if isinstance(text_parsed, list):
+        # fastmcp requires dict-type structured content. Lists get wrapped as {result": list}
+        # while content text contains the unwrapped list
+        assert isinstance(structured_content, dict)
+        assert "result" in structured_content
+        structured_content = structured_content["result"]
+    assert text_parsed == structured_content, (
+        f"{tool_name}: structured_content does not match parsed content text"
+    )
+
+
+async def test_list_databases_structured_matches_content(mcp_server, setup_test_database):
+    """Verify structured and unstructured responses match for list_databases."""
+    async with Client(mcp_server) as client:
+        result = await client.call_tool("list_databases", {})
+        _assert_structured_matches_content(result, "list_databases")
+
+
+async def test_list_tables_structured_matches_content(mcp_server, setup_test_database):
+    """Verify structured and unstructured responses match for list_tables."""
+    test_db, _, _ = setup_test_database
+    async with Client(mcp_server) as client:
+        result = await client.call_tool("list_tables", {"database": test_db})
+        _assert_structured_matches_content(result, "list_tables")
+
+
+async def test_get_table_info_structured_matches_content(mcp_server, setup_test_database):
+    """Verify structured and unstructured responses match for get_table_info."""
+    test_db, test_table, _ = setup_test_database
+    async with Client(mcp_server) as client:
+        result = await client.call_tool(
+            "get_table_info", {"database": test_db, "table": test_table}
+        )
+        _assert_structured_matches_content(result, "get_table_info")
+
+
+async def test_run_select_query_structured_matches_content(mcp_server, setup_test_database):
+    """Verify structured and unstructured responses match for run_select_query."""
+    test_db, test_table, _ = setup_test_database
+    async with Client(mcp_server) as client:
+        result = await client.call_tool(
+            "run_select_query",
+            {"query": f"SELECT id, name FROM {test_db}.{test_table} ORDER BY id"},
+        )
+        _assert_structured_matches_content(result, "run_select_query")
+
+
 async def test_list_databases(mcp_server, setup_test_database):
     """Test the list_databases tool."""
     test_db, _, _ = setup_test_database
@@ -339,7 +391,7 @@ async def test_concurrent_queries(monkeypatch, mcp_server, setup_test_database):
     # Check each result
     assert results.done()
     for result in results.result():
-        query_result = json.loads(result.content[0].text)
+        query_result = result.structured_content
         assert "rows" in query_result
         assert len(query_result["rows"]) == 1
 
