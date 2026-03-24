@@ -692,7 +692,8 @@ def _build_truncation_response(
     else:
         retrieve_more = (
             "Consider refining your query with LIMIT, WHERE filters, or GROUP BY. "
-            "To retrieve more data, call run_select_query with a larger max_cells value."
+            "To retrieve more data, pass a larger max_cells value "
+            "(e.g. max_cells=200000), or set max_cells=0 to disable truncation entirely."
         )
 
     return {
@@ -728,7 +729,7 @@ async def run_select_query(
 
     RESULT TRUNCATION:
 
-    Query results are automatically truncated when the total cell count (rows × columns)
+    Query results are automatically truncated when the total cell count (rows * columns)
     exceeds the configured limit.
 
     Response shape:
@@ -737,15 +738,9 @@ async def run_select_query(
         Note: total_row_count is the number of rows fetched from the server, which is
         capped at 100,000. The actual table may contain more rows than this value suggests.
 
-    When truncation occurs the message explains the situation and suggests query refinements.
     Note: if the cell limit is smaller than the number of columns, row_count will be 0 —
     in that case you must either refine the query (fewer columns, stricter filters) or
     increase max_cells.
-
-    If your task requires more data than the default limit, pass a larger value:
-        run_select_query(query="...", max_cells=200000)
-
-    Set max_cells=0 to disable truncation entirely (subject to any server-side limit).
 
     MANDATORY PRE-QUERY CHECK:
 

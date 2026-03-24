@@ -7,6 +7,9 @@ from decimal import Decimal
 from functools import wraps
 
 import fastmcp.utilities.types
+import sqlglot
+import sqlglot.errors as sqlglot_errors
+import sqlglot.expressions as exp
 from fastmcp.tools.tool import ToolResult
 
 logger = logging.getLogger(__name__)
@@ -79,10 +82,6 @@ def inject_limit(query: str, max_rows: int) -> str:
     Returns the rewritten SQL string. If the query cannot be parsed by sqlglot, logs a
     warning and returns the original query unchanged so the caller still executes something.
     """
-    import sqlglot
-    import sqlglot.errors as sqlglot_errors
-    import sqlglot.expressions as exp
-
     try:
         ast = sqlglot.parse_one(query, dialect="clickhouse")
     except sqlglot_errors.SqlglotError:
