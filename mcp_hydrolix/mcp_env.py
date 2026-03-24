@@ -255,6 +255,14 @@ class HydrolixConfig:
         """
         return int(os.getenv("HYDROLIX_MCP_MAX_KEEPALIVE", 10))
 
+    @property
+    def metrics_enabled(self) -> bool:
+        """Get whether Prometheus metrics are enabled.
+
+        Default: False
+        """
+        return os.getenv("HYDROLIX_METRICS_ENABLED", "false").lower() == "true"
+
     def get_client_config(self, request_credential: Optional[HydrolixCredential]) -> dict:
         """
         Get the configuration dictionary for clickhouse_connect client.
