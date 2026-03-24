@@ -23,7 +23,6 @@ def _fake_result() -> HdxQueryResult:
 class TestQuerySettings:
     """Verify extra_settings passed to execute_query by run_select_query."""
 
-    @pytest.mark.asyncio
     @patch(
         "mcp_hydrolix.mcp_server._query_targets_summary_table",
         new_callable=AsyncMock,
@@ -47,7 +46,6 @@ class TestQuerySettings:
         extra = kwargs["extra_settings"]
         assert extra["hdx_query_max_timerange_sec"] == get_config().max_raw_timerange
 
-    @pytest.mark.asyncio
     @patch(
         "mcp_hydrolix.mcp_server._query_targets_summary_table",
         new_callable=AsyncMock,
@@ -69,7 +67,6 @@ class TestQuerySettings:
         extra = kwargs["extra_settings"]
         assert "hdx_query_max_timerange_sec" not in extra
 
-    @pytest.mark.asyncio
     @patch(
         "mcp_hydrolix.mcp_server._query_targets_summary_table",
         new_callable=AsyncMock,
@@ -95,7 +92,6 @@ class TestQuerySettings:
         extra = kwargs["extra_settings"]
         assert extra.get("hdx_query_timerange_required") is True
 
-    @pytest.mark.asyncio
     @patch(
         "mcp_hydrolix.mcp_server._query_targets_summary_table",
         new_callable=AsyncMock,
@@ -120,7 +116,6 @@ class TestQuerySettings:
             "hdx_query_max_timerange_sec",
         }
 
-    @pytest.mark.asyncio
     @patch(
         "mcp_hydrolix.mcp_server._query_targets_summary_table",
         new_callable=AsyncMock,
@@ -143,7 +138,6 @@ class TestQuerySettings:
         extra = kwargs["extra_settings"]
         assert set(extra.keys()) == {"hdx_query_timerange_required"}
 
-    @pytest.mark.asyncio
     @patch("mcp_hydrolix.mcp_server.create_hydrolix_client")
     async def test_base_settings_exclude_timerange_keys(self, mock_create_client):
         """execute_query base settings must not include hdx_query_timerange_required
