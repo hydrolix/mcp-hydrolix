@@ -60,6 +60,7 @@ class HydrolixConfig:
         HYDROLIX_MAX_RESULT_CELLS_LIMIT: Hard upper bound on max_cells that callers may request.
             0 means no limit is enforced (default: 0). Set this in multi-tenant HTTP/SSE
             deployments to prevent a single session from materialising very large result sets.
+        HYDROLIX_MAX_RAW_TIMERANGE: Max timerange in seconds for non-summary queries (default: 21600 = 6 hours)
     """
 
     def __init__(self) -> None:
@@ -261,6 +262,14 @@ class HydrolixConfig:
         Default: 10000
         """
         return int(os.getenv("HYDROLIX_MCP_MAX_REQUESTS", 10000))
+
+    @property
+    def max_raw_timerange(self) -> int:
+        """Get the max timerange in seconds for non-summary queries.
+
+        Default: 21600 (6 hours)
+        """
+        return int(os.getenv("HYDROLIX_MAX_RAW_TIMERANGE", "21600"))
 
     @property
     def mcp_keepalive(self) -> int:

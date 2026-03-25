@@ -157,7 +157,6 @@ class TestWithSerializerDecorator:
         assert isinstance(result, ToolResult)
         assert result.structured_content == {"name": "Alice", "age": 30}
 
-    @pytest.mark.asyncio
     async def test_async_function_basic(self):
         """Test decorator works with async functions."""
 
@@ -171,7 +170,6 @@ class TestWithSerializerDecorator:
         assert result.content == [TextContent(type="text", text='{"result": "async success"}')]
         assert result.structured_content == {"result": "async success"}
 
-    @pytest.mark.asyncio
     async def test_async_function_with_args(self):
         """Test decorator works with async function arguments."""
 
@@ -203,7 +201,6 @@ class TestWithSerializerDecorator:
         assert parsed["amount"] == "500.00"
         assert parsed["data"] == "encoded"
 
-    @pytest.mark.asyncio
     async def test_async_custom_types_serialization(self):
         """Test decorator serializes custom types in async functions."""
 

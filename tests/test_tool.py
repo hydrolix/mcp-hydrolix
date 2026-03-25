@@ -1,11 +1,9 @@
-import asyncio
 import inspect
-import unittest
 
+import pytest
 from fastmcp.exceptions import ToolError
 
 from mcp_hydrolix import (
-    create_hydrolix_client,
     get_table_info,
     list_databases,
     list_tables,
@@ -13,111 +11,71 @@ from mcp_hydrolix import (
 )
 
 
-class TestHydrolixTools(unittest.IsolatedAsyncioTestCase):
-    test_db = "test_tool_db"
-    test_table = "test_table"
-
-    @classmethod
-    def setUpClass(cls):
-        asyncio.run(cls.asyncSetUpClass())
-
-    @classmethod
-    def tearDownClass(cls):
-        asyncio.run(cls.asyncTearDownClass())
-
-    @classmethod
-    async def asyncSetUpClass(cls):
-        """Set up the environment before tests."""
-        cls.client = await create_hydrolix_client(None, None)
-
-        # Prepare test database and table
-        await cls.client.command(f"CREATE DATABASE IF NOT EXISTS {cls.test_db}")
-
-        # Drop table if exists to ensure clean state
-        await cls.client.command(f"DROP TABLE IF EXISTS {cls.test_db}.{cls.test_table}")
-
-        # Create table with comments
-        await cls.client.command(f"""
-            CREATE TABLE {cls.test_db}.{cls.test_table} (
-                id UInt32 COMMENT 'Primary identifier',
-                name String COMMENT 'User name field'
-            ) ENGINE = MergeTree()
-            ORDER BY id
-            COMMENT 'Test table for unit testing'
-        """)
-        await cls.client.command(f"""
-            INSERT INTO {cls.test_db}.{cls.test_table} (id, name) VALUES (1, 'Alice'), (2, 'Bob')
-        """)
-
-    @classmethod
-    async def asyncTearDownClass(cls):
-        """Clean up the environment after tests."""
-        await cls.client.command(f"DROP DATABASE IF EXISTS {cls.test_db}")
-
-    async def test_list_databases(self):
+class TestHydrolixTools:
+    async def test_list_databases(self, setup_tool_test_database):
         """Test listing databases."""
+        test_db, _ = setup_tool_test_database
         result = await list_databases()
-        # Parse JSON response
-        databases = result
-        self.assertIn(self.test_db, databases)
+        assert test_db in result
 
-    async def test_list_tables_without_like(self):
+    async def test_list_tables_without_like(self, setup_tool_test_database):
         """Test listing tables without a 'LIKE' filter."""
-        result = await list_tables(self.test_db)
-        self.assertIsInstance(result, list)
-        self.assertEqual(len(result), 1)
+        test_db, test_table = setup_tool_test_database
+        result = await list_tables(test_db)
+        assert isinstance(result, list)
+        assert len(result) == 1
         table = result[0]
-        self.assertEqual(table.name, self.test_table)
+        assert table.name == test_table
 
-    async def test_list_tables_with_like(self):
+    async def test_list_tables_with_like(self, setup_tool_test_database):
         """Test listing tables with a 'LIKE' filter."""
-        result = await list_tables(self.test_db, like=f"{self.test_table}%")
-        self.assertIsInstance(result, list)
-        self.assertEqual(len(result), 1)
+        test_db, test_table = setup_tool_test_database
+        result = await list_tables(test_db, like=f"{test_table}%")
+        assert isinstance(result, list)
+        assert len(result) == 1
         table = result[0]
-        self.assertEqual(table.name, self.test_table)
+        assert table.name == test_table
 
-    async def test_run_select_query_success(self):
+    async def test_run_select_query_success(self, setup_tool_test_database):
         """Test running a SELECT query successfully."""
-        query = f"SELECT * FROM {self.test_db}.{self.test_table}"
+        test_db, test_table = setup_tool_test_database
+        query = f"SELECT * FROM {test_db}.{test_table}"
         result = await inspect.unwrap(run_select_query)(query)
-        self.assertIsInstance(result, dict)
-        self.assertEqual(len(result["rows"]), 2)
-        self.assertEqual(result["rows"][0][0], 1)
-        self.assertEqual(result["rows"][0][1], "Alice")
+        assert isinstance(result, dict)
+        assert len(result["rows"]) == 2
+        assert result["rows"][0][0] == 1
+        assert result["rows"][0][1] == "Alice"
 
-    async def test_run_select_query_failure(self):
+    async def test_run_select_query_failure(self, setup_tool_test_database):
         """Test running a SELECT query with an error."""
-        query = f"SELECT * FROM {self.test_db}.non_existent_table"
+        test_db, _ = setup_tool_test_database
+        query = f"SELECT * FROM {test_db}.non_existent_table"
 
-        # Should raise ToolError
-        with self.assertRaises(ToolError) as context:
+        with pytest.raises(ToolError) as exc_info:
             await run_select_query(query)
 
-        self.assertIn("Query execution failed", str(context.exception))
+        assert "Query execution failed" in str(exc_info.value)
 
-    async def test_column_comments(self):
+    async def test_column_comments(self, setup_tool_test_database):
         """Test that column comments are correctly retrieved.
 
         Updated: Now uses get_table_info() instead of list_tables()
         since list_tables() no longer returns column metadata.
         """
+        test_db, test_table = setup_tool_test_database
+
         # First verify the table exists
-        tables = await list_tables(self.test_db)
-        self.assertIsInstance(tables, list)
-        self.assertEqual(len(tables), 1)
-        self.assertEqual(tables[0].name, self.test_table)
+        tables = await list_tables(test_db)
+        assert isinstance(tables, list)
+        assert len(tables) == 1
+        assert tables[0].name == test_table
 
         # Now get detailed table info including columns
-        table_info = await get_table_info(self.test_db, self.test_table)
+        table_info = await get_table_info(test_db, test_table)
 
         # Get columns by name for easier testing
         columns = {col.name: col.__dict__ for col in table_info.columns}
 
         # Verify column comments
-        self.assertEqual(columns["id"]["comment"], "Primary identifier")
-        self.assertEqual(columns["name"]["comment"], "User name field")
-
-
-if __name__ == "__main__":
-    unittest.main()
+        assert columns["id"]["comment"] == "Primary identifier"
+        assert columns["name"]["comment"] == "User name field"
