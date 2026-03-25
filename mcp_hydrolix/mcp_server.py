@@ -692,7 +692,7 @@ def _build_truncation_response(
     else:
         retrieve_more = (
             "Consider refining your query with LIMIT, WHERE filters, or GROUP BY. "
-            "To retrieve more data, pass a larger max_cells value "
+            "To retrieve more data, call run_select_query with a larger max_cells value "
             "(e.g. max_cells=200000), or set max_cells=0 to disable truncation entirely."
         )
 
