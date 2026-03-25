@@ -6,92 +6,64 @@ import uuid
 from typing import Any
 
 import pytest
-import pytest_asyncio
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
 from fastmcp.server.middleware import Middleware, MiddlewareContext
 from mcp_clickhouse.mcp_server import create_clickhouse_client
 
-from mcp_hydrolix.mcp_server import mcp
+
+def _assert_structured_matches_content(result, tool_name: str):
+    """Assert that structured_content and content[0].text agree."""
+    assert result.content, f"{tool_name}: content is empty"
+    text_parsed = json.loads(result.content[0].text)
+    structured_content = result.structured_content
+    if isinstance(text_parsed, list):
+        # fastmcp requires dict-type structured content. Lists get wrapped as {result": list}
+        # while content text contains the unwrapped list
+        assert isinstance(structured_content, dict)
+        assert "result" in structured_content
+        structured_content = structured_content["result"]
+    assert text_parsed == structured_content, (
+        f"{tool_name}: structured_content does not match parsed content text"
+    )
 
 
-@pytest.fixture(scope="module")
-def event_loop():
-    """Create an instance of the default event loop for the test session."""
-    loop = asyncio.get_event_loop_policy().new_event_loop()
-    yield loop
-    loop.close()
+async def test_list_databases_structured_matches_content(mcp_server, setup_test_database):
+    """Verify structured and unstructured responses match for list_databases."""
+    async with Client(mcp_server) as client:
+        result = await client.call_tool("list_databases", {})
+        _assert_structured_matches_content(result, "list_databases")
 
 
-@pytest_asyncio.fixture(scope="module")
-async def setup_test_database():
-    """Set up test database and tables before running tests."""
-    client = create_clickhouse_client()
-
-    # Test database and table names
-    test_db = "test_mcp_db"
-    test_table = "test_table"
-    test_table2 = "another_test_table"
-
-    # Create test database
-    client.command(f"CREATE DATABASE IF NOT EXISTS {test_db}")
-
-    # Drop tables if they exist
-    client.command(f"DROP TABLE IF EXISTS {test_db}.{test_table}")
-    client.command(f"DROP TABLE IF EXISTS {test_db}.{test_table2}")
-
-    # Create first test table with comments
-    client.command(f"""
-        CREATE TABLE {test_db}.{test_table} (
-            id UInt32 COMMENT 'Primary identifier',
-            name String COMMENT 'User name field',
-            age UInt8 COMMENT 'User age',
-            created_at DateTime DEFAULT now() COMMENT 'Record creation timestamp'
-        ) ENGINE = MergeTree()
-        ORDER BY id
-        COMMENT 'Test table for MCP server testing'
-    """)
-
-    # Create second test table
-    client.command(f"""
-        CREATE TABLE {test_db}.{test_table2} (
-            event_id UInt64,
-            event_type String,
-            timestamp DateTime
-        ) ENGINE = MergeTree()
-        ORDER BY (event_type, timestamp)
-        COMMENT 'Event tracking table'
-    """)
-
-    # Insert test data
-    client.command(f"""
-        INSERT INTO {test_db}.{test_table} (id, name, age) VALUES
-        (1, 'Alice', 30),
-        (2, 'Bob', 25),
-        (3, 'Charlie', 35),
-        (4, 'Diana', 28)
-    """)
-
-    client.command(f"""
-        INSERT INTO {test_db}.{test_table2} (event_id, event_type, timestamp) VALUES
-        (1001, 'login', '2024-01-01 10:00:00'),
-        (1002, 'logout', '2024-01-01 11:00:00'),
-        (1003, 'login', '2024-01-01 12:00:00')
-    """)
-
-    yield test_db, test_table, test_table2
-
-    # Cleanup after tests
-    client.command(f"DROP DATABASE IF EXISTS {test_db}")
+async def test_list_tables_structured_matches_content(mcp_server, setup_test_database):
+    """Verify structured and unstructured responses match for list_tables."""
+    test_db, _, _ = setup_test_database
+    async with Client(mcp_server) as client:
+        result = await client.call_tool("list_tables", {"database": test_db})
+        _assert_structured_matches_content(result, "list_tables")
 
 
-@pytest.fixture
-def mcp_server():
-    """Return the MCP server instance for testing."""
-    return mcp
+async def test_get_table_info_structured_matches_content(mcp_server, setup_test_database):
+    """Verify structured and unstructured responses match for get_table_info."""
+    test_db, test_table, _ = setup_test_database
+    async with Client(mcp_server) as client:
+        result = await client.call_tool(
+            "get_table_info", {"database": test_db, "table": test_table}
+        )
+        _assert_structured_matches_content(result, "get_table_info")
 
 
-@pytest.mark.asyncio
+async def test_run_select_query_structured_matches_content(mcp_server, setup_test_database):
+    """Verify structured and unstructured responses match for run_select_query."""
+    test_db, test_table, _ = setup_test_database
+    async with Client(mcp_server) as client:
+        result = await client.call_tool(
+            "run_select_query",
+            {"query": f"SELECT id, name FROM {test_db}.{test_table} ORDER BY id"},
+        )
+        _assert_structured_matches_content(result, "run_select_query")
+
+
 async def test_list_databases(mcp_server, setup_test_database):
     """Test the list_databases tool."""
     test_db, _, _ = setup_test_database
@@ -99,13 +71,12 @@ async def test_list_databases(mcp_server, setup_test_database):
     async with Client(mcp_server) as client:
         result = await client.call_tool("list_databases", {})
 
-        databases = result.data
-        assert len(result.data) >= 1
+        databases = result.structured_content["result"]
+        assert len(databases) >= 1
         assert test_db in databases
         assert "system" in databases  # System database should always exist
 
 
-@pytest.mark.asyncio
 async def test_list_tables_basic(mcp_server, setup_test_database):
     """Test the list_tables tool without filters.
 
@@ -116,7 +87,7 @@ async def test_list_tables_basic(mcp_server, setup_test_database):
     async with Client(mcp_server) as client:
         result = await client.call_tool("list_tables", {"database": test_db})
 
-        tables = result.data
+        tables = result.structured_content["result"]
         assert len(tables) >= 1
 
         # Should have exactly 2 tables
@@ -139,7 +110,6 @@ async def test_list_tables_basic(mcp_server, setup_test_database):
             assert table.get("columns") is None or len(table.get("columns", [])) == 0
 
 
-@pytest.mark.asyncio
 async def test_list_tables_with_like_filter(mcp_server, setup_test_database):
     """Test the list_tables tool with LIKE filter."""
     test_db, test_table, _ = setup_test_database
@@ -148,19 +118,12 @@ async def test_list_tables_with_like_filter(mcp_server, setup_test_database):
         # Test with LIKE filter
         result = await client.call_tool("list_tables", {"database": test_db, "like": "test_%"})
 
-        tables_data = result.data
-
-        # Handle both single dict and list of dicts
-        if isinstance(tables_data, dict):
-            tables = [tables_data]
-        else:
-            tables = tables_data
+        tables = result.structured_content["result"]
 
         assert len(tables) == 1
         assert tables[0]["name"] == test_table
 
 
-@pytest.mark.asyncio
 async def test_list_tables_with_not_like_filter(mcp_server, setup_test_database):
     """Test the list_tables tool with NOT LIKE filter."""
     test_db, _, test_table2 = setup_test_database
@@ -169,19 +132,12 @@ async def test_list_tables_with_not_like_filter(mcp_server, setup_test_database)
         # Test with NOT LIKE filter
         result = await client.call_tool("list_tables", {"database": test_db, "not_like": "test_%"})
 
-        tables_data = result.data
-
-        # Handle both single dict and list of dicts
-        if isinstance(tables_data, dict):
-            tables = [tables_data]
-        else:
-            tables = tables_data
+        tables = result.structured_content["result"]
 
         assert len(tables) == 1
         assert tables[0]["name"] == test_table2
 
 
-@pytest.mark.asyncio
 async def test_run_select_query_success(mcp_server, setup_test_database):
     """Test running a successful SELECT query."""
     test_db, test_table, _ = setup_test_database
@@ -190,7 +146,7 @@ async def test_run_select_query_success(mcp_server, setup_test_database):
         query = f"SELECT id, name, age FROM {test_db}.{test_table} ORDER BY id"
         result = await client.call_tool("run_select_query", {"query": query})
 
-        query_result = result.data
+        query_result = result.structured_content
 
         # Check structure
         assert "columns" in query_result
@@ -207,7 +163,6 @@ async def test_run_select_query_success(mcp_server, setup_test_database):
         assert query_result["rows"][3] == [4, "Diana", 28]
 
 
-@pytest.mark.asyncio
 async def test_run_select_query_with_aggregation(mcp_server, setup_test_database):
     """Test running a SELECT query with aggregation."""
     test_db, test_table, _ = setup_test_database
@@ -216,7 +171,7 @@ async def test_run_select_query_with_aggregation(mcp_server, setup_test_database
         query = f"SELECT COUNT(*) as count, AVG(age) as avg_age FROM {test_db}.{test_table}"
         result = await client.call_tool("run_select_query", {"query": query})
 
-        query_result = result.data
+        query_result = result.structured_content
 
         assert query_result["columns"] == ["count", "avg_age"]
         assert len(query_result["rows"]) == 1
@@ -224,7 +179,6 @@ async def test_run_select_query_with_aggregation(mcp_server, setup_test_database
         assert query_result["rows"][0][1] == 29.5  # average age
 
 
-@pytest.mark.asyncio
 async def test_run_select_query_with_join(mcp_server, setup_test_database):
     """Test running a SELECT query with JOIN."""
     test_db, test_table, test_table2 = setup_test_database
@@ -244,11 +198,10 @@ async def test_run_select_query_with_join(mcp_server, setup_test_database):
         """
         result = await client.call_tool("run_select_query", {"query": query})
 
-        query_result = result.data
+        query_result = result.structured_content
         assert query_result["rows"][0][0] == 3  # login, logout, purchase
 
 
-@pytest.mark.asyncio
 async def test_run_select_query_error(mcp_server, setup_test_database):
     """Test running a SELECT query that results in an error."""
     test_db, _, _ = setup_test_database
@@ -264,7 +217,6 @@ async def test_run_select_query_error(mcp_server, setup_test_database):
         assert "Query execution failed" in str(exc_info.value)
 
 
-@pytest.mark.asyncio
 async def test_run_select_query_syntax_error(mcp_server):
     """Test running a SELECT query with syntax error."""
     async with Client(mcp_server) as client:
@@ -278,7 +230,6 @@ async def test_run_select_query_syntax_error(mcp_server):
         assert "Query execution failed" in str(exc_info.value)
 
 
-@pytest.mark.asyncio
 async def test_table_metadata_details(mcp_server, setup_test_database):
     """Test that table metadata is correctly retrieved."""
     test_db, test_table, _ = setup_test_database
@@ -286,7 +237,7 @@ async def test_table_metadata_details(mcp_server, setup_test_database):
     async with Client(mcp_server) as client:
         # First, list tables to discover available tables
         result = await client.call_tool("list_tables", {"database": test_db})
-        tables = result.data
+        tables = result.structured_content["result"]
 
         # Verify our test table exists in the list
         test_table_exists = any(t["name"] == test_table for t in tables)
@@ -328,13 +279,12 @@ async def test_table_metadata_details(mcp_server, setup_test_database):
         assert columns_by_name["created_at"]["column_category"] == "Column"
 
 
-@pytest.mark.asyncio
 async def test_system_database_access(mcp_server):
     """Test that we can access system databases."""
     async with Client(mcp_server) as client:
         # List tables in system database
         result = await client.call_tool("list_tables", {"database": "system"})
-        tables = result.data
+        tables = result.structured_content["result"]
 
         # System database should have many tables
         assert len(tables) > 10
@@ -374,7 +324,6 @@ class InFlightCounterMiddleware(Middleware):
                 pass
 
 
-@pytest.mark.asyncio
 async def test_concurrent_queries(monkeypatch, mcp_server, setup_test_database):
     """Test running multiple queries concurrently."""
 
@@ -393,7 +342,7 @@ async def test_concurrent_queries(monkeypatch, mcp_server, setup_test_database):
 
     test_db, test_table, test_table2 = setup_test_database
 
-    mcp.add_middleware(InFlightCounterMiddleware())
+    mcp_server.add_middleware(InFlightCounterMiddleware())
 
     # limit mcp client request time
     os.environ["HYDROLIX_SEND_RECEIVE_TIMEOUT"] = "10"
@@ -442,12 +391,11 @@ async def test_concurrent_queries(monkeypatch, mcp_server, setup_test_database):
     # Check each result
     assert results.done()
     for result in results.result():
-        query_result = json.loads(result.content[0].text)
+        query_result = result.structured_content
         assert "rows" in query_result
         assert len(query_result["rows"]) == 1
 
 
-@pytest.mark.asyncio
 async def test_concurrent_queries_isolation(monkeypatch, mcp_server, setup_test_database):
     """Test running multiple queries concurrently."""
     from clickhouse_connect.driver import AsyncClient
@@ -479,7 +427,7 @@ async def test_concurrent_queries_isolation(monkeypatch, mcp_server, setup_test_
     )
 
     for result in results:
-        res = result.data["rows"]
+        res = result.structured_content["rows"]
         user = res[0][0]
         indata = list(filter(lambda x: x[0] == user, users))
         assert len(indata) == 1

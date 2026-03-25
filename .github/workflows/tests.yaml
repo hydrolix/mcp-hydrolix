@@ -2,15 +2,6 @@ name: Tests Pipeline
 
 on:
   pull_request:
-    paths:
-      - '.github/workflows/tests.yml'
-      - 'mcp_hydrolix/**'
-      - 'mcp_hydrolix/tests/**'
-      - 'mcp_hydrolix/pyproject.toml'
-      - 'mcp_hydrolix/ruff.toml'
-      - 'mcp_hydrolix/uv.lock'
-      - 'mcp_hydrolix/Dockerfile'
-      - 'mcp_hydrolix/docker-compose.yaml'
   workflow_dispatch:
 
 jobs:
@@ -32,8 +23,7 @@ jobs:
       - name: Run tests
         working-directory: .
         run: |
-          uv sync --frozen --no-editable
-          uv pip install '.[dev]'
+          uv sync --frozen --no-editable --all-extras
           uv run pytest
       - name: Stop Docker Compose services
         if: always()

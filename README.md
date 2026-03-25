@@ -252,6 +252,9 @@ If no credentials are provided via the environment or the request, the request w
 * `HYDROLIX_MCP_BIND_PORT`: Port to bind the MCP server to when using HTTP or SSE transport
   * Default: `"8000"`
   * Only used when transport is `"http"` or `"sse"`
+* `HYDROLIX_MAX_RAW_TIMERANGE`: Maximum time range in seconds allowed for queries against non-summary tables
+  * Default: `21600` (6 hours)
+  * Queries targeting summary tables are not affected by this limit
 
 
 For MCP Inspector or remote access with HTTP transport:

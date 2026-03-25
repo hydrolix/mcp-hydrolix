@@ -5,7 +5,6 @@ from datetime import datetime, time, date
 from decimal import Decimal
 from functools import wraps
 
-import fastmcp.utilities.types
 from fastmcp.tools.tool import ToolResult
 
 
@@ -62,9 +61,4 @@ def with_serializer(fn):
         enc = json.dumps(result, cls=ExtendedEncoder)
         return ToolResult(content=enc, structured_content=json.loads(enc))
 
-    # TODO: remove next signature fix code when a new fastmcp released (https://github.com/jlowin/fastmcp/issues/2524)
-    new_fn = fastmcp.utilities.types.create_function_without_params(fn, ["ctx"])
-    sig = inspect.signature(new_fn)
-    async_wrapper.__signature__ = sig
-    wrapper.__signature__ = sig
     return async_wrapper if inspect.iscoroutinefunction(fn) else wrapper
