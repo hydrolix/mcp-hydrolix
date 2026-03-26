@@ -50,11 +50,16 @@ class HydrolixConfig:
         HYDROLIX_MCP_BIND_PORT: Port to bind the MCP server to when using HTTP or SSE transport (default: 8000)
         HYDROLIX_QUERIES_POOL_SIZE 100
         HYDROLIX_MCP_REQUEST_TIMEOUT 120
-        HYDROLIX_MCP_WORKERS 3
+        HYDROLIX_MCP_WORKERS 1
         HYDROLIX_MCP_WORKER_CONNECTIONS 200
         HYDROLIX_MCP_MAX_REQUESTS 10000
         HYDROLIX_MCP_MAX_REQUESTS_JITTER 1000
         HYDROLIX_MCP_MAX_KEEPALIVE 10
+        HYDROLIX_MAX_RESULT_CELLS: Maximum number of cells (rows × columns) to return in a
+            query result before truncating (default: 50000)
+        HYDROLIX_MAX_RESULT_CELLS_LIMIT: Hard upper bound on max_cells that callers may request.
+            0 means no limit is enforced (default: 0). Set this in multi-tenant HTTP/SSE
+            deployments to prevent a single session from materialising very large result sets.
         HYDROLIX_MAX_RAW_TIMERANGE: Max timerange in seconds for non-summary queries (default: 21600 = 6 hours)
     """
 
@@ -142,19 +147,39 @@ class HydrolixConfig:
 
     @property
     def query_pool_size(self) -> int:
-        """Get the send/receive timeout in seconds.
+        """Get the query executor thread pool size.
 
-        Default: 300 (Hydrolix default)
+        Default: 100
         """
         return int(os.getenv("HYDROLIX_QUERIES_POOL_SIZE", 100))
 
     @property
     def query_timeout_sec(self) -> int:
-        """Get the send/receive timeout in seconds.
+        """Get the per-query execution timeout in seconds.
 
-        Default: 300 (Hydrolix default)
+        Default: 30
         """
         return int(os.getenv("HYDROLIX_QUERY_TIMEOUT_SECS", 30))
+
+    @property
+    def max_result_cells(self) -> int:
+        """Get the default cell budget (rows × columns) for query result truncation.
+
+        Configured via HYDROLIX_MAX_RESULT_CELLS (default: 50000).
+        """
+        return int(os.getenv("HYDROLIX_MAX_RESULT_CELLS", "50000"))
+
+    @property
+    def max_result_cells_limit(self) -> int:
+        """Get the hard upper bound on the max_cells value callers may request.
+
+        When > 0, any per-call max_cells value above this limit is capped to this
+        value, preventing callers from requesting unbounded result sets.
+
+        Configured via HYDROLIX_MAX_RESULT_CELLS_LIMIT (default: 0, no cap enforced).
+        Set to a positive integer to enforce a cap in multi-tenant HTTP/SSE deployments.
+        """
+        return int(os.getenv("HYDROLIX_MAX_RESULT_CELLS_LIMIT", "0"))
 
     @property
     def proxy_path(self) -> Optional[str]:
@@ -195,7 +220,7 @@ class HydrolixConfig:
 
     @property
     def mcp_timeout(self) -> int:
-        """Get the request timeout secunds.
+        """Get the request timeout seconds.
 
         Only used when transport is "http" or "sse".
         Default: 120
@@ -216,7 +241,7 @@ class HydrolixConfig:
         """Get the max number of concurrent requests per worker.
 
         Only used when transport is "http" or "sse".
-        Default: 200
+        Default: 100
         """
         return int(os.getenv("HYDROLIX_MCP_WORKER_CONNECTIONS", 100))
 
@@ -225,7 +250,7 @@ class HydrolixConfig:
         """Get the random parameter to randomize time process is reloaded after max_requests.
 
         Only used when transport is "http" or "sse".
-        Default: 10000
+        Default: 1000
         """
         return int(os.getenv("HYDROLIX_MCP_MAX_REQUESTS_JITTER", 1000))
 
@@ -234,7 +259,7 @@ class HydrolixConfig:
         """Get the max number of requests handled by worker before it is restarted.
 
         Only used when transport is "http" or "sse".
-        Default: 1000
+        Default: 10000
         """
         return int(os.getenv("HYDROLIX_MCP_MAX_REQUESTS", 10000))
 
@@ -321,6 +346,32 @@ class HydrolixConfig:
 
         if missing_vars:
             raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
+
+        # Validate HYDROLIX_MAX_RESULT_CELLS: must be a positive integer if set.
+        raw_cells = os.getenv("HYDROLIX_MAX_RESULT_CELLS")
+        if raw_cells is not None:
+            try:
+                val = int(raw_cells)
+                if val <= 0:
+                    raise ValueError()
+            except (ValueError, TypeError):
+                raise ValueError(
+                    f"Invalid HYDROLIX_MAX_RESULT_CELLS={raw_cells!r}: "
+                    "must be a positive integer (e.g. 50000)."
+                )
+
+        # Validate HYDROLIX_MAX_RESULT_CELLS_LIMIT: must be a non-negative integer if set.
+        raw_limit = os.getenv("HYDROLIX_MAX_RESULT_CELLS_LIMIT")
+        if raw_limit is not None:
+            try:
+                val = int(raw_limit)
+                if val < 0:
+                    raise ValueError()
+            except (ValueError, TypeError):
+                raise ValueError(
+                    f"Invalid HYDROLIX_MAX_RESULT_CELLS_LIMIT={raw_limit!r}: "
+                    "must be a non-negative integer (0 means no cap)."
+                )
 
 
 # Global instance placeholder for the singleton pattern

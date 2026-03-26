@@ -11,6 +11,8 @@ from fastmcp.exceptions import ToolError
 from fastmcp.server.middleware import Middleware, MiddlewareContext
 from mcp_clickhouse.mcp_server import create_clickhouse_client
 
+from mcp_hydrolix.mcp_server import _build_truncation_response, _resolve_cell_limit
+
 
 def _assert_structured_matches_content(result, tool_name: str):
     """Assert that structured_content and content[0].text agree."""
@@ -161,6 +163,10 @@ async def test_run_select_query_success(mcp_server, setup_test_database):
         assert query_result["rows"][1] == [2, "Bob", 25]
         assert query_result["rows"][2] == [3, "Charlie", 35]
         assert query_result["rows"][3] == [4, "Diana", 28]
+
+        # Verify truncation metadata is present even when not truncated
+        assert query_result["truncated"] is False
+        assert query_result["row_count"] == 4
 
 
 async def test_run_select_query_with_aggregation(mcp_server, setup_test_database):
@@ -353,7 +359,9 @@ async def test_concurrent_queries(monkeypatch, mcp_server, setup_test_database):
     ServerMetrics.inflight_requests = 0
     async with Client(mcp_server) as client:
         lq = "SELECT * FROM loop  (numbers(3)) LIMIT 7000000000000 SETTINGS max_execution_time=9"
-        lq_f = asyncio.gather(*[client.call_tool("run_select_query", {"query": lq})])
+        lq_f = asyncio.gather(
+            *[client.call_tool("run_select_query", {"query": lq, "max_cells": 0})]
+        )
 
         # Run multiple queries concurrently
         queries = [
@@ -434,3 +442,375 @@ async def test_concurrent_queries_isolation(monkeypatch, mcp_server, setup_test_
         user_row = indata[0]
         for res_row in res:
             assert res_row == user_row
+
+
+@pytest.mark.asyncio
+async def test_run_select_query_no_truncation(mcp_server, setup_test_database):
+    """Test that results within the cell budget are returned without truncation."""
+    test_db, test_table, _ = setup_test_database
+
+    async with Client(mcp_server) as client:
+        # test_table has 4 rows × 3 selected columns = 12 cells; max_cells=100 won't truncate
+        query = f"SELECT id, name, age FROM {test_db}.{test_table} ORDER BY id"
+        result = await client.call_tool("run_select_query", {"query": query, "max_cells": 100})
+
+        query_result = result.data
+        assert query_result["truncated"] is False
+        assert query_result["row_count"] == 4
+        assert len(query_result["rows"]) == 4
+        assert "total_row_count" not in query_result
+        assert "message" not in query_result
+
+
+@pytest.mark.asyncio
+async def test_run_select_query_no_truncation_at_exact_budget(mcp_server, setup_test_database):
+    """Test that a result exactly at the cell budget is not truncated (boundary: > not >=)."""
+    test_db, test_table, _ = setup_test_database
+
+    async with Client(mcp_server) as client:
+        # test_table has 4 rows × 3 selected columns = 12 cells; max_cells=12 must NOT truncate.
+        query = f"SELECT id, name, age FROM {test_db}.{test_table} ORDER BY id"
+        result = await client.call_tool("run_select_query", {"query": query, "max_cells": 12})
+
+        query_result = result.data
+        assert query_result["truncated"] is False
+        assert query_result["row_count"] == 4
+
+
+@pytest.mark.asyncio
+async def test_run_select_query_truncation_triggered(mcp_server, setup_test_database):
+    """Test that results exceeding the cell budget are truncated with metadata."""
+    test_db, test_table, _ = setup_test_database
+
+    async with Client(mcp_server) as client:
+        # test_table has 4 rows × 4 columns = 16 cells; max_cells=4 forces max_rows = 4//4 = 1
+        query = f"SELECT id, name, age, created_at FROM {test_db}.{test_table} ORDER BY id"
+        result = await client.call_tool("run_select_query", {"query": query, "max_cells": 4})
+
+        query_result = result.data
+        assert query_result["truncated"] is True
+        assert query_result["row_count"] == 1
+        assert query_result["total_row_count"] == 4
+        assert len(query_result["rows"]) == 1
+        assert "message" in query_result
+        assert "run_select_query" in query_result["message"]
+        assert "max_cells" in query_result["message"]
+
+
+@pytest.mark.asyncio
+async def test_run_select_query_truncation_disabled(mcp_server, setup_test_database):
+    """Test that max_cells=0 disables truncation even when the result would otherwise be truncated."""
+    test_db, test_table, _ = setup_test_database
+
+    async with Client(mcp_server) as client:
+        # 4 rows × 4 columns = 16 cells, which exceeds max_cells=4 but max_cells=0 disables truncation
+        query = f"SELECT id, name, age, created_at FROM {test_db}.{test_table} ORDER BY id"
+        result = await client.call_tool("run_select_query", {"query": query, "max_cells": 0})
+
+        query_result = result.data
+        assert query_result["truncated"] is False
+        assert query_result["row_count"] == 4
+        assert len(query_result["rows"]) == 4
+
+
+@pytest.mark.asyncio
+async def test_run_select_query_negative_max_cells_rejected(mcp_server, setup_test_database):
+    """Test that a negative max_cells value raises a ToolError."""
+    test_db, test_table, _ = setup_test_database
+
+    async with Client(mcp_server) as client:
+        query = f"SELECT id FROM {test_db}.{test_table}"
+        with pytest.raises(ToolError) as exc_info:
+            await client.call_tool("run_select_query", {"query": query, "max_cells": -1})
+        assert "max_cells" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_run_select_query_truncation_max_rows_zero(mcp_server, setup_test_database):
+    """Test truncation when cell limit is smaller than the column count (max_rows=0)."""
+    test_db, test_table, _ = setup_test_database
+
+    async with Client(mcp_server) as client:
+        # test_table has 4 columns; max_cells=2 → max_rows = 2//4 = 0
+        query = f"SELECT id, name, age, created_at FROM {test_db}.{test_table} ORDER BY id"
+        result = await client.call_tool("run_select_query", {"query": query, "max_cells": 2})
+
+        query_result = result.data
+        assert query_result["truncated"] is True
+        assert query_result["row_count"] == 0
+        assert len(query_result["rows"]) == 0
+        assert query_result["total_row_count"] == 2  # inject_limit caps the fetch to LIMIT 2
+        assert "run_select_query" in query_result["message"]
+        assert "max_cells" in query_result["message"]
+
+
+@pytest.mark.asyncio
+async def test_run_select_query_operator_limit_caps_max_cells(
+    monkeypatch, mcp_server, setup_test_database
+):
+    """Test that HYDROLIX_MAX_RESULT_CELLS_LIMIT caps a caller-supplied max_cells value."""
+    test_db, test_table, _ = setup_test_database
+
+    # Operator sets a hard cap of 4 cells; caller requests 1000 — should be capped to 4.
+    monkeypatch.setenv("HYDROLIX_MAX_RESULT_CELLS_LIMIT", "4")
+
+    async with Client(mcp_server) as client:
+        # 4 rows × 4 columns = 16 cells; operator cap of 4 → max_rows = 4//4 = 1
+        query = f"SELECT id, name, age, created_at FROM {test_db}.{test_table} ORDER BY id"
+        result = await client.call_tool("run_select_query", {"query": query, "max_cells": 1000})
+
+        query_result = result.data
+        assert query_result["truncated"] is True
+        assert query_result["row_count"] == 1
+        assert query_result["total_row_count"] == 4
+        # Message should mention the operator cap, not advise using a larger max_cells value.
+        assert "administrator" in query_result["message"]
+        assert "max_cells value" not in query_result["message"]
+
+
+@pytest.mark.asyncio
+async def test_run_select_query_operator_limit_overrides_max_cells_zero(
+    monkeypatch, mcp_server, setup_test_database
+):
+    """Test that HYDROLIX_MAX_RESULT_CELLS_LIMIT is enforced even when max_cells=0."""
+    test_db, test_table, _ = setup_test_database
+
+    # Operator sets a hard cap of 4 cells; caller sets max_cells=0 to disable truncation.
+    monkeypatch.setenv("HYDROLIX_MAX_RESULT_CELLS_LIMIT", "4")
+
+    async with Client(mcp_server) as client:
+        # 4 rows × 4 columns = 16 cells; operator cap of 4 overrides max_cells=0.
+        query = f"SELECT id, name, age, created_at FROM {test_db}.{test_table} ORDER BY id"
+        result = await client.call_tool("run_select_query", {"query": query, "max_cells": 0})
+
+        query_result = result.data
+        assert query_result["truncated"] is True
+        assert query_result["row_count"] == 1
+        assert "administrator" in query_result["message"]
+
+
+@pytest.mark.asyncio
+async def test_run_select_query_operator_limit_caps_default(
+    monkeypatch, mcp_server, setup_test_database
+):
+    """Test that HYDROLIX_MAX_RESULT_CELLS_LIMIT caps results even when caller omits max_cells."""
+    test_db, test_table, _ = setup_test_database
+
+    # Operator sets a hard cap of 4 cells; caller supplies no max_cells at all.
+    monkeypatch.setenv("HYDROLIX_MAX_RESULT_CELLS_LIMIT", "4")
+
+    async with Client(mcp_server) as client:
+        # 4 rows × 4 columns = 16 cells; operator cap of 4 → max_rows = 4//4 = 1
+        query = f"SELECT id, name, age, created_at FROM {test_db}.{test_table} ORDER BY id"
+        result = await client.call_tool("run_select_query", {"query": query})
+
+        query_result = result.data
+        assert query_result["truncated"] is True
+        assert query_result["row_count"] == 1
+        assert query_result["total_row_count"] == 4
+        # Must show operator-cap guidance, NOT "use a larger max_cells value"
+        assert "administrator" in query_result["message"]
+        assert "max_cells value" not in query_result["message"]
+
+
+@pytest.mark.asyncio
+async def test_run_select_query_max_cells_in_tool_schema(mcp_server):
+    """Test that max_cells is visible in the tool schema advertised to MCP clients."""
+    async with Client(mcp_server) as client:
+        tools = await client.list_tools()
+        run_query_tool = next(t for t in tools if t.name == "run_select_query")
+        schema_props = run_query_tool.inputSchema.get("properties", {})
+        assert "max_cells" in schema_props, (
+            "max_cells parameter must appear in the tool schema so LLM clients can use it"
+        )
+
+
+@pytest.mark.asyncio
+async def test_run_select_query_env_default_max_cells(monkeypatch, mcp_server, setup_test_database):
+    """Test that HYDROLIX_MAX_RESULT_CELLS env var is respected as the default cell budget."""
+    test_db, test_table, _ = setup_test_database
+
+    # Set the default budget to 4 cells; the query returns 4 rows × 4 columns = 16 cells.
+    # With this budget, truncation must trigger even though no max_cells arg is supplied.
+    monkeypatch.setenv("HYDROLIX_MAX_RESULT_CELLS", "4")
+
+    async with Client(mcp_server) as client:
+        query = f"SELECT id, name, age, created_at FROM {test_db}.{test_table} ORDER BY id"
+        result = await client.call_tool("run_select_query", {"query": query})
+
+        query_result = result.data
+        assert query_result["truncated"] is True
+        assert query_result["row_count"] == 1  # 4 cells // 4 columns = 1 row
+        assert query_result["total_row_count"] == 4
+        assert "run_select_query" in query_result["message"]
+        assert "max_cells" in query_result["message"]
+
+
+@pytest.mark.asyncio
+async def test_run_select_query_truncation_message_100k_note(monkeypatch, mcp_server):
+    """Test that the 100k-row advisory note appears when total_row_count >= 100,000."""
+    from unittest.mock import AsyncMock, patch
+
+    large_result = {
+        "columns": ["a", "b"],
+        "rows": [["x", "y"]] * 100_000,
+    }
+
+    with patch("mcp_hydrolix.mcp_server.execute_query", new=AsyncMock(return_value=large_result)):
+        async with Client(mcp_server) as client:
+            # 100,000 rows × 2 columns = 200,000 cells; max_cells=4 → max_rows=2
+            result = await client.call_tool(
+                "run_select_query",
+                {"query": "SELECT a, b FROM t", "max_cells": 4},
+            )
+
+    query_result = result.data
+    assert query_result["truncated"] is True
+    assert query_result["total_row_count"] == 100_000
+    assert "total_row_count" in query_result["message"]
+    assert "100,000" in query_result["message"]
+
+
+class TestHydrolixConfigValidation:
+    """Tests for HydrolixConfig startup validation of result-cell env vars."""
+
+    @pytest.fixture(autouse=True)
+    def _base_env(self, monkeypatch):
+        """Set the minimum required env vars for HydrolixConfig construction."""
+        monkeypatch.setenv("HYDROLIX_HOST", "localhost")
+        monkeypatch.setenv("HYDROLIX_USER", "user")
+        monkeypatch.setenv("HYDROLIX_PASSWORD", "pass")
+
+    def test_max_result_cells_zero_rejected(self, monkeypatch):
+        from mcp_hydrolix.mcp_env import HydrolixConfig
+
+        monkeypatch.setenv("HYDROLIX_MAX_RESULT_CELLS", "0")
+        with pytest.raises(ValueError, match="HYDROLIX_MAX_RESULT_CELLS"):
+            HydrolixConfig()
+
+    def test_max_result_cells_negative_rejected(self, monkeypatch):
+        from mcp_hydrolix.mcp_env import HydrolixConfig
+
+        monkeypatch.setenv("HYDROLIX_MAX_RESULT_CELLS", "-1")
+        with pytest.raises(ValueError, match="HYDROLIX_MAX_RESULT_CELLS"):
+            HydrolixConfig()
+
+    def test_max_result_cells_non_integer_rejected(self, monkeypatch):
+        from mcp_hydrolix.mcp_env import HydrolixConfig
+
+        monkeypatch.setenv("HYDROLIX_MAX_RESULT_CELLS", "abc")
+        with pytest.raises(ValueError, match="HYDROLIX_MAX_RESULT_CELLS"):
+            HydrolixConfig()
+
+    def test_max_result_cells_limit_negative_rejected(self, monkeypatch):
+        from mcp_hydrolix.mcp_env import HydrolixConfig
+
+        monkeypatch.setenv("HYDROLIX_MAX_RESULT_CELLS_LIMIT", "-1")
+        with pytest.raises(ValueError, match="HYDROLIX_MAX_RESULT_CELLS_LIMIT"):
+            HydrolixConfig()
+
+    def test_max_result_cells_limit_non_integer_rejected(self, monkeypatch):
+        from mcp_hydrolix.mcp_env import HydrolixConfig
+
+        monkeypatch.setenv("HYDROLIX_MAX_RESULT_CELLS_LIMIT", "bad")
+        with pytest.raises(ValueError, match="HYDROLIX_MAX_RESULT_CELLS_LIMIT"):
+            HydrolixConfig()
+
+    def test_max_result_cells_limit_zero_is_valid(self, monkeypatch):
+        """Zero is explicitly valid for LIMIT (means no cap)."""
+        from mcp_hydrolix.mcp_env import HydrolixConfig
+
+        monkeypatch.setenv("HYDROLIX_MAX_RESULT_CELLS_LIMIT", "0")
+        config = HydrolixConfig()  # must not raise
+        assert config.max_result_cells_limit == 0
+
+    def test_max_result_cells_positive_value_is_read(self, monkeypatch):
+        """Configured value is returned by the property (not a hardcoded default)."""
+        from mcp_hydrolix.mcp_env import HydrolixConfig
+
+        monkeypatch.setenv("HYDROLIX_MAX_RESULT_CELLS", "12345")
+        config = HydrolixConfig()
+        assert config.max_result_cells == 12345
+
+
+def test_resolve_cell_limit_negative_raises():
+    with pytest.raises(ToolError, match="max_cells must be 0"):
+        _resolve_cell_limit(-1)
+
+
+def test_resolve_cell_limit_uses_default(monkeypatch):
+    monkeypatch.setenv("HYDROLIX_MAX_RESULT_CELLS", "12345")
+    monkeypatch.setenv("HYDROLIX_MAX_RESULT_CELLS_LIMIT", "0")
+    cell_limit, capped = _resolve_cell_limit(None)
+    assert cell_limit == 12345
+    assert capped is False
+
+
+def test_resolve_cell_limit_caller_value(monkeypatch):
+    monkeypatch.setenv("HYDROLIX_MAX_RESULT_CELLS_LIMIT", "0")
+    cell_limit, capped = _resolve_cell_limit(500)
+    assert cell_limit == 500
+    assert capped is False
+
+
+def test_resolve_cell_limit_operator_cap_applied(monkeypatch):
+    monkeypatch.setenv("HYDROLIX_MAX_RESULT_CELLS_LIMIT", "1000")
+    cell_limit, capped = _resolve_cell_limit(9999)
+    assert cell_limit == 1000
+    assert capped is True
+
+
+def test_resolve_cell_limit_zero_capped_by_operator(monkeypatch):
+    # max_cells=0 means "no limit" from caller; operator cap overrides it
+    monkeypatch.setenv("HYDROLIX_MAX_RESULT_CELLS_LIMIT", "1000")
+    cell_limit, capped = _resolve_cell_limit(0)
+    assert cell_limit == 1000
+    assert capped is True
+
+
+def test_resolve_cell_limit_operator_cap_not_applied_when_below(monkeypatch):
+    monkeypatch.setenv("HYDROLIX_MAX_RESULT_CELLS_LIMIT", "1000")
+    cell_limit, capped = _resolve_cell_limit(500)
+    assert cell_limit == 500
+    assert capped is False
+
+
+def test_build_truncation_response_basic():
+    columns = ["a", "b"]
+    rows = [["v1", "v2"]] * 10  # 10 rows, 2 cols = 20 cells; cell_limit=4 -> max_rows=2
+    result = _build_truncation_response(columns, rows, cell_limit=4, capped_by_operator=False)
+    assert result["truncated"] is True
+    assert result["row_count"] == 2
+    assert result["total_row_count"] == 10
+    assert len(result["rows"]) == 2
+    assert result["columns"] == columns
+    assert "max_cells" in result["message"]
+
+
+def test_build_truncation_response_capped_by_operator():
+    columns = ["x"]
+    rows = [["v"]] * 5
+    result = _build_truncation_response(columns, rows, cell_limit=3, capped_by_operator=True)
+    assert "enforced by the server" in result["message"]
+    assert "HYDROLIX_MAX_RESULT_CELLS_LIMIT" in result["message"]
+
+
+def test_build_truncation_response_not_capped_by_operator():
+    columns = ["x"]
+    rows = [["v"]] * 5
+    result = _build_truncation_response(columns, rows, cell_limit=3, capped_by_operator=False)
+    assert "larger max_cells" in result["message"]
+
+
+def test_build_truncation_response_large_result_advisory():
+    columns = ["x"]
+    rows = [["v"]] * 100_000
+    result = _build_truncation_response(columns, rows, cell_limit=50_000, capped_by_operator=False)
+    assert "total_row_count reflects rows fetched" in result["message"]
+
+
+def test_build_truncation_response_no_advisory_below_threshold():
+    columns = ["x"]
+    rows = [["v"]] * 99_999
+    result = _build_truncation_response(columns, rows, cell_limit=50_000, capped_by_operator=False)
+    assert "total_row_count reflects rows fetched" not in result["message"]

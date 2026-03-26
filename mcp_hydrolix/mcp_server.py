@@ -1,9 +1,8 @@
+import dataclasses as _dc
 import logging
 import re
 import signal
 import time
-from collections.abc import Sequence
-import dataclasses as _dc
 from dataclasses import dataclass
 from graphlib import CycleError, TopologicalSorter
 from typing import (
@@ -21,10 +20,10 @@ from typing import (
     get_type_hints,
 )
 
+import clickhouse_connect
 import sqlglot
 import sqlglot.errors as sqlglot_errors
 import sqlglot.expressions as sqlglot_exp
-import clickhouse_connect
 from clickhouse_connect import common
 from clickhouse_connect.driver import httputil
 from clickhouse_connect.driver.binding import format_query_value
@@ -32,6 +31,7 @@ from dotenv import load_dotenv
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from fastmcp.server.dependencies import get_access_token
+from fastmcp.tools.tool import ToolResult
 from fastmcp.server.middleware import Middleware, MiddlewareContext
 from jwt import DecodeError
 from pydantic import Field, field_serializer
@@ -48,7 +48,7 @@ from mcp_hydrolix.auth import (
     UsernamePassword,
 )
 from mcp_hydrolix.mcp_env import HydrolixConfig, get_config
-from mcp_hydrolix.utils import with_serializer
+from mcp_hydrolix.utils import inject_limit, with_serializer
 
 
 @dataclass(frozen=True)
@@ -416,7 +416,11 @@ def detect_aggregate_aliases(alias_definitions: Dict[str, str]) -> Set[str]:
         try:
             parsed[name] = sqlglot.parse_one(sql, dialect="clickhouse")
         except sqlglot_errors.SqlglotError:
-            logger.info(f"Could not parse ALIAS expression for {name!r}, treating as non-aggregate")
+            logger.warning(
+                "detect_aggregate_aliases: could not parse ALIAS expression for %r, "
+                "treating as non-aggregate (column classification may be incorrect)",
+                name,
+            )
 
     alias_names = set(alias_definitions)
 
@@ -457,10 +461,17 @@ def detect_aggregate_aliases(alias_definitions: Dict[str, str]) -> Set[str]:
         )
 
     try:
-        order = TopologicalSorter(
-            {name: m.alias_dependencies - {name} for name, m in alias_dependency_meta.items()}
-        ).static_order()
+        order = list(
+            TopologicalSorter(
+                {name: m.alias_dependencies - {name} for name, m in alias_dependency_meta.items()}
+            ).static_order()
+        )
     except CycleError:
+        logger.warning(
+            "detect_aggregate_aliases: circular dependency detected among ALIAS columns %r; "
+            "treating all as non-aggregate (column classification may be incorrect)",
+            list(alias_dependency_meta),
+        )
         return set()  # circular dependency — safe fallback, treat all as non-aggregate
 
     is_aggregation: Dict[str, bool] = {}
@@ -688,11 +699,100 @@ async def list_tables(
     return tables
 
 
+def _resolve_cell_limit(max_cells: Optional[int]) -> tuple[int, bool]:
+    """Validate max_cells and resolve the effective cell limit and operator-cap flag."""
+    if max_cells is not None and max_cells < 0:
+        raise ToolError("max_cells must be 0 (to disable truncation) or a positive integer.")
+
+    cell_limit = max_cells if max_cells is not None else HYDROLIX_CONFIG.max_result_cells
+
+    upper_limit = HYDROLIX_CONFIG.max_result_cells_limit
+    capped_by_operator = False
+    if upper_limit > 0 and (cell_limit == 0 or cell_limit > upper_limit):
+        cell_limit = upper_limit
+        capped_by_operator = True
+
+    return cell_limit, capped_by_operator
+
+
+def _build_truncation_response(
+    columns: list,
+    rows: list,
+    cell_limit: int,
+    capped_by_operator: bool,
+) -> dict:
+    """Build the truncated response dict, logging the truncation event.
+
+    Precondition: len(columns) > 0 (caller already guards this).
+    """
+    num_rows = len(rows)
+    num_cols = len(columns)
+    max_rows = cell_limit // num_cols
+    total_cells = num_rows * num_cols
+
+    logger.info(
+        f"Truncating result from {num_rows} to {max_rows} rows "
+        f"(cell limit: {cell_limit}, columns: {num_cols})"
+    )
+
+    if capped_by_operator:
+        retrieve_more = (
+            f"This limit is enforced by the server (max_cells capped at {cell_limit:,}). "
+            f"Contact your administrator to adjust HYDROLIX_MAX_RESULT_CELLS_LIMIT, "
+            f"or refine your query with LIMIT, WHERE filters, or GROUP BY."
+        )
+    else:
+        retrieve_more = (
+            "Consider refining your query with LIMIT, WHERE filters, or GROUP BY. "
+            "To retrieve more data, call run_select_query with a larger max_cells value "
+            "(e.g. max_cells=200000), or set max_cells=0 to disable truncation entirely."
+        )
+
+    return {
+        "columns": columns,
+        "rows": rows[:max_rows],
+        "truncated": True,
+        "row_count": max_rows,
+        "total_row_count": num_rows,
+        "message": (
+            f"Result truncated: showing {max_rows:,} of {num_rows:,} fetched rows "
+            f"({num_cols} columns). "
+            f"Exceeded the cell limit of {cell_limit:,} "
+            f"({total_cells:,} cells in full result). "
+            + (
+                "Note: total_row_count reflects rows fetched from the server "
+                "(capped at 100,000) — the actual table may contain more rows. "
+                if num_rows >= 100_000
+                else ""
+            )
+            + retrieve_more
+        ),
+    }
+
+
 @mcp.tool()
 @with_serializer
-async def run_select_query(query: str) -> dict[str, tuple | Sequence[str | Sequence[Any]]]:
+async def run_select_query(
+    query: str,
+    max_cells: Optional[int] = None,
+) -> ToolResult:
     """Run a SELECT query in a Hydrolix time-series database using the Clickhouse SQL dialect.
     Queries run using this tool will timeout after 30 seconds.
+
+    RESULT TRUNCATION:
+
+    Query results are automatically truncated when the total cell count (rows * columns)
+    exceeds the configured limit.
+
+    Response shape:
+        - Always present: columns, rows, truncated (bool), row_count
+        - Only when truncated=true: total_row_count, message
+        Note: total_row_count is the number of rows fetched from the server, which is
+        capped at 100,000. The actual table may contain more rows than this value suggests.
+
+    Note: if the cell limit is smaller than the number of columns, row_count will be 0 —
+    in that case you must either refine the query (fewer columns, stricter filters) or
+    increase max_cells.
 
     MANDATORY PRE-QUERY CHECK:
 
@@ -808,13 +908,31 @@ async def run_select_query(query: str) -> dict[str, tuple | Sequence[str | Seque
     Performance guard: date range filter.
      `SELECT app, count(*) FROM application.logs WHERE timestamp > '2024-01-01' AND timestamp < '2024-02-14' GROUP BY app ORDER BY count(*) DESC LIMIT 1`
     """
-    logger.info(f"Executing SELECT query: {query}")
+    cell_limit, capped_by_operator = _resolve_cell_limit(max_cells)
+
+    # Rewrite the query to add a server-side LIMIT before hitting the DB, so we don't
+    # materialise more rows than needed. inject_limit takes the min of any existing LIMIT
+    # and our budget. We pass cell_limit as a loose upper bound on rows — the exact
+    # column count is only known after execution, so we can't be precise here;
+    # post-fetch cell-based truncation below handles the final slice.
+    effective_query = inject_limit(query, cell_limit) if cell_limit > 0 else query
+
+    logger.info(f"Executing SELECT query: {effective_query}")
     try:
         extra_settings: dict[str, Any] = {"hdx_query_timerange_required": True}
         if not await _query_targets_summary_table(query):
             extra_settings["hdx_query_max_timerange_sec"] = get_config().max_raw_timerange
-        result = await execute_query(query=query, extra_settings=extra_settings)
-        return result
+        result = await execute_query(query=effective_query, extra_settings=extra_settings)
+    except ToolError:
+        raise
     except Exception as e:
-        logger.error(f"Unexpected error in run_select_query: {str(e)}")
+        logger.exception(f"Unexpected error in run_select_query: {str(e)}")
         raise ToolError(f"Unexpected error during query execution: {str(e)}")
+
+    columns, rows = result["columns"], result["rows"]
+    num_rows, num_cols = len(rows), len(columns)
+
+    if cell_limit > 0 and num_cols > 0 and num_rows * num_cols > cell_limit:
+        return _build_truncation_response(columns, rows, cell_limit, capped_by_operator)
+
+    return {"columns": columns, "rows": rows, "truncated": False, "row_count": num_rows}
