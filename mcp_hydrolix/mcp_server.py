@@ -1,3 +1,5 @@
+import asyncio
+import base64
 import dataclasses as _dc
 import logging
 import re
@@ -242,8 +244,75 @@ signal.signal(signal.SIGINT, term)
 if hasattr(signal, "SIGQUIT"):
     signal.signal(signal.SIGQUIT, term)
 
+# Cached per-process result of the /version preflight check.
+# None = not yet checked; True/False = supported/not supported.
+_parameterized_queries_supported: Optional[bool] = None
+_parameterized_queries_lock = asyncio.Lock()
 
-async def execute_query(query: str, extra_settings: Dict[str, Any] = {}) -> HdxQueryResult:
+
+def _parse_hydrolix_version(version_str: str) -> Optional[tuple[int, int]]:
+    """Parse a Hydrolix version string into a (major, minor) tuple.
+
+    Accepts formats like "v5.12.0", "v5.12.0-2-gc1398c65", or "5.12.0".
+    Returns None if the string cannot be parsed.
+    """
+    try:
+        v = version_str.lstrip("v").split("-")[0]
+        parts = v.split(".")
+        return int(parts[0]), int(parts[1])
+    except (ValueError, IndexError, AttributeError):
+        return None
+
+
+async def _check_parameterized_query_support() -> bool:
+    """Return True if this Hydrolix instance supports parameterized queries (>= v5.12).
+
+    The result is cached for the lifetime of the process after the first successful check.
+    On failure the function returns False without caching, so the next call will retry.
+    """
+    global _parameterized_queries_supported
+    if _parameterized_queries_supported is not None:
+        return _parameterized_queries_supported
+
+    async with _parameterized_queries_lock:
+        # Re-check after acquiring the lock — another coroutine may have set it while we waited.
+        if _parameterized_queries_supported is not None:
+            return _parameterized_queries_supported
+
+        try:
+            creds = HYDROLIX_CONFIG.creds_with(get_request_credential())
+            if isinstance(creds, UsernamePassword):
+                encoded = base64.b64encode(f"{creds.username}:{creds.password}".encode()).decode()
+                headers = {"Authorization": f"Basic {encoded}"}
+            else:
+                headers = {"Authorization": f"Bearer {cast(ServiceAccountToken, creds).token}"}
+
+            scheme = "https" if HYDROLIX_CONFIG.secure else "http"
+            proxy = HYDROLIX_CONFIG.proxy_path or ""
+            url = f"{scheme}://{HYDROLIX_CONFIG.host}:{HYDROLIX_CONFIG.port}{proxy}/version"
+
+            response = await asyncio.to_thread(
+                client_shared_pool.request, "GET", url, headers=headers
+            )
+            version_str = response.data.decode("utf-8").strip()
+            parsed = _parse_hydrolix_version(version_str)
+            _parameterized_queries_supported = parsed is not None and parsed >= (5, 12)
+            logger.info(
+                f"Hydrolix version {version_str!r}: parameterized queries "
+                f"{'supported' if _parameterized_queries_supported else 'not supported'}"
+            )
+        except Exception as e:
+            logger.warning(
+                f"Failed to detect Hydrolix version: {e}. Falling back to interpolated queries."
+            )
+            return False
+
+    return _parameterized_queries_supported
+
+
+async def execute_query(
+    query: str, parameters: Optional[Dict[str, Any]] = None, extra_settings: Dict[str, Any] = {}
+) -> HdxQueryResult:
     m = metrics.get_instance()
     start = time.perf_counter()
     status = "success"
@@ -261,6 +330,7 @@ async def execute_query(query: str, extra_settings: Dict[str, Any] = {}) -> HdxQ
             } | extra_settings
             res = await client.query(
                 query,
+                parameters=parameters,
                 settings=settings,
             )
             logger.info(f"Query returned {len(res.result_rows)} rows")
@@ -632,12 +702,20 @@ async def get_table_info(database: str, table: str) -> Table:
     """
     # Fetch table metadata (row counts, sizes, etc.)
     sql_fields_for_table: List[str] = Table.sql_fields()
-    query = f"""
+    if await _check_parameterized_query_support():
+        query = f"""
+        SELECT {", ".join(sql_fields_for_table)}
+        FROM system.tables
+        WHERE database = {{db:String}} AND name = {{table:String}}"""
+        query_params: Optional[Dict[str, Any]] = {"db": database, "table": table}
+    else:
+        query = f"""
         SELECT {", ".join(sql_fields_for_table)}
         FROM system.tables
         WHERE database = {format_query_value(database)} AND name = {format_query_value(table)}"""
+        query_params = None
 
-    result = await execute_query(query)
+    result = await execute_query(query, parameters=query_params)
 
     if not result["rows"]:
         raise ToolError(f"Table {database}.{table} not found")
@@ -675,16 +753,28 @@ async def list_tables(
     list_tables() is intentionally lightweight to avoid loading schema for all tables at once.
     """
     logger.info(f"Listing tables in database '{database}'")
-    query = f"""
+    if await _check_parameterized_query_support():
+        query = f"""
+        SELECT {", ".join(Table.sql_fields())}
+        FROM system.tables WHERE database = {{db:String}}"""
+        query_params: Optional[Dict[str, Any]] = {"db": database}
+        if like:
+            query += " AND name LIKE {like:String}"
+            query_params["like"] = like
+        if not_like:
+            query += " AND name NOT LIKE {not_like:String}"
+            query_params["not_like"] = not_like
+    else:
+        query = f"""
         SELECT {", ".join(Table.sql_fields())}
         FROM system.tables WHERE database = {format_query_value(database)}"""
-    if like:
-        query += f" AND name LIKE {format_query_value(like)}"
+        query_params = None
+        if like:
+            query += f" AND name LIKE {format_query_value(like)}"
+        if not_like:
+            query += f" AND name NOT LIKE {format_query_value(not_like)}"
 
-    if not_like:
-        query += f" AND name NOT LIKE {format_query_value(not_like)}"
-
-    result = await execute_query(query)
+    result = await execute_query(query, parameters=query_params)
 
     # Deserialize result as Table dataclass instances (without column metadata)
     tables = result_to_table(result["columns"], result["rows"])
