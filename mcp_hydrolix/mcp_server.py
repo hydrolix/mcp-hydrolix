@@ -279,33 +279,48 @@ async def _check_parameterized_query_support() -> bool:
         if _parameterized_queries_supported is not None:
             return _parameterized_queries_supported
 
+        # Credential errors are configuration/auth problems and must not be swallowed.
+        creds = HYDROLIX_CONFIG.creds_with(get_request_credential())
+        if isinstance(creds, UsernamePassword):
+            encoded = base64.b64encode(f"{creds.username}:{creds.password}".encode()).decode()
+            headers = {"Authorization": f"Basic {encoded}"}
+        else:
+            headers = {"Authorization": f"Bearer {cast(ServiceAccountToken, creds).token}"}
+
+        scheme = "https" if HYDROLIX_CONFIG.secure else "http"
+        proxy = HYDROLIX_CONFIG.proxy_path or ""
+        url = f"{scheme}://{HYDROLIX_CONFIG.host}:{HYDROLIX_CONFIG.port}{proxy}/version"
+
         try:
-            creds = HYDROLIX_CONFIG.creds_with(get_request_credential())
-            if isinstance(creds, UsernamePassword):
-                encoded = base64.b64encode(f"{creds.username}:{creds.password}".encode()).decode()
-                headers = {"Authorization": f"Basic {encoded}"}
-            else:
-                headers = {"Authorization": f"Bearer {cast(ServiceAccountToken, creds).token}"}
-
-            scheme = "https" if HYDROLIX_CONFIG.secure else "http"
-            proxy = HYDROLIX_CONFIG.proxy_path or ""
-            url = f"{scheme}://{HYDROLIX_CONFIG.host}:{HYDROLIX_CONFIG.port}{proxy}/version"
-
             response = await asyncio.to_thread(
                 client_shared_pool.request, "GET", url, headers=headers
             )
-            version_str = response.data.decode("utf-8").strip()
-            parsed = _parse_hydrolix_version(version_str)
-            _parameterized_queries_supported = parsed is not None and parsed >= (5, 12)
-            logger.info(
-                f"Hydrolix version {version_str!r}: parameterized queries "
-                f"{'supported' if _parameterized_queries_supported else 'not supported'}"
-            )
         except Exception as e:
             logger.warning(
-                f"Failed to detect Hydrolix version: {e}. Falling back to interpolated queries."
+                f"Failed to reach Hydrolix /version endpoint: {e}. Falling back to interpolated queries.",
+                exc_info=True,
             )
             return False
+
+        if response.status != 200:
+            logger.warning(
+                f"Unexpected HTTP {response.status} from {url}. Falling back to interpolated queries."
+            )
+            return False
+
+        version_str = response.data.decode("utf-8").strip()
+        parsed = _parse_hydrolix_version(version_str)
+        if parsed is None:
+            logger.warning(
+                f"Could not parse Hydrolix version {version_str!r}. Falling back to interpolated queries."
+            )
+            return False
+
+        _parameterized_queries_supported = parsed >= (5, 12)
+        logger.info(
+            f"Hydrolix version {version_str!r}: parameterized queries "
+            f"{'supported' if _parameterized_queries_supported else 'not supported'}"
+        )
 
     return _parameterized_queries_supported
 

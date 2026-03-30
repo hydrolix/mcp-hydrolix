@@ -7,11 +7,12 @@ Covers:
 - list_tables and get_table_info using interpolation when not supported
 """
 
+import base64
 import inspect
 from unittest.mock import AsyncMock, MagicMock, patch
 
-
 import mcp_hydrolix.mcp_server as server
+from mcp_hydrolix.auth.credentials import UsernamePassword
 from mcp_hydrolix.mcp_server import (
     HdxQueryResult,
     _parse_hydrolix_version,
@@ -115,10 +116,12 @@ class TestCheckParameterizedQuerySupport:
     @patch("mcp_hydrolix.mcp_server.asyncio.to_thread")
     async def test_result_is_cached(self, mock_to_thread, mock_cred):
         mock_to_thread.return_value = _make_urllib3_response("v5.12.0")
-        await server._check_parameterized_query_support()
-        await server._check_parameterized_query_support()
-        # Should only hit the network once
+        first = await server._check_parameterized_query_support()
+        second = await server._check_parameterized_query_support()
+        # Should only hit the network once, and both calls return the same value
         mock_to_thread.assert_called_once()
+        assert first is True
+        assert second is True
 
     @patch("mcp_hydrolix.mcp_server.get_request_credential", return_value=None)
     @patch("mcp_hydrolix.mcp_server.asyncio.to_thread")
@@ -126,6 +129,63 @@ class TestCheckParameterizedQuerySupport:
         mock_to_thread.return_value = _make_urllib3_response("unknown")
         result = await server._check_parameterized_query_support()
         assert result is False
+        # Not cached — next call will retry
+        assert server._parameterized_queries_supported is None
+
+    @patch("mcp_hydrolix.mcp_server.get_request_credential", return_value=None)
+    @patch("mcp_hydrolix.mcp_server.asyncio.to_thread")
+    async def test_http_error_falls_back_to_false_without_caching(self, mock_to_thread, mock_cred):
+        mock_to_thread.return_value = _make_urllib3_response("Not Found", status=404)
+        result = await server._check_parameterized_query_support()
+        assert result is False
+        assert server._parameterized_queries_supported is None
+
+    @patch("mcp_hydrolix.mcp_server.get_request_credential", return_value=None)
+    @patch("mcp_hydrolix.mcp_server.asyncio.to_thread")
+    async def test_http_401_falls_back_without_caching(self, mock_to_thread, mock_cred):
+        mock_to_thread.return_value = _make_urllib3_response("Unauthorized", status=401)
+        result = await server._check_parameterized_query_support()
+        assert result is False
+        assert server._parameterized_queries_supported is None
+
+    @patch("mcp_hydrolix.mcp_server.HYDROLIX_CONFIG")
+    @patch("mcp_hydrolix.mcp_server.get_request_credential", return_value=None)
+    @patch("mcp_hydrolix.mcp_server.asyncio.to_thread")
+    async def test_username_password_sends_basic_auth(self, mock_to_thread, mock_cred, mock_config):
+        mock_config.creds_with.return_value = UsernamePassword(username="user", password="s3cr3t")
+        mock_config.secure = False
+        mock_config.host = "localhost"
+        mock_config.port = 8088
+        mock_config.proxy_path = ""
+        mock_to_thread.return_value = _make_urllib3_response("v5.12.0")
+
+        result = await server._check_parameterized_query_support()
+
+        assert result is True
+        headers = mock_to_thread.call_args.kwargs["headers"]
+        expected = base64.b64encode(b"user:s3cr3t").decode()
+        assert headers["Authorization"] == f"Basic {expected}"
+
+    @patch("mcp_hydrolix.mcp_server.HYDROLIX_CONFIG")
+    @patch("mcp_hydrolix.mcp_server.get_request_credential", return_value=None)
+    @patch("mcp_hydrolix.mcp_server.asyncio.to_thread")
+    async def test_service_account_token_sends_bearer_auth(
+        self, mock_to_thread, mock_cred, mock_config
+    ):
+        mock_token = MagicMock()
+        mock_token.token = "my-bearer-token"
+        mock_config.creds_with.return_value = mock_token
+        mock_config.secure = True
+        mock_config.host = "hydrolix.example.com"
+        mock_config.port = 443
+        mock_config.proxy_path = ""
+        mock_to_thread.return_value = _make_urllib3_response("v5.12.0")
+
+        result = await server._check_parameterized_query_support()
+
+        assert result is True
+        headers = mock_to_thread.call_args.kwargs["headers"]
+        assert headers["Authorization"] == "Bearer my-bearer-token"
 
 
 # ---------------------------------------------------------------------------
@@ -206,6 +266,59 @@ class TestListTablesQueryConstruction:
         _, kwargs = mock_execute.call_args
         assert kwargs["parameters"] == {"db": "mydb", "not_like": "tmp%"}
         assert "{not_like:String}" in mock_execute.call_args[0][0]
+
+    @patch(
+        "mcp_hydrolix.mcp_server._check_parameterized_query_support",
+        new_callable=AsyncMock,
+        return_value=True,
+    )
+    @patch(
+        "mcp_hydrolix.mcp_server.execute_query",
+        new_callable=AsyncMock,
+        return_value=_fake_result(),
+    )
+    async def test_both_filters_included_in_params(self, mock_execute, mock_check):
+        await inspect.unwrap(list_tables)("mydb", like="events%", not_like="tmp%")
+
+        _, kwargs = mock_execute.call_args
+        assert kwargs["parameters"] == {"db": "mydb", "like": "events%", "not_like": "tmp%"}
+        assert "{like:String}" in mock_execute.call_args[0][0]
+        assert "{not_like:String}" in mock_execute.call_args[0][0]
+
+    @patch(
+        "mcp_hydrolix.mcp_server._check_parameterized_query_support",
+        new_callable=AsyncMock,
+        return_value=False,
+    )
+    @patch(
+        "mcp_hydrolix.mcp_server.execute_query",
+        new_callable=AsyncMock,
+        return_value=_fake_result(),
+    )
+    async def test_like_filter_interpolated_when_not_supported(self, mock_execute, mock_check):
+        await inspect.unwrap(list_tables)("mydb", like="events%")
+
+        _, kwargs = mock_execute.call_args
+        assert kwargs.get("parameters") is None
+        assert "LIKE 'events%'" in mock_execute.call_args[0][0]
+
+    @patch(
+        "mcp_hydrolix.mcp_server._check_parameterized_query_support",
+        new_callable=AsyncMock,
+        return_value=False,
+    )
+    @patch(
+        "mcp_hydrolix.mcp_server.execute_query",
+        new_callable=AsyncMock,
+        return_value=_fake_result(),
+    )
+    async def test_both_filters_interpolated_when_not_supported(self, mock_execute, mock_check):
+        await inspect.unwrap(list_tables)("mydb", like="events%", not_like="tmp%")
+
+        _, kwargs = mock_execute.call_args
+        assert kwargs.get("parameters") is None
+        assert "LIKE 'events%'" in mock_execute.call_args[0][0]
+        assert "NOT LIKE 'tmp%'" in mock_execute.call_args[0][0]
 
 
 # ---------------------------------------------------------------------------
