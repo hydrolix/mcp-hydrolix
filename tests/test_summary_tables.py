@@ -1,10 +1,7 @@
 """Unit tests for summary table detection and classification."""
 
+from mcp_hydrolix.models import AggregateColumn, AliasColumn, Column, SummaryColumn
 from mcp_hydrolix.mcp_server import (
-    AggregateColumn,
-    AliasColumn,
-    Column,
-    SummaryColumn,
     detect_aggregate_aliases,
     _enrich_column_metadata,
     extract_function_from_type,

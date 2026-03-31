@@ -13,8 +13,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import mcp_hydrolix.mcp_server as server
 from mcp_hydrolix.auth.credentials import UsernamePassword
+from mcp_hydrolix.models import HdxQueryResult
 from mcp_hydrolix.mcp_server import (
-    HdxQueryResult,
     _parse_hydrolix_version,
     get_table_info,
     list_tables,
@@ -27,7 +27,7 @@ def _fake_result(columns=None, rows=None) -> HdxQueryResult:
 
 def _fake_table_result() -> HdxQueryResult:
     """Minimal result matching Table.sql_fields() column order."""
-    from mcp_hydrolix.mcp_server import Table
+    from mcp_hydrolix.models import Table
 
     fields = Table.sql_fields()
     row = ["mydb", "mytable", "MergeTree", "ts", "ts", None, None, None, None, None]
