@@ -225,7 +225,9 @@ async def _check_parameterized_query_support() -> bool:
 
 
 async def execute_query(
-    query: str, parameters: Optional[Dict[str, Any]] = None, extra_settings: Dict[str, Any] = {}
+    query: str,
+    parameters: Optional[Dict[str, Any]] = None,
+    extra_settings: Optional[Dict[str, Any]] = None,
 ) -> HdxQueryResult:
     m = metrics.get_instance()
     start = time.perf_counter()
@@ -241,7 +243,7 @@ async def execute_query(
                 "hdx_query_max_result_rows": 100_000,
                 "hdx_query_max_memory_usage": 2 * 1024 * 1024 * 1024,  # 2GiB
                 "hdx_query_admin_comment": f"User: {MCP_SERVER_NAME}",
-            } | extra_settings
+            } | (extra_settings or {})
             res = await client.query(
                 query,
                 parameters=parameters,
@@ -354,6 +356,12 @@ async def _query_targets_summary_table(query: str) -> bool:
             if any(isinstance(c, SummaryColumn) for c in columns):
                 return True
         except Exception:
+            logger.warning(
+                "Could not describe columns for %s.%s during summary table check",
+                table_node.db,
+                table_node.name,
+                exc_info=True,
+            )
             continue
     return False
 
