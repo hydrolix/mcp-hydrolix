@@ -26,6 +26,7 @@ from fastmcp.server.dependencies import get_access_token
 from fastmcp.tools.tool import ToolResult
 from fastmcp.server.middleware import Middleware, MiddlewareContext
 from jwt import DecodeError
+from mcp.types import ToolAnnotations
 from starlette.requests import Request
 from starlette.responses import PlainTextResponse, Response
 
@@ -383,7 +384,15 @@ async def _describe_columns(database: str, table_name: str) -> list[ColumnType]:
     return _enrich_column_metadata(rows)
 
 
-@mcp.tool()
+@mcp.tool(
+    annotations=ToolAnnotations(
+        title="List Databases",
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=True,
+    )
+)
 async def list_databases() -> List[str]:
     """List available Hydrolix databases"""
     logger.info("Listing all databases")
@@ -399,7 +408,15 @@ async def list_databases() -> List[str]:
     return databases
 
 
-@mcp.tool()
+@mcp.tool(
+    annotations=ToolAnnotations(
+        title="Get Table Info",
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=True,
+    )
+)
 async def get_table_info(database: str, table: str) -> Table:
     """Get detailed metadata for a specific table including columns and summary table detection.
 
@@ -463,7 +480,15 @@ async def get_table_info(database: str, table: str) -> Table:
     )
 
 
-@mcp.tool()
+@mcp.tool(
+    annotations=ToolAnnotations(
+        title="List Tables",
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=True,
+    )
+)
 async def list_tables(
     database: str, like: Optional[str] = None, not_like: Optional[str] = None
 ) -> List[Table]:
@@ -590,7 +615,15 @@ def _build_truncation_response(
     }
 
 
-@mcp.tool()
+@mcp.tool(
+    annotations=ToolAnnotations(
+        title="Run SELECT Query",
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=False,
+        openWorldHint=True,
+    )
+)
 @with_serializer
 async def run_select_query(
     query: str,
