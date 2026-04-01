@@ -371,7 +371,13 @@ async def _describe_columns(database: str, table_name: str) -> list[ColumnType]:
 
     Uses DESCRIBE TABLE to get full AggregateFunction types.
     """
-    result = await execute_query(f"DESCRIBE TABLE `{database}`.`{table_name}`")
+    if await _check_parameterized_query_support():
+        query = "DESCRIBE TABLE {db:Identifier}.{table:Identifier}"
+        query_params = {"db": database, "table": table_name}
+    else:
+        query = f"DESCRIBE TABLE `{database}`.`{table_name}`"
+        query_params = None
+    result = await execute_query(query, parameters=query_params)
     col_names = result["columns"]
     rows = [dict(zip(col_names, row)) for row in result["rows"]]
     return _enrich_column_metadata(rows)
@@ -431,7 +437,7 @@ async def get_table_info(database: str, table: str) -> Table:
         SELECT {", ".join(sql_fields_for_table)}
         FROM system.tables
         WHERE database = {{db:String}} AND name = {{table:String}}"""
-        query_params: Optional[Dict[str, Any]] = {"db": database, "table": table}
+        query_params = {"db": database, "table": table}
     else:
         query = f"""
         SELECT {", ".join(sql_fields_for_table)}
@@ -481,7 +487,7 @@ async def list_tables(
         query = f"""
         SELECT {", ".join(Table.sql_fields())}
         FROM system.tables WHERE database = {{db:String}}"""
-        query_params: Optional[Dict[str, Any]] = {"db": database}
+        query_params = {"db": database}
         if like:
             query += " AND name LIKE {like:String}"
             query_params["like"] = like
