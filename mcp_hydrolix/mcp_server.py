@@ -189,7 +189,7 @@ async def _check_parameterized_query_support() -> bool:
 
         scheme = "https" if HYDROLIX_CONFIG.secure else "http"
         proxy = HYDROLIX_CONFIG.proxy_path or ""
-        url = f"{scheme}://{HYDROLIX_CONFIG.host}:{HYDROLIX_CONFIG.port}{proxy}/version"
+        url = f"{scheme}://{HYDROLIX_CONFIG.api_host}:{HYDROLIX_CONFIG.api_port}{proxy}/version"
 
         try:
             response = await asyncio.to_thread(
