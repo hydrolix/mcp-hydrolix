@@ -620,7 +620,7 @@ def _build_truncation_response(
         title="Run SELECT Query",
         readOnlyHint=True,
         destructiveHint=False,
-        idempotentHint=False,
+        idempotentHint=True,
         openWorldHint=True,
     )
 )
