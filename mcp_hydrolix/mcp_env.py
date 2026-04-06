@@ -312,6 +312,14 @@ class HydrolixConfig:
             "send_receive_timeout": self.send_receive_timeout,
             "executor_threads": self.query_pool_size,
             "client_name": "mcp_hydrolix",
+            # clickhouse-connect's default tz_mode ("naive_utc") is broken
+            # for zoneless DateTime columns: it strips tzinfo when the server
+            # is UTC, and silently falls back to the *client's* local timezone
+            # when it can't detect the server's. "aware" forces every
+            # datetime to carry explicit tzinfo (column tz if set, else the
+            # server's), eliminating the ambiguity and matching the behavior of
+            # the `clickhouse client` CLI
+            "tz_mode": "aware",
         }
 
         # Add optional database if set
