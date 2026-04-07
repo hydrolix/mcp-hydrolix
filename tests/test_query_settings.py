@@ -13,7 +13,8 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from mcp_hydrolix.mcp_env import get_config
-from mcp_hydrolix.mcp_server import HdxQueryResult, run_select_query
+from mcp_hydrolix.models import HdxQueryResult
+from mcp_hydrolix.mcp_server import run_select_query
 
 
 def _fake_result() -> HdxQueryResult:

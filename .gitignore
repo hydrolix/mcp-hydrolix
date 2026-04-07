@@ -175,3 +175,6 @@ cython_debug/
 
 # VSCode
 .vscode
+
+# Claude superpowers plugin
+docs/superpowers/

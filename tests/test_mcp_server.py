@@ -338,10 +338,10 @@ async def test_concurrent_queries(monkeypatch, mcp_server, setup_test_database):
     instance = AsyncClient
     original_method = AsyncClient.query
 
-    async def wrapper_proxy(self, query: str, settings: dict[str, Any]):
+    async def wrapper_proxy(self, query: str, parameters=None, settings: dict[str, Any] = None):
         settings["readonly"] = 0
         # Call the original method
-        return await original_method(self, query, settings)
+        return await original_method(self, query, parameters=parameters, settings=settings)
 
     # Patch the instance method at runtime
     monkeypatch.setattr(instance, "query", wrapper_proxy)
@@ -411,10 +411,10 @@ async def test_concurrent_queries_isolation(monkeypatch, mcp_server, setup_test_
     instance = AsyncClient
     original_method = AsyncClient.query
 
-    async def wrapper_proxy(self, query: str, settings: dict[str, Any]):
+    async def wrapper_proxy(self, query: str, parameters=None, settings: dict[str, Any] = None):
         settings["readonly"] = 0
         # Call the original method
-        return await original_method(self, query, settings)
+        return await original_method(self, query, parameters=parameters, settings=settings)
 
     # Patch the instance method at runtime
     monkeypatch.setattr(instance, "query", wrapper_proxy)
