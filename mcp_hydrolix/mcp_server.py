@@ -1,7 +1,6 @@
 import dataclasses as _dc
 import logging
 import re
-import signal
 import time
 from dataclasses import dataclass
 from graphlib import CycleError, TopologicalSorter
@@ -231,16 +230,6 @@ else:
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 client_shared_pool = httputil.get_pool_manager(**pool_kwargs)
-
-
-def term(*args, **kwargs):
-    client_shared_pool.clear()
-
-
-signal.signal(signal.SIGTERM, term)
-signal.signal(signal.SIGINT, term)
-if hasattr(signal, "SIGQUIT"):
-    signal.signal(signal.SIGQUIT, term)
 
 
 async def execute_query(query: str, extra_settings: Dict[str, Any] = {}) -> HdxQueryResult:
