@@ -1,22 +1,26 @@
 on:
-  workflow_dispatch:
-    inputs:
-      publish_pypi:
-        description: "Include a pypi push in this publish"
-        required: true
-        type: boolean
-        default: true
-      publish_docker:
-        description: "Include a docker push in this publish"
-        required: true
-        type: boolean
-        default: true
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
 
 jobs:
+  prove-main:
+    name: Verify tag is on main
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Check that tagged commit is on main
+        run: |
+          if ! git branch -r --contains "$GITHUB_SHA" | grep -qE '(^|\s)origin/main$'; then
+            echo "::error::Tag $GITHUB_REF_NAME points to $GITHUB_SHA which is not on main"
+            exit 1
+          fi
   publish:
     name: Upload release to PyPI
+    needs: prove-main
     runs-on: ubuntu-latest
-    if: ${{ inputs.publish_pypi }}
     environment:
       name: pypi
       url: "https://pypi.org/p/mcp-hydrolix"
@@ -30,8 +34,8 @@ jobs:
       - uses: pypa/gh-action-pypi-publish@release/v1
   publish-docker:
     name: Upload release to GAR
+    needs: prove-main
     runs-on: ubuntu-latest
-    if: ${{ inputs.publish_docker }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
@@ -65,3 +69,40 @@ jobs:
         run: |
           docker push us-docker.pkg.dev/hdx-art/t/mcp-hydrolix:${{ steps.get_tag.outputs.tag }}
           docker push us-docker.pkg.dev/hdx-art/t/mcp-hydrolix:latest
+  bump-version:
+    name: Bump to next patch version
+    needs: [publish, publish-docker]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+      - uses: astral-sh/setup-uv@v5
+      - run: uv python install
+      - name: Bump patch version
+        run: |
+          current=$(uv version --short)
+          IFS='.' read -r major minor patch <<< "$current"
+          next="$major.$minor.$((patch + 1))"
+          uv version "$next"
+          uv lock --no-upgrade
+          echo "next=$next" >> "$GITHUB_ENV"
+      - name: Create pull request
+        run: |
+          branch="version/start-${next}-cycle"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          git add pyproject.toml uv.lock
+          git commit -m "Prepare $next development cycle"
+          git push -u origin "$branch"
+          gh pr create \
+            --base main \
+            --head "$branch" \
+            --title "Prepare $next development cycle" \
+            --body "Automated version bump after publishing v${current}."
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
