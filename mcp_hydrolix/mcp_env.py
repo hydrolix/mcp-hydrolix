@@ -104,9 +104,29 @@ class HydrolixConfig:
         Defaults to 8088.
         Can be overridden by HYDROLIX_PORT environment variable.
         """
-        if "HYDROLIX_PORT" in os.environ:
-            return int(os.environ["HYDROLIX_PORT"])
-        return 8088
+        return int(os.getenv("HYDROLIX_PORT", "8088"))
+
+    @property
+    def api_host(self) -> str:
+        """Get the Hydrolix REST API hostname.
+
+        Defaults to HYDROLIX_HOST.
+        Override with HYDROLIX_API_HOST when the MCP server runs inside a Hydrolix cluster,
+        where the version service is reachable at the internal hostname 'version'.
+        """
+        return os.getenv("HYDROLIX_API_HOST") or self.host
+
+    @property
+    def api_port(self) -> int:
+        """Get the Hydrolix REST API port.
+
+        Defaults to 443 for secure connections, 80 otherwise.
+        Override with HYDROLIX_API_PORT when the MCP server runs inside a Hydrolix cluster,
+        where the version service is reachable on port 23925.
+        """
+        if raw := os.getenv("HYDROLIX_API_PORT"):
+            return int(raw)
+        return 443 if self.secure else 80
 
     @property
     def database(self) -> Optional[str]:
@@ -312,6 +332,14 @@ class HydrolixConfig:
             "send_receive_timeout": self.send_receive_timeout,
             "executor_threads": self.query_pool_size,
             "client_name": "mcp_hydrolix",
+            # clickhouse-connect's default tz_mode ("naive_utc") is broken
+            # for zoneless DateTime columns: it strips tzinfo when the server
+            # is UTC, and silently falls back to the *client's* local timezone
+            # when it can't detect the server's. "aware" forces every
+            # datetime to carry explicit tzinfo (column tz if set, else the
+            # server's), eliminating the ambiguity and matching the behavior of
+            # the `clickhouse client` CLI
+            "tz_mode": "aware",
         }
 
         # Add optional database if set
