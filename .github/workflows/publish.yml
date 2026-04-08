@@ -87,7 +87,7 @@ jobs:
           IFS='.' read -r major minor patch <<< "$current"
           next="$major.$minor.$((patch + 1))"
           uv version "$next"
-          uv lock
+          uv lock --no-upgrade
           echo "next=$next" >> "$GITHUB_ENV"
       - name: Commit and push
         run: |
