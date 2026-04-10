@@ -1,7 +1,6 @@
 import asyncio
 import base64
 import logging
-import signal
 import time
 from typing import (
     Any,
@@ -134,15 +133,6 @@ else:
 
 client_shared_pool = httputil.get_pool_manager(**pool_kwargs)
 
-
-def term(*args, **kwargs):
-    client_shared_pool.clear()
-
-
-signal.signal(signal.SIGTERM, term)
-signal.signal(signal.SIGINT, term)
-if hasattr(signal, "SIGQUIT"):
-    signal.signal(signal.SIGQUIT, term)
 
 # Cached per-process result of the /version preflight check.
 # None = not yet checked; True/False = supported/not supported.
