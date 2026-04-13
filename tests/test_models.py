@@ -178,3 +178,12 @@ class TestTableNullFiltering:
         result = _serialize(table)
         # Then: 0 is preserved — it is meaningful, not null/empty
         assert result["total_rows"] == 0
+
+    def test_empty_columns_list_preserved(self):
+        # Given: a table with no columns (e.g. from list_tables which skips column metadata)
+        table = _minimal_table(columns=[])
+        # When: the table is serialized
+        result = _serialize(table)
+        # Then: the columns key is present as an empty list, not absent
+        assert "columns" in result
+        assert result["columns"] == []
