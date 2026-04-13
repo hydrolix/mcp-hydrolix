@@ -86,7 +86,7 @@ def main():
                 "bind": f"{config.mcp_bind_host}:{config.mcp_bind_port}",
                 "timeout": config.mcp_timeout,
                 "workers": config.mcp_workers,
-                "worker_class": "uvicorn.workers.UvicornWorker",
+                "worker_class": "uvicorn_worker.UvicornWorker",
                 "worker_connections": config.mcp_worker_connections,
                 "max_requests": config.mcp_max_requests,
                 "max_requests_jitter": config.mcp_max_requests_jitter,
