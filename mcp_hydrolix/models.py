@@ -2,7 +2,7 @@ import dataclasses as _dc
 from dataclasses import dataclass
 from typing import Annotated, Any, ClassVar, List, Optional, TypedDict, Union, get_type_hints
 
-from pydantic import Field, field_serializer
+from pydantic import Field, field_serializer, model_serializer
 from pydantic.dataclasses import dataclass as pydantic_dataclass
 
 
@@ -86,9 +86,23 @@ class Table:
     @field_serializer("columns")
     def serialize_columns(self, columns: Optional[List[ColumnType]]) -> List[dict]:
         return [
-            {**_dc.asdict(col), "column_category": type(col).column_category}
+            {
+                k: v
+                for k, v in {
+                    **_dc.asdict(col),
+                    "column_category": type(col).column_category,
+                }.items()
+                if v is not None and v != ""
+            }
             for col in (columns or [])
         ]
+
+    @model_serializer(mode="wrap")
+    def serialize_table(self, handler) -> dict:
+        # handler runs Pydantic's default serialization (including serialize_columns)
+        # and returns the result as a dict, which we then filter.
+        d = handler(self)
+        return {k: v for k, v in d.items() if v is not None and v != ""}
 
     @classmethod
     def sql_fields(cls) -> List[str]:
