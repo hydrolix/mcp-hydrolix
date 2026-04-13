@@ -91,6 +91,7 @@ def main():
                 "max_requests": config.mcp_max_requests,
                 "max_requests_jitter": config.mcp_max_requests_jitter,
                 "keepalive": config.mcp_keepalive,
+                "worker_tmp_dir": "/dev/shm",
                 "logconfig_dict": log_dict_config,
             }
 
