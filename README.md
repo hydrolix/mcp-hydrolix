@@ -82,7 +82,7 @@ Replace `<your-hydrolix-hostname>`, `<your-username>`, and `<your-password>` wit
 > - **macOS / Linux:** `which mcp-hydrolix`
 > - **Windows:** `where.exe mcp-hydrolix`
 >
-> If `which`/`where.exe` returns nothing, your install location isn't on your PATH. For uv, try `uv tool dir --bin` to find where tools are installed. For pip, run `python3 -c "import sysconfig; print(sysconfig.get_path('scripts'))"` (macOS/Linux) or `python -c "import sysconfig; print(sysconfig.get_path('scripts'))"` (Windows) — this prints the exact directory where pip installs executables for your Python installation.
+> If `which`/`where.exe` returns nothing, your install location isn't on your PATH. For uv, try `uv tool dir --bin` to find where tools are installed. For pip, run `python3 -c "import sysconfig; print(sysconfig.get_path('scripts'))"` (macOS/Linux) or `python -c "import sysconfig; print(sysconfig.get_path('scripts'))"` (Windows) — this prints the directory where pip placed the executable. Run it using the same Python interpreter you used to pip install (e.g., activate your virtual environment first if you used one).
 
 ### Step 4 — Restart Claude Desktop
 
