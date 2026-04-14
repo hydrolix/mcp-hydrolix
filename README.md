@@ -6,6 +6,113 @@
 
 An MCP server for Hydrolix.
 
+## Quickstart
+
+Get up and running in a few minutes. This guide covers Claude Desktop (the most common setup) and Claude Code.
+
+### Step 1 — Prerequisites
+
+Before you begin, make sure you have:
+
+- **Hydrolix credentials** — your cluster hostname plus either a username/password or a service account token. If you don't have these, ask your Hydrolix administrator.
+- **Claude Desktop** — download from [claude.ai/download](https://claude.ai/download).
+
+### Step 2 — Install the MCP server
+
+Choose the method that matches your setup:
+
+**Option A: Using uv (recommended)**
+
+[uv](https://docs.astral.sh/uv/) manages Python automatically. If you don't have it, install it first:
+
+macOS / Linux:
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+Windows (PowerShell):
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
+
+Then install the MCP server:
+```bash
+uv tool install mcp-hydrolix
+```
+
+**Option B: Using pip**
+
+Requires Python 3.13+. If you need to install Python, download it from [python.org](https://www.python.org/downloads/).
+
+```bash
+pip install mcp-hydrolix
+```
+
+### Step 3 — Configure Claude Desktop
+
+1. Open the Claude Desktop configuration file:
+   - **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
+   - **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
+
+2. Add the following entry to the `"mcpServers"` object (create the file with this content if it doesn't exist yet):
+
+```json
+{
+  "mcpServers": {
+    "mcp-hydrolix": {
+      "command": "mcp-hydrolix",
+      "env": {
+        "HYDROLIX_HOST": "<your-hydrolix-hostname>",
+        "HYDROLIX_USER": "<your-username>",
+        "HYDROLIX_PASSWORD": "<your-password>"
+      }
+    }
+  }
+}
+```
+
+Replace `<your-hydrolix-hostname>`, `<your-username>`, and `<your-password>` with your actual credentials.
+
+> **Tip:** If the file already has other entries, add the `"mcp-hydrolix"` block inside the existing `"mcpServers"` object rather than replacing the whole file.
+
+> **Using a service account token instead of username/password?** See [Authentication](#authentication).
+
+> **Command not found?** If Claude Desktop can't find `mcp-hydrolix`, replace `"command": "mcp-hydrolix"` with the full path to the binary. Find it by running `which mcp-hydrolix` (macOS/Linux) or `where.exe mcp-hydrolix` (Windows) in your terminal.
+
+### Step 4 — Restart Claude Desktop
+
+Restart the app to apply the configuration.
+
+> **Windows users:** Make sure to fully quit Claude via the system tray icon before restarting.
+
+### Step 5 — Verify it's working
+
+1. Open a new conversation in Claude Desktop. Look for a tools/hammer icon near the text input — this confirms the MCP server connected successfully.
+
+2. Try this prompt to confirm everything is working:
+
+   > Using your Hydrolix MCP tools, list the available databases.
+
+Claude should call the `list_databases` tool and return a list of databases from your cluster.
+
+---
+
+### Using Claude Code instead?
+
+If you prefer the command line, run this after completing [Step 2](#step-2--install-the-mcp-server):
+
+```bash
+claude mcp add --transport stdio hydrolix \
+  --env HYDROLIX_HOST=<your-hydrolix-hostname> \
+  --env HYDROLIX_USER=<your-username> \
+  --env HYDROLIX_PASSWORD=<your-password> \
+  -- mcp-hydrolix
+```
+
+Then open Claude Code and test with the same prompt:
+
+> Using your Hydrolix MCP tools, list the available databases.
+
 ## Tools
 
 * `run_select_query`
