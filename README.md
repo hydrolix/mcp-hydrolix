@@ -53,6 +53,7 @@ pip install mcp-hydrolix
 1. Open the Claude Desktop configuration file:
    - **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
    - **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
+   - **Linux:** `~/.config/Claude/claude_desktop_config.json`
 
 2. Add the following entry to the `"mcpServers"` object (create the file with this content if it doesn't exist yet):
 
@@ -77,7 +78,11 @@ Replace `<your-hydrolix-hostname>`, `<your-username>`, and `<your-password>` wit
 
 > **Using a service account token instead of username/password?** See [Authentication](#authentication).
 
-> **Command not found?** If Claude Desktop can't find `mcp-hydrolix`, replace `"command": "mcp-hydrolix"` with the full path to the binary. Find it by running `which mcp-hydrolix` (macOS/Linux) or `where.exe mcp-hydrolix` (Windows) in your terminal.
+> **Command not found?** Claude Desktop launches without your shell's PATH, so it may not locate the `mcp-hydrolix` binary even if installation succeeded. Find the full path by running the appropriate command in your terminal and use it as the `"command"` value in the config:
+> - **macOS / Linux:** `which mcp-hydrolix`
+> - **Windows:** `where.exe mcp-hydrolix`
+>
+> If `which`/`where.exe` returns nothing, your install location isn't on your PATH. For uv, try `uv tool dir` to find where tools are installed. For pip, run `pip show mcp-hydrolix` and look at the `Location` field, then check `../../../bin/` (macOS/Linux) or `..\Scripts\` (Windows) relative to it.
 
 ### Step 4 — Restart Claude Desktop
 
@@ -106,6 +111,7 @@ claude mcp add --transport stdio hydrolix \
   --env HYDROLIX_HOST=<your-hydrolix-hostname> \
   --env HYDROLIX_USER=<your-username> \
   --env HYDROLIX_PASSWORD=<your-password> \
+  --env HYDROLIX_MCP_SERVER_TRANSPORT=stdio \
   -- mcp-hydrolix
 ```
 
