@@ -1,0 +1,39 @@
+on:
+  workflow_dispatch:
+
+jobs:
+  publish-feature-docker:
+    name: Publish feature branch to GAR
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+      - name: Compute image tag
+        id: tag
+        shell: bash
+        run: |
+          SANITIZED=$(echo "$GITHUB_REF_NAME" | sed 's/[^a-zA-Z0-9._-]/-/g')
+          SHORT_SHA="${GITHUB_SHA::7}"
+          echo "tag=branch-${SANITIZED}-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+      - name: Authenticate GAR
+        uses: google-github-actions/auth@v3
+        with:
+          # Key ID: 98941823000cead5a61777398bd450e3e19539c3
+          credentials_json: ${{ secrets.GCP_GKE_CI_KEY }}
+      - name: Set up GCP SDK
+        uses: google-github-actions/setup-gcloud@v3
+      - name: Configure GAR for docker
+        run: gcloud auth configure-docker us-docker.pkg.dev --quiet
+      - name: Build docker image
+        shell: bash
+        run: |
+          docker buildx build \
+            -t us-docker.pkg.dev/hdx-art/t/mcp-hydrolix:${{ steps.tag.outputs.tag }} \
+            .
+      - name: Push docker image
+        shell: bash
+        run: |
+          docker push us-docker.pkg.dev/hdx-art/t/mcp-hydrolix:${{ steps.tag.outputs.tag }}
+      - name: Print image reference
+        run: |
+          echo "::notice::Image published: us-docker.pkg.dev/hdx-art/t/mcp-hydrolix:${{ steps.tag.outputs.tag }}"
