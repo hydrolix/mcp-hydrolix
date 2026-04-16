@@ -11,14 +11,6 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-import pytest
-
-
-pytestmark = pytest.mark.xfail(
-    reason="HDX-10675: awaiting implementation",
-    strict=True,
-)
-
 
 async def _collect_response(middleware, scope: dict[str, Any]) -> tuple[list[dict], list[dict]]:
     """Drive an ASGI middleware once and return (messages_sent, receive_calls).
