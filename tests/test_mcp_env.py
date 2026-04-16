@@ -30,18 +30,15 @@ def config(monkeypatch: pytest.MonkeyPatch) -> HydrolixConfig:
 
 
 class TestGracefulTimeout:
-    @pytest.mark.xfail(reason="HDX-10675: awaiting implementation", strict=True)
     def test_default_matches_mcp_timeout(self, config: HydrolixConfig) -> None:
         assert config.mcp_graceful_timeout == config.mcp_timeout
 
-    @pytest.mark.xfail(reason="HDX-10675: awaiting implementation", strict=True)
     def test_default_follows_mcp_timeout_override(
         self, config: HydrolixConfig, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("HYDROLIX_MCP_REQUEST_TIMEOUT", "42")
         assert config.mcp_graceful_timeout == 42
 
-    @pytest.mark.xfail(reason="HDX-10675: awaiting implementation", strict=True)
     def test_explicit_override(
         self, config: HydrolixConfig, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -51,10 +48,8 @@ class TestGracefulTimeout:
 
 
 class TestRemovedGunicornProperties:
-    @pytest.mark.xfail(reason="HDX-10675: awaiting implementation", strict=True)
     def test_mcp_max_requests_removed(self, config: HydrolixConfig) -> None:
         assert not hasattr(config, "mcp_max_requests")
 
-    @pytest.mark.xfail(reason="HDX-10675: awaiting implementation", strict=True)
     def test_mcp_max_requests_jitter_removed(self, config: HydrolixConfig) -> None:
         assert not hasattr(config, "mcp_max_requests_jitter")

@@ -53,7 +53,6 @@ class HydrolixConfig:
         HYDROLIX_MCP_WORKERS 1
         HYDROLIX_MCP_WORKER_CONNECTIONS 200
         HYDROLIX_MCP_MAX_REQUESTS 10000
-        HYDROLIX_MCP_MAX_REQUESTS_JITTER 1000
         HYDROLIX_MCP_MAX_KEEPALIVE 10
         HYDROLIX_MAX_RESULT_CELLS: Maximum number of cells (rows × columns) to return in a
             query result before truncating (default: 50000)
@@ -266,30 +265,21 @@ class HydrolixConfig:
         return int(os.getenv("HYDROLIX_MCP_WORKER_CONNECTIONS", 100))
 
     @property
-    def mcp_max_requests_jitter(self) -> int:
-        """Get the random parameter to randomize time process is reloaded after max_requests.
-
-        Only used when transport is "http" or "sse".
-        Default: 1000
-        """
-        return int(os.getenv("HYDROLIX_MCP_MAX_REQUESTS_JITTER", 1000))
-
-    @property
-    def mcp_max_requests(self) -> int:
-        """Get the max number of requests handled by worker before it is restarted.
-
-        Only used when transport is "http" or "sse".
-        Default: 10000
-        """
-        return int(os.getenv("HYDROLIX_MCP_MAX_REQUESTS", 10000))
-
-    @property
     def max_raw_timerange(self) -> int:
         """Get the max timerange in seconds for non-summary queries.
 
         Default: 21600 (6 hours)
         """
         return int(os.getenv("HYDROLIX_MAX_RAW_TIMERANGE", "21600"))
+
+    @property
+    def mcp_graceful_timeout(self) -> int:
+        """Get the seconds to wait for in-flight requests during shutdown.
+
+        Only used when transport is "http" or "sse".
+        Default: same as mcp_timeout
+        """
+        return int(os.getenv("HYDROLIX_MCP_GRACEFUL_TIMEOUT", self.mcp_timeout))
 
     @property
     def mcp_keepalive(self) -> int:
