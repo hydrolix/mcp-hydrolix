@@ -8,7 +8,7 @@ An MCP server for Hydrolix.
 
 ## Quickstart
 
-Get up and running in a few minutes. This guide covers Claude Desktop (the most common setup) and Claude Code.
+Get up and running in a few minutes. This section covers Claude Desktop and Claude Code.
 
 ### Step 1 — Prerequisites
 
