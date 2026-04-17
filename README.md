@@ -98,7 +98,7 @@ Replace `<your-hydrolix-hostname>`, `<your-username>`, and `<your-password>` wit
 
 Restart the app to apply the configuration.
 
-> **macOS / Windows users:** Make sure to fully quit Claude before restarting. On macOS, use the menu bar icon or press Cmd+Q. On Windows, use the system tray icon.
+> **macOS / Windows users:** Make sure to fully quit Claude before restarting. On macOS, press Cmd+Q or right-click the Dock icon and choose Quit. On Windows, use the system tray icon.
 
 ### Step 5 — Verify it's working
 
