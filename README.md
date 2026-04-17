@@ -23,7 +23,7 @@ Choose the method that matches your setup:
 
 **Option A: Using uv (recommended)**
 
-[uv](https://docs.astral.sh/uv/) manages Python automatically. If you don't have it, install it first:
+[uv](https://docs.astral.sh/uv/) manages Python automatically and downloads mcp-hydrolix on demand, so no separate install step is needed. If you don't have uv, install it:
 
 macOS / Linux:
 ```bash
@@ -33,11 +33,6 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 Windows (PowerShell):
 ```powershell
 powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
-```
-
-Then install the MCP server:
-```bash
-uv tool install mcp-hydrolix
 ```
 
 **Option B: Using pip**
@@ -61,7 +56,14 @@ pip install mcp-hydrolix
 {
   "mcpServers": {
     "mcp-hydrolix": {
-      "command": "mcp-hydrolix",
+      "command": "uvx",
+      "args": [
+        "--python",
+        "3.13",
+        "--refresh-package",
+        "mcp-hydrolix",
+        "mcp-hydrolix"
+      ],
       "env": {
         "HYDROLIX_HOST": "<your-hydrolix-hostname>",
         "HYDROLIX_USER": "<your-username>",
@@ -74,21 +76,29 @@ pip install mcp-hydrolix
 
 Replace `<your-hydrolix-hostname>`, `<your-username>`, and `<your-password>` with your actual credentials.
 
+> **Using Option B (pip)?** Use `"command": "mcp-hydrolix"` with no `"args"` field instead.
+
 > **Tip:** If the file already has other entries, add the `"mcp-hydrolix"` block inside the existing `"mcpServers"` object rather than replacing the whole file.
 
 > **Using a service account token instead of username/password?** See [Authentication](#authentication).
 
-> **Command not found?** Claude Desktop launches without your shell's PATH, so it may not locate the `mcp-hydrolix` binary even if installation succeeded. Find the full path by running the appropriate command in your terminal and use it as the `"command"` value in the config:
+> **Command not found?** Claude Desktop launches without your shell's PATH, so it may not locate the binary even if it is installed. Find the full path and use it as the `"command"` value in the config:
+>
+> Option A (uv): find `uvx`:
+> - **macOS / Linux:** `which uvx`
+> - **Windows:** `where.exe uvx`
+>
+> Option B (pip): find `mcp-hydrolix`:
 > - **macOS / Linux:** `which mcp-hydrolix`
 > - **Windows:** `where.exe mcp-hydrolix`
 >
-> If `which`/`where.exe` returns nothing, your install location isn't on your PATH. For uv, try `uv tool dir --bin` to find where tools are installed. For pip, run `python3 -c "import sysconfig; print(sysconfig.get_path('scripts'))"` (macOS/Linux) or `python -c "import sysconfig; print(sysconfig.get_path('scripts'))"` (Windows) — this prints the directory where pip placed the executable. Run it using the same Python interpreter you used to pip install (e.g., activate your virtual environment first if you used one).
+> If `which`/`where.exe` returns nothing, the install location isn't on your PATH. For pip, run `python3 -c "import sysconfig; print(sysconfig.get_path('scripts'))"` (macOS/Linux) or `python -c "import sysconfig; print(sysconfig.get_path('scripts'))"` (Windows) to find where pip placed the executable. Run it using the same Python interpreter you used to pip install (e.g., activate your virtual environment first if you used one).
 
 ### Step 4 — Restart Claude Desktop
 
 Restart the app to apply the configuration.
 
-> **Windows users:** Make sure to fully quit Claude via the system tray icon before restarting.
+> **macOS / Windows users:** Make sure to fully quit Claude before restarting. On macOS, use the menu bar icon or press Cmd+Q. On Windows, use the system tray icon.
 
 ### Step 5 — Verify it's working
 
@@ -104,7 +114,7 @@ Claude should call the `list_databases` tool and return a list of databases from
 
 ### Using Claude Code instead?
 
-If you prefer the command line, run this after completing [Step 2](#step-2--install-the-mcp-server):
+If you prefer the command line, make sure uv is installed (Option A from [Step 2](#step-2--install-the-mcp-server)), then run:
 
 ```bash
 claude mcp add --transport stdio hydrolix \
@@ -112,7 +122,7 @@ claude mcp add --transport stdio hydrolix \
   --env HYDROLIX_USER=<your-username> \
   --env HYDROLIX_PASSWORD=<your-password> \
   --env HYDROLIX_MCP_SERVER_TRANSPORT=stdio \
-  -- mcp-hydrolix
+  -- uvx --python 3.13 --refresh-package mcp-hydrolix mcp-hydrolix
 ```
 
 Then open Claude Code and test with the same prompt:
@@ -182,13 +192,12 @@ MCP Server definition using username and password (JSON):
 
 ```json
 {
-  "command": "uv",
+  "command": "uvx",
   "args": [
-    "run",
-    "--with",
-    "mcp-hydrolix",
     "--python",
     "3.13",
+    "--refresh-package",
+    "mcp-hydrolix",
     "mcp-hydrolix"
   ],
   "env": {
@@ -203,13 +212,12 @@ MCP Server definition using service account token (JSON):
 
 ```json
 {
-  "command": "uv",
+  "command": "uvx",
   "args": [
-    "run",
-    "--with",
-    "mcp-hydrolix",
     "--python",
     "3.13",
+    "--refresh-package",
+    "mcp-hydrolix",
     "mcp-hydrolix"
   ],
   "env": {
@@ -222,13 +230,12 @@ MCP Server definition using service account token (JSON):
 MCP Server definition using username and password (YAML):
 
 ```yaml
-command: uv
+command: uvx
 args:
-- run
-- --with
-- mcp-hydrolix
 - --python
 - "3.13"
+- --refresh-package
+- mcp-hydrolix
 - mcp-hydrolix
 env:
   HYDROLIX_HOST: <hydrolix-host>
@@ -239,13 +246,12 @@ env:
 MCP Server definition using service account token (YAML):
 
 ```yaml
-command: uv
+command: uvx
 args:
-- run
-- --with
-- mcp-hydrolix
 - --python
 - "3.13"
+- --refresh-package
+- mcp-hydrolix
 - mcp-hydrolix
 env:
   HYDROLIX_HOST: <hydrolix-host>
@@ -264,13 +270,12 @@ env:
 {
   "mcpServers": {
     "mcp-hydrolix": {
-      "command": "uv",
+      "command": "uvx",
       "args": [
-        "run",
-        "--with",
-        "mcp-hydrolix",
         "--python",
         "3.13",
+        "--refresh-package",
+        "mcp-hydrolix",
         "mcp-hydrolix"
       ],
       "env": {
@@ -289,13 +294,12 @@ To leverage service account use the following config block:
 {
   "mcpServers": {
     "mcp-hydrolix": {
-      "command": "uv",
+      "command": "uvx",
       "args": [
-        "run",
-        "--with",
-        "mcp-hydrolix",
         "--python",
         "3.13",
+        "--refresh-package",
+        "mcp-hydrolix",
         "mcp-hydrolix"
       ],
       "env": {
@@ -309,7 +313,7 @@ To leverage service account use the following config block:
 
 3. Update the environment variable definitions to point to your Hydrolix cluster.
 
-4. (Recommended) Locate the command entry for `uv` and replace it with the absolute path to the `uv` executable. This ensures that the correct version of `uv` is used when starting the server. You can find this path using `which uv` or `where.exe uv`.
+4. (Recommended) Locate the command entry for `uvx` and replace it with the absolute path to the `uvx` executable. This ensures that the correct version of `uvx` is used when starting the server. You can find this path using `which uvx` or `where.exe uvx`.
 
 5. Restart Claude Desktop to apply the changes. If you are using Windows, ensure Claude is stopped completely by closing the client using the system tray icon.
 
@@ -323,7 +327,7 @@ claude mcp add --transport stdio hydrolix \
   --env HYDROLIX_PASSWORD=<hydrolix-password> \
   --env HYDROLIX_HOST=<hydrolix-host> \
   --env HYDROLIX_MCP_SERVER_TRANSPORT=stdio \
-  -- uv run --with mcp-hydrolix --python 3.13 mcp-hydrolix
+  -- uvx --python 3.13 --refresh-package mcp-hydrolix mcp-hydrolix
 ```
 
 ### Environment Variables
