@@ -3,8 +3,8 @@
 Focused on changes introduced for the gunicorn -> uvicorn migration:
   * the ``mcp_graceful_timeout`` property exists, defaults to ``mcp_timeout``,
     and can be overridden by ``HYDROLIX_MCP_GRACEFUL_TIMEOUT``
-  * the gunicorn-specific ``mcp_max_requests`` and ``mcp_max_requests_jitter``
-    properties have been removed
+  * the worker-recycling knobs ``mcp_max_requests`` and ``mcp_max_requests_jitter``
+    are preserved (now backed by ``MaxRequestsMiddleware`` instead of gunicorn)
 """
 
 from __future__ import annotations
@@ -47,9 +47,27 @@ class TestGracefulTimeout:
         assert config.mcp_graceful_timeout == 7
 
 
-class TestRemovedGunicornProperties:
-    def test_mcp_max_requests_removed(self, config: HydrolixConfig) -> None:
-        assert not hasattr(config, "mcp_max_requests")
+class TestMaxRequestsRecycling:
+    def test_mcp_max_requests_default(self, config: HydrolixConfig) -> None:
+        assert config.mcp_max_requests == 10000
 
-    def test_mcp_max_requests_jitter_removed(self, config: HydrolixConfig) -> None:
-        assert not hasattr(config, "mcp_max_requests_jitter")
+    def test_mcp_max_requests_jitter_default(self, config: HydrolixConfig) -> None:
+        assert config.mcp_max_requests_jitter == 1000
+
+    def test_mcp_max_requests_override(
+        self, config: HydrolixConfig, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("HYDROLIX_MCP_MAX_REQUESTS", "500")
+        assert config.mcp_max_requests == 500
+
+    def test_mcp_max_requests_jitter_override(
+        self, config: HydrolixConfig, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("HYDROLIX_MCP_MAX_REQUESTS_JITTER", "50")
+        assert config.mcp_max_requests_jitter == 50
+
+    def test_mcp_max_requests_disabled_with_zero(
+        self, config: HydrolixConfig, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("HYDROLIX_MCP_MAX_REQUESTS", "0")
+        assert config.mcp_max_requests == 0

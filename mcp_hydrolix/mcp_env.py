@@ -53,6 +53,7 @@ class HydrolixConfig:
         HYDROLIX_MCP_WORKERS 1
         HYDROLIX_MCP_WORKER_CONNECTIONS 200
         HYDROLIX_MCP_MAX_REQUESTS 10000
+        HYDROLIX_MCP_MAX_REQUESTS_JITTER 1000
         HYDROLIX_MCP_MAX_KEEPALIVE 10
         HYDROLIX_MAX_RESULT_CELLS: Maximum number of cells (rows × columns) to return in a
             query result before truncating (default: 50000)
@@ -280,6 +281,31 @@ class HydrolixConfig:
         Default: same as mcp_timeout
         """
         return int(os.getenv("HYDROLIX_MCP_GRACEFUL_TIMEOUT", self.mcp_timeout))
+
+    @property
+    def mcp_max_requests(self) -> int:
+        """Max HTTP requests a worker serves before being gracefully recycled.
+
+        Wired into uvicorn's ``limit_max_requests`` setting
+        (https://www.uvicorn.org/settings/#resource-limits), which parallels
+        gunicorn's ``max_requests``. Only effective when transport is "http"
+        or "sse" AND mcp_workers > 1 — single-worker mode has no supervisor
+        to respawn the process, so ``main.py`` passes ``None`` to uvicorn in
+        that case.
+
+        Set to 0 to disable. Default: 10000.
+        """
+        return int(os.getenv("HYDROLIX_MCP_MAX_REQUESTS", 10000))
+
+    @property
+    def mcp_max_requests_jitter(self) -> int:
+        """Random jitter added to ``mcp_max_requests`` per worker.
+
+        Wired into uvicorn's ``limit_max_requests_jitter`` setting, which
+        parallels gunicorn's ``max_requests_jitter``. Prevents all workers
+        from recycling simultaneously (thundering herd). Default: 1000.
+        """
+        return int(os.getenv("HYDROLIX_MCP_MAX_REQUESTS_JITTER", 1000))
 
     @property
     def mcp_keepalive(self) -> int:

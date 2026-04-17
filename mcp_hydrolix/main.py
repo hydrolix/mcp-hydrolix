@@ -11,11 +11,6 @@ from . import metrics
 from .log import setup_logging
 from .mcp_env import TransportType, get_config
 from .mcp_server import mcp
-from .middleware import (
-    BackpressureMiddleware,
-    RequestBodySizeLimitMiddleware,
-    RequestTimeoutMiddleware,
-)
 
 
 def _mark_worker_dead() -> None:
@@ -49,38 +44,30 @@ def main():
     http_transports = [TransportType.HTTP.value, TransportType.SSE.value]
     if transport in http_transports:
         # Use the configured bind host (defaults to 127.0.0.1, can be set to 0.0.0.0)
-        # and bind port (defaults to 8000)
-        workers = config.mcp_workers
-        if workers == 1:
-            log_dict_config = setup_logging(None, "INFO", "json")
-            lconfig.dictConfig(log_dict_config)
-            mcp.run(
-                transport=transport,
-                host=config.mcp_bind_host,
-                port=config.mcp_bind_port,
-                uvicorn_config={"log_config": log_dict_config},
-                stateless_http=True,
-            )
-        else:
-            log_dict_config = setup_logging(None, "INFO", "json")
-            lconfig.dictConfig(log_dict_config)
-
-            app = mcp.http_app(path="/mcp", stateless_http=True, transport=transport)
-            app = BackpressureMiddleware(app, limit=config.mcp_worker_connections)
-            app = RequestTimeoutMiddleware(app, timeout=config.mcp_timeout)
-            app = RequestBodySizeLimitMiddleware(app)
-            uvicorn.run(
-                app,
-                host=config.mcp_bind_host,
-                port=config.mcp_bind_port,
-                workers=config.mcp_workers,
-                timeout_keep_alive=config.mcp_keepalive,
-                limit_concurrency=config.mcp_worker_connections,
-                log_config=log_dict_config,
-                access_log=False,
-                server_header=False,
-                timeout_graceful_shutdown=config.mcp_graceful_timeout,
-            )
+        # and bind port (defaults to 8000).
+        # Uvicorn requires an import string (not an app instance) to support
+        # workers > 1, since each child process re-imports the factory.
+        log_dict_config = setup_logging(None, "INFO", "json")
+        lconfig.dictConfig(log_dict_config)
+        uvicorn.run(
+            "mcp_hydrolix.webapp:create_app",
+            factory=True,
+            host=config.mcp_bind_host,
+            port=config.mcp_bind_port,
+            workers=config.mcp_workers,
+            timeout_keep_alive=config.mcp_keepalive,
+            limit_concurrency=config.mcp_worker_connections,
+            limit_max_requests=(
+                config.mcp_max_requests
+                if config.mcp_workers > 1 and config.mcp_max_requests > 0
+                else None
+            ),
+            limit_max_requests_jitter=config.mcp_max_requests_jitter,
+            log_config=log_dict_config,
+            access_log=False,
+            server_header=False,
+            timeout_graceful_shutdown=config.mcp_graceful_timeout,
+        )
     else:
         # For stdio transport, no host or port is needed
         log_dict_config = setup_logging(None, "INFO", "json")
