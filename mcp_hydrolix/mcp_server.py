@@ -15,6 +15,7 @@ import clickhouse_connect
 import sqlglot
 import sqlglot.errors as sqlglot_errors
 import sqlglot.expressions as sqlglot_exp
+import urllib3
 from clickhouse_connect import common
 from clickhouse_connect.driver import httputil
 from clickhouse_connect.driver.binding import format_query_value
@@ -127,8 +128,6 @@ pool_kwargs: dict[str, Any] = {
 if HYDROLIX_CONFIG.verify:
     pool_kwargs["ca_cert"] = "certifi"
 else:
-    import urllib3
-
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 client_shared_pool = httputil.get_pool_manager(**pool_kwargs)
@@ -220,7 +219,6 @@ async def execute_query(
     parameters: Optional[Dict[str, Any]] = None,
     extra_settings: Optional[Dict[str, Any]] = None,
 ) -> HdxQueryResult:
-    m = metrics.get_instance()
     start = time.perf_counter()
     status = "success"
     try:
@@ -249,13 +247,11 @@ async def execute_query(
         status = "error"
         raise ToolError(f"Query execution failed: {str(err)}")
     finally:
-        if m is not None:
-            m.queries_total.labels(status=status).inc()
-            m.query_duration_seconds.observe(time.perf_counter() - start)
+        metrics.METRICS.queries_total.labels(status=status).inc()
+        metrics.METRICS.query_duration_seconds.observe(time.perf_counter() - start)
 
 
 async def execute_cmd(query: str):
-    m = metrics.get_instance()
     start = time.perf_counter()
     status = "success"
     try:
@@ -270,9 +266,8 @@ async def execute_cmd(query: str):
         status = "error"
         raise ToolError(f"Command execution failed: {str(err)}")
     finally:
-        if m is not None:
-            m.queries_total.labels(status=status).inc()
-            m.query_duration_seconds.observe(time.perf_counter() - start)
+        metrics.METRICS.queries_total.labels(status=status).inc()
+        metrics.METRICS.query_duration_seconds.observe(time.perf_counter() - start)
 
 
 @mcp.custom_route("/health", methods=["GET"])
@@ -302,15 +297,10 @@ if HYDROLIX_CONFIG.metrics_enabled:
 
     class MetricsMiddleware(Middleware):
         async def on_request(self, context: MiddlewareContext, call_next) -> Any:
-            m = metrics.get_instance()
-            if (
-                m is None
-            ):  # defensive — should not happen since middleware is only added when metrics are enabled
-                return await call_next(context)
             if context.method != "tools/call":
                 return await call_next(context)
             tool_name = context.message.name
-            m.active_requests.inc()
+            metrics.METRICS.active_requests.inc()
             start = time.perf_counter()
             status = "success"
             try:
@@ -320,11 +310,11 @@ if HYDROLIX_CONFIG.metrics_enabled:
                 status = "error"
                 raise
             finally:
-                m.tool_calls_total.labels(tool=tool_name, status=status).inc()
-                m.tool_call_duration_seconds.labels(tool=tool_name).observe(
+                metrics.METRICS.tool_calls_total.labels(tool=tool_name, status=status).inc()
+                metrics.METRICS.tool_call_duration_seconds.labels(tool=tool_name).observe(
                     time.perf_counter() - start
                 )
-                m.active_requests.dec()
+                metrics.METRICS.active_requests.dec()
 
     mcp.add_middleware(MetricsMiddleware())
 
