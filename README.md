@@ -65,6 +65,18 @@ When multiple authentication methods are configured, the server will use the fir
 
 **Note: Using a service account token with a readonly role is recommended.**
 
+#### OAuth 2.1 (opt-in)
+
+For remote transports the server can additionally act as an OAuth 2.1
+resource server, verifying RS256 bearer tokens from a Keycloak realm
+before forwarding them to Hydrolix. OAuth is opt-in via
+`HYDROLIX_OAUTH_ISSUER`; when unset, the server behaves exactly as
+described above. A bearer that fails OAuth verification falls back to
+the legacy service-account JWT path, so existing callers keep working
+when OAuth is enabled. See [docs/oauth.md](docs/oauth.md) for operator
+setup, env var reference, and deployment topology (in-cluster vs
+out-of-cluster).
+
 MCP Server definition using username and password (JSON):
 
 ```json
@@ -255,6 +267,19 @@ If no credentials are provided via the environment or the request, the request w
 * `HYDROLIX_MAX_RAW_TIMERANGE`: Maximum time range in seconds allowed for queries against non-summary tables
   * Default: `21600` (6 hours)
   * Queries targeting summary tables are not affected by this limit
+
+#### OAuth Variables (optional, HTTP/SSE only)
+
+Setting `HYDROLIX_OAUTH_ISSUER` turns the MCP server into an OAuth 2.1
+resource server for bearer tokens; see [docs/oauth.md](docs/oauth.md)
+for full semantics.
+
+* `HYDROLIX_OAUTH_ISSUER`: OIDC issuer URL (presence activates OAuth mode)
+* `HYDROLIX_OAUTH_AUDIENCE`: comma-separated accepted `aud` values (required when OAuth is active)
+* `HYDROLIX_OAUTH_JWKS_URI`: override the JWKS endpoint (default: discovered from issuer; set this for in-cluster backchannel)
+* `HYDROLIX_OAUTH_REQUIRED_SCOPES`: comma-separated scopes required on every token
+* `HYDROLIX_OAUTH_RESOURCE_URL`: base URL of this MCP server used in RFC 9728 metadata (set when behind a reverse proxy)
+* `HYDROLIX_OAUTH_ALLOW_INSECURE_JWKS`: set to `"true"` to permit a plain-HTTP JWKS URI (only for trusted in-cluster backchannels)
 
 
 For MCP Inspector or remote access with HTTP transport:

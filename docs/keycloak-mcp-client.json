@@ -1,0 +1,35 @@
+{
+  "clientId": "mcp-hydrolix",
+  "name": "mcp-hydrolix",
+  "description": "Public OIDC client for MCP clients (Claude Desktop, MCP Inspector, custom agents) that obtain tokens accepted by mcp-hydrolix.",
+  "enabled": true,
+  "publicClient": true,
+  "standardFlowEnabled": true,
+  "implicitFlowEnabled": false,
+  "directAccessGrantsEnabled": false,
+  "serviceAccountsEnabled": false,
+  "authorizationServicesEnabled": false,
+  "protocol": "openid-connect",
+  "redirectUris": [
+    "http://127.0.0.1:*",
+    "http://localhost:*"
+  ],
+  "webOrigins": ["+"],
+  "attributes": {
+    "pkce.code.challenge.method": "S256",
+    "post.logout.redirect.uris": "+"
+  },
+  "protocolMappers": [
+    {
+      "name": "mcp-hydrolix-audience",
+      "protocol": "openid-connect",
+      "protocolMapper": "oidc-audience-mapper",
+      "consentRequired": false,
+      "config": {
+        "included.client.audience": "mcp-hydrolix",
+        "id.token.claim": "false",
+        "access.token.claim": "true"
+      }
+    }
+  ]
+}

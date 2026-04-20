@@ -32,6 +32,7 @@ dev = [
     "pytest-asyncio",
     "pre-commit",
     "mcp-clickhouse==0.1.13",
+    "respx>=0.23.1",
 ]
 
 [tool.hatch.build.targets.wheel]

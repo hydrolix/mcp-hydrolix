@@ -1,4 +1,6 @@
+import asyncio
 import atexit
+import logging
 import logging.config as lconfig
 import os
 import shutil
@@ -9,9 +11,34 @@ from gunicorn.app.base import BaseApplication
 from prometheus_client import multiprocess as prom_multiprocess
 
 from . import metrics
+from .auth.oauth import load_oauth_config, try_activate_oauth
 from .log import setup_logging
 from .mcp_env import TransportType, get_config
 from .mcp_server import mcp
+
+logger = logging.getLogger("mcp-hydrolix")
+
+
+def _maybe_activate_oauth() -> None:
+    """Swap `mcp.auth` to an OAuth provider when HYDROLIX_OAUTH_ISSUER is set.
+
+    Fail-open: configuration parsing errors propagate (operator must fix), but
+    network / discovery failures are logged and the server keeps running with
+    the legacy credential chain.
+    """
+    cfg = load_oauth_config()  # may raise OAuthConfigError for malformed input
+    if cfg is None:
+        return
+    provider = asyncio.run(try_activate_oauth(cfg))
+    if provider is None:
+        return
+    logger.info(
+        "OAuth activated: issuer=%s audience=%s required_scopes=%s",
+        cfg.issuer,
+        list(cfg.audience),
+        list(cfg.required_scopes),
+    )
+    mcp.auth = provider
 
 
 def _child_exit(_server, worker) -> None:
@@ -65,6 +92,10 @@ def main():
     # For HTTP and SSE transports, we need to specify host and port
     http_transports = [TransportType.HTTP.value, TransportType.SSE.value]
     if transport in http_transports:
+        # OAuth is only relevant for remote transports — stdio clients supply
+        # tokens out-of-band. Activation is fail-open: network errors during
+        # discovery fall back to legacy credential-chain auth.
+        _maybe_activate_oauth()
         # Use the configured bind host (defaults to 127.0.0.1, can be set to 0.0.0.0)
         # and bind port (defaults to 8000)
         workers = config.mcp_workers
