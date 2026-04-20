@@ -9,6 +9,7 @@ socket.
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import Any
 
 
@@ -74,7 +75,7 @@ def test_request_timeout_middleware_returns_504_on_timeout():
     assert starts[0]["status"] == 504
 
 
-def test_request_timeout_middleware_returns_504_on_timeout_after_headers():
+def test_request_timeout_middleware_truncates_on_timeout_after_headers(caplog):
     from mcp_hydrolix.middleware import RequestTimeoutMiddleware
 
     async def app(scope, receive, send):
@@ -83,11 +84,19 @@ def test_request_timeout_middleware_returns_504_on_timeout_after_headers():
         await send({"type": "http.response.body", "body": b"ok"})
 
     middleware = RequestTimeoutMiddleware(app, timeout=0.2)
-    sent, _ = asyncio.run(_collect_response(middleware, _http_scope()))
+    with caplog.at_level(logging.WARNING, logger="mcp_hydrolix.middleware"):
+        sent, _ = asyncio.run(_collect_response(middleware, _http_scope()))
 
     starts = [m for m in sent if m["type"] == "http.response.start"]
-    assert len(starts) == 1, "expected an http.response.start message"
-    assert starts[0]["status"] == 504
+    assert len(starts) == 1, "must not emit a second http.response.start"
+    assert starts[0]["status"] == 200, "original app status must be preserved"
+
+    bodies = [m for m in sent if m["type"] == "http.response.body"]
+    assert len(bodies) == 0, "app body after timeout must not be delivered"
+
+    assert any(
+        r.levelno == logging.WARNING and "timeout" in r.getMessage() for r in caplog.records
+    ), "expected a WARNING log mentioning the timeout"
 
 
 def test_request_timeout_middleware_ignores_non_http_scope():

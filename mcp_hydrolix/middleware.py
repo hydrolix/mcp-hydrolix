@@ -1,8 +1,11 @@
 """ASGI middleware for production hardening."""
 
 import asyncio
+import logging
 
 from starlette.responses import PlainTextResponse
+
+logger = logging.getLogger(__name__)
 
 
 class RequestTimeoutMiddleware:
@@ -23,8 +26,14 @@ class RequestTimeoutMiddleware:
     See https://docs.gunicorn.org/en/stable/settings.html#timeout.
 
     This middleware is a bit more gentle: it kills ONLY the offending request, and
-    does so by sending a `504 Gateway Timeout` to the client, leaving other requests
-    in progress.
+    does so by sending a `504 Gateway Timeout` to the client if possible, leaving other
+    requests in progress.
+
+    If the timeout fires *after* the wrapped app has already emitted
+    `http.response.start`, we cannot rewrite the status line -- ASGI forbids a
+    second start message. In that case we log a warning and return; the
+    underlying server truncates the response, which HTTP/1.1 (RFC 9112) and
+    HTTP/2 both define as a client-detectable (legal) incomplete response.
     """
 
     def __init__(self, app, timeout: float = 120.0):
@@ -35,7 +44,23 @@ class RequestTimeoutMiddleware:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
+
+        started = False
+
+        async def send_wrapper(message):
+            nonlocal started
+            if message["type"] == "http.response.start":
+                started = True
+            await send(message)
+
         try:
-            await asyncio.wait_for(self.app(scope, receive, send), timeout=self.timeout)
+            await asyncio.wait_for(self.app(scope, receive, send_wrapper), timeout=self.timeout)
         except asyncio.TimeoutError:
-            await PlainTextResponse("Gateway Timeout", status_code=504)(scope, receive, send)
+            if not started:
+                await PlainTextResponse("Gateway Timeout", status_code=504)(scope, receive, send)
+            else:
+                logger.warning(
+                    "Request timeout after response started: %s %s",
+                    scope.get("method"),
+                    scope.get("path"),
+                )
