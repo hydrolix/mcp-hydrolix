@@ -70,7 +70,23 @@ def test_request_timeout_middleware_returns_504_on_timeout():
     sent, _ = asyncio.run(_collect_response(middleware, _http_scope()))
 
     starts = [m for m in sent if m["type"] == "http.response.start"]
-    assert starts, "expected an http.response.start message"
+    assert len(starts) == 1, "expected an http.response.start message"
+    assert starts[0]["status"] == 504
+
+
+def test_request_timeout_middleware_returns_504_on_timeout_after_headers():
+    from mcp_hydrolix.middleware import RequestTimeoutMiddleware
+
+    async def app(scope, receive, send):
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        await asyncio.sleep(2.0)
+        await send({"type": "http.response.body", "body": b"ok"})
+
+    middleware = RequestTimeoutMiddleware(app, timeout=0.2)
+    sent, _ = asyncio.run(_collect_response(middleware, _http_scope()))
+
+    starts = [m for m in sent if m["type"] == "http.response.start"]
+    assert len(starts) == 1, "expected an http.response.start message"
     assert starts[0]["status"] == 504
 
 
