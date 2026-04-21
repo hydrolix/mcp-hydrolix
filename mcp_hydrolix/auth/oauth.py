@@ -24,7 +24,7 @@ from mcp.server.auth.middleware.bearer_auth import BearerAuthBackend
 from starlette.middleware import Middleware
 from starlette.middleware.authentication import AuthenticationMiddleware
 
-from mcp_hydrolix.auth.credentials import HydrolixCredential, ServiceAccountToken
+from mcp_hydrolix.auth.credentials import HydrolixCredential
 from mcp_hydrolix.auth.mcp_providers import (
     TOKEN_PARAM,
     AccessToken,
@@ -153,35 +153,6 @@ class _OAuthAccessToken(AccessToken):
         )
 
 
-class _SATokenVerifier:
-    """Verifier for legacy service-account JWTs — the fallback when OAuth fails.
-
-    Matches `HydrolixCredentialChain` semantics: validates the JWT's claims
-    (`iss`, `iat`, `exp`) but not its signature (SA signing keys are not
-    publicly hosted, so `clickhouse-connect` validates at query time). Junk
-    bearers that aren't JWTs at all return `None` here, so the combined
-    chain rejects them with 401.
-    """
-
-    def __init__(self, expected_issuer: Optional[str]):
-        self._expected_issuer = expected_issuer
-
-    async def verify_token(self, token: str):
-        try:
-            ServiceAccountToken(token, self._expected_issuer)
-        except Exception:
-            return None
-        return HydrolixCredentialChain.ServiceAccountAccess(
-            token=token,
-            client_id=HydrolixCredentialChain.ServiceAccountAccess.FAKE_CLIENT_ID,
-            scopes=[HydrolixCredentialChain.ServiceAccountAccess.FAKE_SCOPE],
-            expires_at=None,
-            resource=None,
-            claims={},
-            expected_issuer=self._expected_issuer,
-        )
-
-
 class OAuthHydrolixAuthProvider(RemoteAuthProvider):
     """AuthProvider that accepts verified OAuth bearer tokens, with legacy SA fallback.
 
@@ -208,7 +179,7 @@ class OAuthHydrolixAuthProvider(RemoteAuthProvider):
             resource_name="mcp-hydrolix",
         )
         self._oauth_cfg = cfg
-        self._sa_verifier = _SATokenVerifier(sa_expected_issuer)
+        self._sa_verifier = HydrolixCredentialChain(sa_expected_issuer)
 
     async def verify_token(self, token: str) -> Optional[_OAuthAccessToken]:
         verified = await self.token_verifier.verify_token(token)

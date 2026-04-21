@@ -1,5 +1,6 @@
 """Authentication backends and providers for MCP Hydrolix server."""
 
+import logging
 import time
 from abc import abstractmethod, ABC
 from typing import List, ClassVar, Final, Optional
@@ -19,6 +20,8 @@ from starlette.middleware.authentication import AuthenticationMiddleware
 from starlette.requests import HTTPConnection, Request
 
 from mcp_hydrolix.auth.credentials import HydrolixCredential, ServiceAccountToken
+
+logger = logging.getLogger("mcp-hydrolix")
 
 TOKEN_PARAM: Final[str] = "token"
 
@@ -41,7 +44,18 @@ class ChainedAuthBackend(AuthenticationBackend):
                 if (result := await backend.authenticate(conn)) is not None:
                     yield result
 
-        return await anext(successful_results(), None)
+        result = await anext(successful_results(), None)
+        if result is None:
+            # Terminal fallthrough: no backend accepted the credential. Individual backends
+            # log their structured reason at DEBUG; this is the single INFO-level breadcrumb
+            # operators see on a real 401. No token or header content is included.
+            req = Request(conn.scope)
+            logger.info(
+                "Authentication failed: no backend accepted credential (method=%s path=%s)",
+                req.method,
+                req.url.path,
+            )
+        return result
 
 
 class GetParamAuthBackend(AuthenticationBackend):
@@ -108,10 +122,25 @@ class HydrolixCredentialChain(AuthProvider):
 
     async def verify_token(self, token: str) -> AccessToken | None:
         """
-        This is responsible for validating and authenticating the `token`.
+        Validate and authenticate a service-account `token`.
+
         See ChainedAuthBackend for how the token is obtained in the first place.
-        Authorization is performed by individual endpoints via `fastmcp.server.dependencies.get_access_token`
+        Authorization is performed by individual endpoints via `fastmcp.server.dependencies.get_access_token`.
+
+        Returns None for any token that is not a parseable service-account JWT with
+        valid iss/iat/exp claims, so the middleware chain rejects with 401 (or falls
+        through to another backend). Signature verification is skipped here because
+        SA signing keys are not publicly hosted -- clickhouse-connect re-validates
+        at query time.
         """
+        try:
+            ServiceAccountToken(token, self.expected_issuer)
+        except Exception as exc:
+            # Any failure to construct a ServiceAccountToken (malformed JWT, wrong
+            # issuer, expired, missing claims, etc.) means this isn't a valid SA token.
+            # Exception type name only -- never the token or claim values.
+            logger.debug("SA token rejected: %s", type(exc).__name__)
+            return None
         return HydrolixCredentialChain.ServiceAccountAccess(
             token=token,
             client_id=HydrolixCredentialChain.ServiceAccountAccess.FAKE_CLIENT_ID,
