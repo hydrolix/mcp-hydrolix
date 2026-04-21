@@ -61,18 +61,12 @@ _MetricT = TypeVar("_MetricT", Counter, Gauge, Histogram)
 
 
 class _PidGuarded(Generic[_MetricT]):
-    """
-    Decorator pinning a prometheus collector to its construction PID.
+    """Decorator pinning a prometheus collector to its construction PID.
 
-    Any access from a process other than the one that constructed the inner
-    collector raises ``RuntimeError``. This is the sole runtime check guarding
-    the multiprocess invariant: prometheus_client's mmap files are keyed by the
-    PID recorded at collector construction, so cross-process access corrupts
-    aggregation silently. Catching it here fails loudly instead.
-
-    ``labels`` wraps its return value in the same concrete guard subclass so
-    child collectors inherit both the guard and the static type of the parent.
-    Labeled wrappers are cached per label tuple, emulating prometheus's implementation
+    prometheus_client's mmap files are keyed by the PID recorded at collector
+    construction, so cross-process access corrupts aggregation silently. This
+    wrapper is the sole runtime check guarding that invariant -- any access
+    from a foreign process raises ``RuntimeError`` instead.
     """
 
     __slots__ = ("_inner", "_owner_pid", "_children")
@@ -97,6 +91,9 @@ class _PidGuarded(Generic[_MetricT]):
 
     def labels(self, *args: object, **kwargs: object) -> Self:
         self._check()
+        # Wrap the child in the same concrete guard subclass so static types
+        # flow through, and cache per label tuple (mirroring prometheus_client's
+        # own caching in MetricWrapperBase).
         key = (args, tuple(sorted(kwargs.items())))
         cached = self._children.get(key)
         if cached is None:

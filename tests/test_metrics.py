@@ -28,16 +28,13 @@ def _run_in_child(target: Callable[[], Any]) -> Any:
 
 
 def _probe_via_webapp_import() -> dict[str, str]:
-    """Import the worker entry path, report the shape of each METRICS collector.
-
-    Live collectors are wrapped in a ``_PidGuarded`` subclass, so peek through
-    the wrapper via its ``_inner`` slot. When metrics are disabled the value
-    is a ``_NoOpMetric`` (not wrapped) and reports its own type directly.
-    """
+    """Import the worker entry path, report the shape of each METRICS collector."""
     import mcp_hydrolix.webapp  # noqa: F401  # triggers mcp_server → metrics chain
     from mcp_hydrolix import metrics
     from mcp_hydrolix.metrics import _PidGuarded
 
+    # Live collectors are wrapped in a _PidGuarded subclass — peek through
+    # via _inner. Disabled metrics are a bare _NoOpMetric (not wrapped).
     def inner_name(collector: object) -> str:
         if isinstance(collector, _PidGuarded):
             return type(collector._inner).__name__
@@ -176,22 +173,18 @@ class _FakeCounter:
 
 
 def _touch_pid_guarded_counter_in_child(parent_pid: int) -> str:
-    """Build a ``_CounterGuarded`` that claims to belong to ``parent_pid``; try to use it.
+    """Build a ``_CounterGuarded`` owned by ``parent_pid``, then try to use it here.
 
-    Called inside a freshly spawned interpreter. The child's real PID differs
-    from ``parent_pid`` (which is the test process's PID), so the guard must
-    refuse the access with ``RuntimeError``.
-
-    We rebuild the guard in-process rather than shipping a pickled live
-    collector because ``prometheus_client`` collectors hold internal locks
-    that don't survive pickling, but the behavior under test is purely the
-    PID check — which only reads ``os.getpid()`` against a stored integer.
+    The child's real PID differs from ``parent_pid``, so the guard must
+    refuse with ``RuntimeError``.
     """
     from mcp_hydrolix.metrics import _PidGuardedCounter
 
-    # Construct with parent's PID as owner so _check() sees a mismatch
-    # against the child's actual os.getpid(). _FakeCounter is duck-typed as
-    # a Counter — runtime-only; static types are irrelevant in the child.
+    # Rebuild the guard in-process rather than shipping a pickled live
+    # collector: prometheus_client collectors hold internal locks that don't
+    # survive pickling, and the behavior under test is purely the PID check
+    # (os.getpid() vs a stored int), so a duck-typed fake is sufficient.
+    # owner_pid=parent_pid forces the mismatch _check() must catch.
     guard = _PidGuardedCounter(_FakeCounter(), owner_pid=parent_pid)  # type: ignore[arg-type]
 
     try:
@@ -215,12 +208,9 @@ class TestGuarded:
         assert "pid" in result.lower()
 
     def test_allows_same_process_access(self) -> None:
-        """Positive control: in-process access proceeds to the inner collector.
-
-        Exercises each concrete guard with its own method set — the types now
-        forbid, for example, ``_HistogramGuarded.inc``, so the test must route
-        each method through the guard that legitimately exposes it.
-        """
+        """Positive control: in-process access proceeds to the inner collector."""
+        # Route each method through the guard that legitimately exposes it —
+        # the types forbid e.g. _PidGuardedHistogram.inc.
         from mcp_hydrolix.metrics import _PidGuardedCounter, _PidGuardedGauge, _PidGuardedHistogram
 
         calls: list[tuple[str, tuple, dict]] = []

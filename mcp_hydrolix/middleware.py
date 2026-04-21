@@ -26,14 +26,8 @@ class RequestTimeoutMiddleware:
     See https://docs.gunicorn.org/en/stable/settings.html#timeout.
 
     This middleware is a bit more gentle: it kills ONLY the offending request, and
-    does so by sending a `504 Gateway Timeout` to the client if possible, leaving other
-    requests in progress.
-
-    If the timeout fires *after* the wrapped app has already emitted
-    `http.response.start`, we cannot rewrite the status line -- ASGI forbids a
-    second start message. In that case we log a warning and return; the
-    underlying server truncates the response, which HTTP/1.1 (RFC 9112) and
-    HTTP/2 both define as a client-detectable (legal) incomplete response.
+    does so by sending a `504 Gateway Timeout` to the client if possible, leaving
+    other requests in progress.
     """
 
     def __init__(self, app, timeout: float = 120.0):
@@ -59,6 +53,10 @@ class RequestTimeoutMiddleware:
             if not started:
                 await PlainTextResponse("Gateway Timeout", status_code=504)(scope, receive, send)
             else:
+                # ASGI forbids a second http.response.start, so we cannot rewrite
+                # the status line. Returning lets the server truncate the response,
+                # which HTTP/1.1 (RFC 9112) and HTTP/2 both define as a
+                # client-detectable (legal) incomplete response.
                 logger.warning(
                     "Request timeout after response started: %s %s",
                     scope.get("method"),
