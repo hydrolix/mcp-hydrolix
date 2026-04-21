@@ -7,20 +7,13 @@ When ``HYDROLIX_METRICS_ENABLED=true`` and ``HYDROLIX_MCP_WORKERS > 1``:
 1. The launcher (``main.py``) forces ``multiprocessing`` to the ``spawn`` start
    method and sets ``PROMETHEUS_MULTIPROC_DIR`` to a fresh, empty directory
    before uvicorn starts.
-2. Each uvicorn worker is a fresh interpreter that re-imports the webapp
-   factory, which pulls in this module. Import-time side effects pick up
-   ``PROMETHEUS_MULTIPROC_DIR`` and cause ``prometheus_client`` to choose its
-   multiprocess, mmap-backed value class; construct the ``METRICS`` dataclass
-   of real collectors; and register a ``mark_process_dead`` atexit handler.
+2. Collectors are built at import time from ``HYDROLIX_METRICS_ENABLED`` and
+   ``PROMETHEUS_MULTIPROC_DIR``.
 3. Any worker's ``/metrics`` endpoint uses ``MultiProcessCollector`` to merge
    every worker's mmap files into a single scrape response.
 
-When metrics are disabled, ``METRICS`` holds inert ``_NoOpMetric`` stand-ins. The
-default ``REGISTRY`` is not touched and no mmap files are created.
-
-Cross-process misuse is caught structurally by the ``_PidGuarded`` wrapper
-hierarchy below: collectors record ``os.getpid()`` at construction and refuse
-access from any other PID.
+When disabled, ``METRICS`` holds inert``_NoOpMetric`` stand-ins and the default
+``REGISTRY`` is untouched.
 """
 
 from __future__ import annotations
@@ -195,19 +188,18 @@ def _build_live() -> Metrics:
     )
 
 
-def _build_noop() -> Metrics:
-    return Metrics(
-        tool_calls_total=_NOOP,
-        tool_call_duration_seconds=_NOOP,
-        queries_total=_NOOP,
-        query_duration_seconds=_NOOP,
-        active_requests=_NOOP,
-    )
+_NOOP_METRICS: Final[Metrics] = Metrics(
+    tool_calls_total=_NOOP,
+    tool_call_duration_seconds=_NOOP,
+    queries_total=_NOOP,
+    query_duration_seconds=_NOOP,
+    active_requests=_NOOP,
+)
 
 
 _config: Final = get_config()
 _enabled: Final[bool] = _config.metrics_enabled
-METRICS: Final[Metrics] = _build_live() if _enabled else _build_noop()
+METRICS: Final[Metrics] = _build_live() if _enabled else _NOOP_METRICS
 
 
 def _mark_worker_dead() -> None:

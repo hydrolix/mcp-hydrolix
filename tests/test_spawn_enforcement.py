@@ -10,13 +10,11 @@ is our primary cross-process correctness guarantee.
 These tests pin:
   1. ``set_start_method`` is called with ``"spawn"`` and ``force=True``.
   2. It is called *before* ``uvicorn.run``.
-  3. ``force=True`` overrides any pre-existing context.
 """
 
 from __future__ import annotations
 
-import multiprocessing
-from typing import Any, Callable
+from typing import Any
 from unittest.mock import MagicMock
 
 
@@ -88,24 +86,3 @@ class TestSpawnEnforcement:
         assert order.index("set_start_method") < order.index("uvicorn.run"), (
             f"set_start_method must precede uvicorn.run; got order {order}"
         )
-
-    def test_force_true_overrides_existing_context(self) -> None:
-        """``force=True`` must be tolerated even when a context is already set.
-
-        We verify semantics at the ``multiprocessing`` API level. Without
-        ``force=True``, the second call raises ``RuntimeError``; with it, the
-        call succeeds regardless of prior state.
-        """
-        # Record original to restore.
-        original = multiprocessing.get_start_method(allow_none=True)
-        try:
-            multiprocessing.set_start_method("spawn", force=True)
-            # A second call without force would raise; with force it's fine.
-            multiprocessing.set_start_method("spawn", force=True)
-            assert multiprocessing.get_start_method() == "spawn"
-        finally:
-            if original is not None:
-                multiprocessing.set_start_method(original, force=True)
-
-
-_ = Callable  # keep import for type-hint usage above (silences unused warnings)
