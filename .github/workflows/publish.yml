@@ -78,7 +78,6 @@ jobs:
     permissions:
       id-token: write
       contents: write
-      pull-requests: write
     steps:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a  # v4
@@ -127,20 +126,10 @@ jobs:
           uv lock --no-upgrade
           echo "current=$current" >> "$GITHUB_ENV"
           echo "next=$next" >> "$GITHUB_ENV"
-      - name: Create pull request
+      - name: Push version bump
         run: |
-          branch="version/start-${next}-cycle"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git checkout -b "$branch"
           git add pyproject.toml uv.lock
           git commit -m "Prepare ${next} development cycle"
-          git push -u origin "$branch"
-          gh pr create \
-            --base main \
-            --head "$branch" \
-            --title "Prepare ${next} development cycle" \
-            --body "Automated version bump after publishing v${current}."
-          gh pr merge --auto --squash "$branch"
-        env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          git push origin main
