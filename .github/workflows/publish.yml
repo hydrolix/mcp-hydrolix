@@ -89,6 +89,7 @@ jobs:
           secret=$(aws secretsmanager get-secret-value \
             --secret-id arn:aws:secretsmanager:us-east-2:471112700926:secret:ci/development/mcp-hydrolix/APP_SECRET-93IGLx \
             --query SecretString --output text)
+          echo "::add-mask::$secret"
           app_id=$(echo "$secret" | jq -r '.APP_ID')
           private_key=$(echo "$secret" | jq -r '.PRIVATE_KEY')
           if [[ -z "$app_id" || "$app_id" == "null" ]]; then
@@ -137,6 +138,10 @@ jobs:
           echo "next=$next" >> "$GITHUB_ENV"
       - name: Push version bump
         run: |
+          if [[ -z "$next" ]]; then
+            echo "::error::next version variable is empty; the version bump step may have failed"
+            exit 1
+          fi
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add pyproject.toml uv.lock
