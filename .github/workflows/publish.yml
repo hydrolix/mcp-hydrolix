@@ -77,7 +77,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       id-token: write
-      contents: write
     steps:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a  # v4
@@ -92,10 +91,16 @@ jobs:
             --query SecretString --output text)
           app_id=$(echo "$secret" | jq -r '.APP_ID')
           private_key=$(echo "$secret" | jq -r '.PRIVATE_KEY')
+          if [[ -z "$app_id" || "$app_id" == "null" ]]; then
+            echo "::error::APP_ID is missing or null in the retrieved secret"
+            exit 1
+          fi
+          if [[ -z "$private_key" || "$private_key" == "null" ]]; then
+            echo "::error::PRIVATE_KEY is missing or null in the retrieved secret"
+            exit 1
+          fi
           echo "::add-mask::$app_id"
-          echo "$private_key" | while IFS= read -r line; do
-            [ -n "$line" ] && echo "::add-mask::$line"
-          done
+          echo "::add-mask::$private_key"
           echo "app-id=$app_id" >> "$GITHUB_OUTPUT"
           {
             echo 'private-key<<PRIVATE_KEY_EOF'
@@ -120,6 +125,10 @@ jobs:
       - name: Bump patch version
         run: |
           current=$(uv version --short)
+          if [[ ! "$current" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Unexpected version format from uv: '$current' (expected X.Y.Z)"
+            exit 1
+          fi
           IFS='.' read -r major minor patch <<< "$current"
           next="$major.$minor.$((patch + 1))"
           uv version "$next"
@@ -131,5 +140,9 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add pyproject.toml uv.lock
+          if git diff --cached --quiet; then
+            echo "::notice::No changes to commit -- version may already be bumped"
+            exit 0
+          fi
           git commit -m "Prepare ${next} development cycle"
           git push origin main
