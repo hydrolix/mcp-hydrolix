@@ -88,10 +88,9 @@ jobs:
         run: |
           secret=$(aws secretsmanager get-secret-value \
             --secret-id arn:aws:secretsmanager:us-east-2:471112700926:secret:ci/development/mcp-hydrolix/APP_SECRET-93IGLx \
-            --query SecretString --output text)
-          echo "::add-mask::$secret"
-          app_id=$(echo "$secret" | jq -r '.APP_ID')
-          private_key=$(echo "$secret" | jq -r '.PRIVATE_KEY')
+            --output text --query SecretString)
+          app_id=$(jq -rn --argjson s "$secret" '$s.APP_ID')
+          private_key=$(jq -rn --argjson s "$secret" '$s.PRIVATE_KEY')
           if [[ -z "$app_id" || "$app_id" == "null" ]]; then
             echo "::error::APP_ID is missing or null in the retrieved secret"
             exit 1
@@ -100,8 +99,9 @@ jobs:
             echo "::error::PRIVATE_KEY is missing or null in the retrieved secret"
             exit 1
           fi
-          echo "::add-mask::$app_id"
-          echo "::add-mask::$private_key"
+          while IFS= read -r line; do
+            [[ -n "$line" ]] && echo "::add-mask::$line"
+          done <<< "$private_key"
           echo "app-id=$app_id" >> "$GITHUB_OUTPUT"
           {
             echo 'private-key<<PRIVATE_KEY_EOF'
