@@ -89,6 +89,7 @@ jobs:
           secret=$(aws secretsmanager get-secret-value \
             --secret-id arn:aws:secretsmanager:us-east-2:471112700926:secret:ci/development/mcp-hydrolix/APP_SECRET-93IGLx \
             --output text --query SecretString)
+          echo "::add-mask::$secret"
           app_id=$(jq -rn --argjson s "$secret" '$s.APP_ID')
           private_key=$(jq -rn --argjson s "$secret" '$s.PRIVATE_KEY')
           if [[ -z "$app_id" || "$app_id" == "null" ]]; then
