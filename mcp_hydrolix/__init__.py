@@ -8,7 +8,7 @@ def inject_truststore() -> None:
     # Inject before importing mcp_server, which creates client_shared_pool at
     # module level. Only the exact string "1" disables injection (matches
     # mcp-clickhouse). Any failure logs a warning rather than crashing startup.
-    if os.getenv("MCP_HYDROLIX_TRUSTSTORE_DISABLE", None) != "1":
+    if os.getenv("MCP_HYDROLIX_TRUSTSTORE_DISABLE") != "1":
         try:
             import truststore
 
