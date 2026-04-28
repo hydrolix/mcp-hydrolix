@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.13"
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform == 'win32'",
@@ -726,11 +726,11 @@ source = { editable = "." }
 dependencies = [
     { name = "clickhouse-connect" },
     { name = "fastmcp" },
-    { name = "pip-system-certs" },
     { name = "prometheus-client" },
     { name = "pyjwt" },
     { name = "python-dotenv" },
     { name = "sqlglot" },
+    { name = "truststore" },
     { name = "uvicorn", extra = ["standard"] },
 ]
 
@@ -756,6 +756,7 @@ requires-dist = [
     { name = "python-dotenv", specifier = ">=1.1,<1.2" },
     { name = "ruff", marker = "extra == 'dev'" },
     { name = "sqlglot", specifier = ">=26.0,<27.0" },
+    { name = "truststore", specifier = ">=0.10" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.34,<1.0" },
 ]
 provides-extras = ["dev"]

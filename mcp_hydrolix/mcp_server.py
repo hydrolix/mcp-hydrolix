@@ -124,9 +124,9 @@ pool_kwargs: dict[str, Any] = {
 }
 
 if HYDROLIX_CONFIG.verify:
-    pool_kwargs["ca_cert"] = "certifi"
-else:
-    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    import urllib3
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 client_shared_pool = httputil.get_pool_manager(**pool_kwargs)
 
