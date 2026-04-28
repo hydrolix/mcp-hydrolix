@@ -36,6 +36,7 @@ def _stub_config(monkeypatch) -> None:
     cfg.mcp_max_requests = 0
     cfg.mcp_max_requests_jitter = 0
     cfg.mcp_graceful_timeout = 10
+    cfg.mcp_worker_healthcheck_timeout = 15
     monkeypatch.setattr(mcp_env, "get_config", lambda: cfg)
 
 

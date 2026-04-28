@@ -317,6 +317,18 @@ class HydrolixConfig:
         return int(os.getenv("HYDROLIX_MCP_MAX_KEEPALIVE", 10))
 
     @property
+    def mcp_worker_healthcheck_timeout(self) -> int:
+        """Seconds the supervisor waits for a worker ping response before killing it.
+
+        Wired into uvicorn's ``timeout_worker_healthcheck`` setting. The default
+        of 5s is too tight for cold-start module imports under CPU pressure; 15s
+        gives workers headroom without masking genuinely hung processes.
+
+        Default: 15
+        """
+        return int(os.getenv("HYDROLIX_MCP_WORKER_HEALTHCHECK_TIMEOUT", 15))
+
+    @property
     def metrics_enabled(self) -> bool:
         """Get whether Prometheus metrics are enabled.
 

@@ -78,6 +78,7 @@ def main():
             access_log=False,
             server_header=False,
             timeout_graceful_shutdown=config.mcp_graceful_timeout,
+            timeout_worker_healthcheck=config.mcp_worker_healthcheck_timeout,
         )
     else:
         log_dict_config = setup_logging(None, "INFO", "json")
