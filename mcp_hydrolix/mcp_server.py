@@ -123,8 +123,6 @@ pool_kwargs: dict[str, Any] = {
     "verify": HYDROLIX_CONFIG.verify,
 }
 
-# When verify=True, use certifi CA bundle for SSL verification
-# This ensures we trust modern CAs like Let's Encrypt
 if HYDROLIX_CONFIG.verify:
     pool_kwargs["ca_cert"] = "certifi"
 else:
