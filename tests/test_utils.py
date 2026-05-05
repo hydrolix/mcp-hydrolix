@@ -3,19 +3,7 @@ import pytest
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 
-try:
-    from mcp_hydrolix.utils import coerce_cell, coerce_rows, inject_limit
-except ImportError:  # pending typed-result refactor — symbols arrive in a later commit
-    from mcp_hydrolix.utils import inject_limit
-
-    def coerce_cell(value):  # type: ignore[no-redef]
-        raise NotImplementedError
-
-    def coerce_rows(rows):  # type: ignore[no-redef]
-        raise NotImplementedError
-
-
-pytestmark = pytest.mark.xfail(reason="pending typed-result refactor", strict=False, run=False)
+from mcp_hydrolix.utils import coerce_cell, coerce_rows, inject_limit
 
 
 class TestCoerceCell:

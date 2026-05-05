@@ -10,8 +10,6 @@ from mcp_hydrolix.mcp_server import (
     run_select_query,
 )
 
-pytestmark = pytest.mark.xfail(reason="pending typed-result refactor", strict=False, run=False)
-
 
 class TestHydrolixTools:
     async def test_list_databases(self, setup_tool_test_database):

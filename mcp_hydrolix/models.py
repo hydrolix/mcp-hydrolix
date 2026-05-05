@@ -132,3 +132,46 @@ class Table:
 class HdxQueryResult(TypedDict):
     columns: List[str]
     rows: List[List[Any]]
+
+
+@pydantic_dataclass(frozen=True)
+class DatabaseList:
+    """Result of `list_databases` — wraps a list of database names so the
+    structured payload is a JSON object (as MCP requires) with an explicit
+    field name instead of fastmcp's generic `result` wrapper."""
+
+    databases: List[str]
+
+
+@pydantic_dataclass(frozen=True)
+class TableList:
+    """Result of `list_tables` — wraps a list of tables so the structured
+    payload is a JSON object (as MCP requires) with an explicit field name
+    instead of fastmcp's generic `result` wrapper."""
+
+    tables: List[Table]
+
+
+@pydantic_dataclass(frozen=True)
+class RunSelectQueryResult:
+    """Stable typed shape for `run_select_query`.
+
+    `total_row_count` and `message` are only meaningful when `truncated=True`;
+    they default to None and are stripped from the wire payload by the
+    serializer when absent (token saver). Schema still declares them Optional
+    so strict clients accept the missing fields.
+
+    `rows` cells are passed through as-is — `null`s inside user query results
+    are kept (they may be meaningful data from the user's SELECT).
+    """
+
+    columns: List[str]
+    rows: List[List[Any]]
+    truncated: bool
+    row_count: int
+    total_row_count: Optional[int] = None
+    message: Optional[str] = None
+
+    @model_serializer(mode="wrap")
+    def _serialize(self, handler) -> dict:
+        return {k: v for k, v in handler(self).items() if v is not None}

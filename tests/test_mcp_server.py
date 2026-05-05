@@ -13,8 +13,6 @@ from mcp_clickhouse.mcp_server import create_clickhouse_client
 
 from mcp_hydrolix.mcp_server import _build_truncation_response, _resolve_cell_limit
 
-pytestmark = pytest.mark.xfail(reason="pending typed-result refactor", strict=False, run=False)
-
 
 def _assert_structured_matches_content(result, tool_name: str):
     """Assert that structured_content and content[0].text agree."""
@@ -781,38 +779,38 @@ def test_build_truncation_response_basic():
     columns = ["a", "b"]
     rows = [["v1", "v2"]] * 10  # 10 rows, 2 cols = 20 cells; cell_limit=4 -> max_rows=2
     result = _build_truncation_response(columns, rows, cell_limit=4, capped_by_operator=False)
-    assert result["truncated"] is True
-    assert result["row_count"] == 2
-    assert result["total_row_count"] == 10
-    assert len(result["rows"]) == 2
-    assert result["columns"] == columns
-    assert "max_cells" in result["message"]
+    assert result.truncated is True
+    assert result.row_count == 2
+    assert result.total_row_count == 10
+    assert len(result.rows) == 2
+    assert result.columns == columns
+    assert "max_cells" in result.message
 
 
 def test_build_truncation_response_capped_by_operator():
     columns = ["x"]
     rows = [["v"]] * 5
     result = _build_truncation_response(columns, rows, cell_limit=3, capped_by_operator=True)
-    assert "enforced by the server" in result["message"]
-    assert "HYDROLIX_MAX_RESULT_CELLS_LIMIT" in result["message"]
+    assert "enforced by the server" in result.message
+    assert "HYDROLIX_MAX_RESULT_CELLS_LIMIT" in result.message
 
 
 def test_build_truncation_response_not_capped_by_operator():
     columns = ["x"]
     rows = [["v"]] * 5
     result = _build_truncation_response(columns, rows, cell_limit=3, capped_by_operator=False)
-    assert "larger max_cells" in result["message"]
+    assert "larger max_cells" in result.message
 
 
 def test_build_truncation_response_large_result_advisory():
     columns = ["x"]
     rows = [["v"]] * 100_000
     result = _build_truncation_response(columns, rows, cell_limit=50_000, capped_by_operator=False)
-    assert "total_row_count reflects rows fetched" in result["message"]
+    assert "total_row_count reflects rows fetched" in result.message
 
 
 def test_build_truncation_response_no_advisory_below_threshold():
     columns = ["x"]
     rows = [["v"]] * 99_999
     result = _build_truncation_response(columns, rows, cell_limit=50_000, capped_by_operator=False)
-    assert "total_row_count reflects rows fetched" not in result["message"]
+    assert "total_row_count reflects rows fetched" not in result.message
