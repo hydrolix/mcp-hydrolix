@@ -30,6 +30,7 @@ def _assert_structured_matches_content(result, tool_name: str):
     )
 
 
+@pytest.mark.integration_clickhouse
 async def test_list_databases_structured_matches_content(mcp_server, setup_test_database):
     """Verify structured and unstructured responses match for list_databases."""
     async with Client(mcp_server) as client:
@@ -37,6 +38,7 @@ async def test_list_databases_structured_matches_content(mcp_server, setup_test_
         _assert_structured_matches_content(result, "list_databases")
 
 
+@pytest.mark.integration_clickhouse
 async def test_list_tables_structured_matches_content(mcp_server, setup_test_database):
     """Verify structured and unstructured responses match for list_tables."""
     test_db, _, _ = setup_test_database
@@ -45,6 +47,7 @@ async def test_list_tables_structured_matches_content(mcp_server, setup_test_dat
         _assert_structured_matches_content(result, "list_tables")
 
 
+@pytest.mark.integration_clickhouse
 async def test_get_table_info_structured_matches_content(mcp_server, setup_test_database):
     """Verify structured and unstructured responses match for get_table_info."""
     test_db, test_table, _ = setup_test_database
@@ -55,6 +58,7 @@ async def test_get_table_info_structured_matches_content(mcp_server, setup_test_
         _assert_structured_matches_content(result, "get_table_info")
 
 
+@pytest.mark.integration_clickhouse
 async def test_run_select_query_structured_matches_content(mcp_server, setup_test_database):
     """Verify structured and unstructured responses match for run_select_query."""
     test_db, test_table, _ = setup_test_database
@@ -66,6 +70,7 @@ async def test_run_select_query_structured_matches_content(mcp_server, setup_tes
         _assert_structured_matches_content(result, "run_select_query")
 
 
+@pytest.mark.integration_clickhouse
 async def test_list_databases(mcp_server, setup_test_database):
     """Test the list_databases tool."""
     test_db, _, _ = setup_test_database
@@ -79,6 +84,7 @@ async def test_list_databases(mcp_server, setup_test_database):
         assert "system" in databases  # System database should always exist
 
 
+@pytest.mark.integration_clickhouse
 async def test_list_tables_basic(mcp_server, setup_test_database):
     """Test the list_tables tool without filters.
 
@@ -112,6 +118,7 @@ async def test_list_tables_basic(mcp_server, setup_test_database):
             assert table.get("columns") is None or len(table.get("columns", [])) == 0
 
 
+@pytest.mark.integration_clickhouse
 async def test_list_tables_with_like_filter(mcp_server, setup_test_database):
     """Test the list_tables tool with LIKE filter."""
     test_db, test_table, _ = setup_test_database
@@ -126,6 +133,7 @@ async def test_list_tables_with_like_filter(mcp_server, setup_test_database):
         assert tables[0]["name"] == test_table
 
 
+@pytest.mark.integration_clickhouse
 async def test_list_tables_with_not_like_filter(mcp_server, setup_test_database):
     """Test the list_tables tool with NOT LIKE filter."""
     test_db, _, test_table2 = setup_test_database
@@ -140,6 +148,7 @@ async def test_list_tables_with_not_like_filter(mcp_server, setup_test_database)
         assert tables[0]["name"] == test_table2
 
 
+@pytest.mark.integration_clickhouse
 async def test_run_select_query_success(mcp_server, setup_test_database):
     """Test running a successful SELECT query."""
     test_db, test_table, _ = setup_test_database
@@ -169,6 +178,7 @@ async def test_run_select_query_success(mcp_server, setup_test_database):
         assert query_result["row_count"] == 4
 
 
+@pytest.mark.integration_clickhouse
 async def test_run_select_query_with_aggregation(mcp_server, setup_test_database):
     """Test running a SELECT query with aggregation."""
     test_db, test_table, _ = setup_test_database
@@ -185,6 +195,7 @@ async def test_run_select_query_with_aggregation(mcp_server, setup_test_database
         assert query_result["rows"][0][1] == 29.5  # average age
 
 
+@pytest.mark.integration_clickhouse
 async def test_run_select_query_with_join(mcp_server, setup_test_database):
     """Test running a SELECT query with JOIN."""
     test_db, test_table, test_table2 = setup_test_database
@@ -208,6 +219,7 @@ async def test_run_select_query_with_join(mcp_server, setup_test_database):
         assert query_result["rows"][0][0] == 3  # login, logout, purchase
 
 
+@pytest.mark.integration_clickhouse
 async def test_run_select_query_error(mcp_server, setup_test_database):
     """Test running a SELECT query that results in an error."""
     test_db, _, _ = setup_test_database
@@ -223,6 +235,7 @@ async def test_run_select_query_error(mcp_server, setup_test_database):
         assert "Query execution failed" in str(exc_info.value)
 
 
+@pytest.mark.integration_clickhouse
 async def test_run_select_query_syntax_error(mcp_server):
     """Test running a SELECT query with syntax error."""
     async with Client(mcp_server) as client:
@@ -236,6 +249,7 @@ async def test_run_select_query_syntax_error(mcp_server):
         assert "Query execution failed" in str(exc_info.value)
 
 
+@pytest.mark.integration_clickhouse
 async def test_table_metadata_details(mcp_server, setup_test_database):
     """Test that table metadata is correctly retrieved."""
     test_db, test_table, _ = setup_test_database
@@ -285,6 +299,7 @@ async def test_table_metadata_details(mcp_server, setup_test_database):
         assert columns_by_name["created_at"]["column_category"] == "Column"
 
 
+@pytest.mark.integration_clickhouse
 async def test_system_database_access(mcp_server):
     """Test that we can access system databases."""
     async with Client(mcp_server) as client:
@@ -330,6 +345,7 @@ class InFlightCounterMiddleware(Middleware):
                 pass
 
 
+@pytest.mark.integration_clickhouse
 async def test_concurrent_queries(monkeypatch, mcp_server, setup_test_database):
     """Test running multiple queries concurrently."""
 
@@ -404,6 +420,7 @@ async def test_concurrent_queries(monkeypatch, mcp_server, setup_test_database):
         assert len(query_result["rows"]) == 1
 
 
+@pytest.mark.integration_clickhouse
 async def test_concurrent_queries_isolation(monkeypatch, mcp_server, setup_test_database):
     """Test running multiple queries concurrently."""
     from clickhouse_connect.driver import AsyncClient
@@ -445,6 +462,7 @@ async def test_concurrent_queries_isolation(monkeypatch, mcp_server, setup_test_
 
 
 @pytest.mark.asyncio
+@pytest.mark.integration_clickhouse
 async def test_run_select_query_no_truncation(mcp_server, setup_test_database):
     """Test that results within the cell budget are returned without truncation."""
     test_db, test_table, _ = setup_test_database
@@ -463,6 +481,7 @@ async def test_run_select_query_no_truncation(mcp_server, setup_test_database):
 
 
 @pytest.mark.asyncio
+@pytest.mark.integration_clickhouse
 async def test_run_select_query_no_truncation_at_exact_budget(mcp_server, setup_test_database):
     """Test that a result exactly at the cell budget is not truncated (boundary: > not >=)."""
     test_db, test_table, _ = setup_test_database
@@ -478,6 +497,7 @@ async def test_run_select_query_no_truncation_at_exact_budget(mcp_server, setup_
 
 
 @pytest.mark.asyncio
+@pytest.mark.integration_clickhouse
 async def test_run_select_query_truncation_triggered(mcp_server, setup_test_database):
     """Test that results exceeding the cell budget are truncated with metadata."""
     test_db, test_table, _ = setup_test_database
@@ -498,6 +518,7 @@ async def test_run_select_query_truncation_triggered(mcp_server, setup_test_data
 
 
 @pytest.mark.asyncio
+@pytest.mark.integration_clickhouse
 async def test_run_select_query_truncation_disabled(mcp_server, setup_test_database):
     """Test that max_cells=0 disables truncation even when the result would otherwise be truncated."""
     test_db, test_table, _ = setup_test_database
@@ -514,6 +535,7 @@ async def test_run_select_query_truncation_disabled(mcp_server, setup_test_datab
 
 
 @pytest.mark.asyncio
+@pytest.mark.integration_clickhouse
 async def test_run_select_query_negative_max_cells_rejected(mcp_server, setup_test_database):
     """Test that a negative max_cells value raises a ToolError."""
     test_db, test_table, _ = setup_test_database
@@ -526,6 +548,7 @@ async def test_run_select_query_negative_max_cells_rejected(mcp_server, setup_te
 
 
 @pytest.mark.asyncio
+@pytest.mark.integration_clickhouse
 async def test_run_select_query_truncation_max_rows_zero(mcp_server, setup_test_database):
     """Test truncation when cell limit is smaller than the column count (max_rows=0)."""
     test_db, test_table, _ = setup_test_database
@@ -545,6 +568,7 @@ async def test_run_select_query_truncation_max_rows_zero(mcp_server, setup_test_
 
 
 @pytest.mark.asyncio
+@pytest.mark.integration_clickhouse
 async def test_run_select_query_operator_limit_caps_max_cells(
     monkeypatch, mcp_server, setup_test_database
 ):
@@ -569,6 +593,7 @@ async def test_run_select_query_operator_limit_caps_max_cells(
 
 
 @pytest.mark.asyncio
+@pytest.mark.integration_clickhouse
 async def test_run_select_query_operator_limit_overrides_max_cells_zero(
     monkeypatch, mcp_server, setup_test_database
 ):
@@ -590,6 +615,7 @@ async def test_run_select_query_operator_limit_overrides_max_cells_zero(
 
 
 @pytest.mark.asyncio
+@pytest.mark.integration_clickhouse
 async def test_run_select_query_operator_limit_caps_default(
     monkeypatch, mcp_server, setup_test_database
 ):
@@ -626,6 +652,7 @@ async def test_run_select_query_max_cells_in_tool_schema(mcp_server):
 
 
 @pytest.mark.asyncio
+@pytest.mark.integration_clickhouse
 async def test_run_select_query_env_default_max_cells(monkeypatch, mcp_server, setup_test_database):
     """Test that HYDROLIX_MAX_RESULT_CELLS env var is respected as the default cell budget."""
     test_db, test_table, _ = setup_test_database

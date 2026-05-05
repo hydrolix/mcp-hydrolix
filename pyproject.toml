@@ -40,6 +40,10 @@ line-length = 100
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+markers = [
+    "integration_clickhouse: tests that require a running ClickHouse/Hydrolix instance",
+    "end_to_end: end-to-end tests that deploy to and exercise a live Hydrolix Kubernetes cluster",
+]
 
 [build-system]
 requires = ["hatchling"]
