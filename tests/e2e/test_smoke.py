@@ -9,8 +9,6 @@ from tests.e2e._mcp_client import parsed_payload, unauthed_initialize_status
 
 EXPECTED_TOOLS = {"list_databases", "list_tables", "get_table_info", "run_select_query"}
 
-_PENDING = "e2e harness implementation pending"
-
 
 def _first_database_name(payload: dict) -> str:
     # list_databases returns List[str]; fastmcp wraps non-object lists in
@@ -23,7 +21,6 @@ def _first_table_name(payload: dict) -> str:
     return payload["result"][0]["name"]
 
 
-@pytest.mark.xfail(reason=_PENDING, strict=False)
 @pytest.mark.end_to_end
 async def test_initialize_lists_expected_tools(mcp_client: Client) -> None:
     tools = await mcp_client.list_tools()
@@ -33,7 +30,6 @@ async def test_initialize_lists_expected_tools(mcp_client: Client) -> None:
     )
 
 
-@pytest.mark.xfail(reason=_PENDING, strict=False)
 @pytest.mark.end_to_end
 async def test_list_databases_returns_at_least_one_entry(mcp_client: Client) -> None:
     result = await mcp_client.call_tool("list_databases", {})
@@ -43,7 +39,6 @@ async def test_list_databases_returns_at_least_one_entry(mcp_client: Client) -> 
     assert _first_database_name(payload), "no database name in list_databases payload"
 
 
-@pytest.mark.xfail(reason=_PENDING, strict=False)
 @pytest.mark.end_to_end
 async def test_list_tables_for_first_database(mcp_client: Client) -> None:
     dbs = await mcp_client.call_tool("list_databases", {})
@@ -55,7 +50,6 @@ async def test_list_tables_for_first_database(mcp_client: Client) -> None:
     assert payload, f"list_tables({database!r}) returned an empty payload"
 
 
-@pytest.mark.xfail(reason=_PENDING, strict=False)
 @pytest.mark.end_to_end
 async def test_get_table_info_for_first_table(mcp_client: Client) -> None:
     dbs = await mcp_client.call_tool("list_databases", {})
@@ -73,7 +67,6 @@ async def test_get_table_info_for_first_table(mcp_client: Client) -> None:
     )
 
 
-@pytest.mark.xfail(reason=_PENDING, strict=False)
 @pytest.mark.end_to_end
 async def test_run_select_query_one(mcp_client: Client) -> None:
     result = await mcp_client.call_tool("run_select_query", {"query": "SELECT 1 AS smoke_test"})
@@ -83,7 +76,6 @@ async def test_run_select_query_one(mcp_client: Client) -> None:
     assert "1" in haystack, f"expected '1' in run_select_query payload, got {haystack[:300]!r}"
 
 
-@pytest.mark.xfail(reason=_PENDING, strict=False)
 @pytest.mark.end_to_end
 def test_missing_auth_returns_401(mcp_ready) -> None:
     status, body_prefix = unauthed_initialize_status(mcp_ready.hydrolix_host)

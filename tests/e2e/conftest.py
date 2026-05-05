@@ -1,48 +1,340 @@
-"""Stub fixtures for the e2e suite.
-
-The real harness lands in the follow-up commits that introduce
-tests/e2e/_kube.py and tests/e2e/_mcp_client.py. In the meantime the e2e
-tests carry an xfail marker so collection succeeds and the test surface is
-reviewable in isolation from the harness implementation.
-"""
-
 from __future__ import annotations
 
-from typing import Any
+import os
+import re
+import subprocess
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, AsyncGenerator, Generator
+from urllib.parse import urlparse
 
+from fastmcp import Client
 import pytest
+from dotenv import load_dotenv
 
-_PENDING = (
-    "e2e harness implementation pending; see follow-up commits for "
-    "tests/e2e/_kube.py, tests/e2e/_mcp_client.py, and the real conftest."
+from tests.e2e._kube import (
+    CONTAINER_KEY,
+    DEFAULT_DEPLOYMENT_NAME,
+    KubeClients,
+    KubeContext,
+    acquire_advisory_lock,
+    apply_image_override,
+    assert_mcp_enabled,
+    discover_kube_context,
+    extract_containers,
+    latest_snapshot,
+    load_snapshot_file,
+    make_clients,
+    make_owner_token,
+    read_cr,
+    read_deployment_generation,
+    release_advisory_lock,
+    restore_containers,
+    snapshot_path_for,
+    wait_for_rollout,
+    write_snapshot,
 )
+from tests.e2e._mcp_client import login_for_bearer_token, make_client, wait_for_endpoint_ready
+
+REQUIRED_VARS = ("HYDROLIX_USER", "HYDROLIX_PASSWORD")
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+@dataclass(frozen=True)
+class E2EConfig:
+    hydrolix_user: str
+    hydrolix_password: str
+    hydrolix_host_override: str | None
+    image_override: str | None
+    image_tag_override: str | None
+    skip_build: bool
+    kubeconfig: str | None
+    kube_context: str | None
+    namespace: str | None
+    cluster_name: str | None
+    deployment_name: str
+    ready_timeout: float
+
+
+@dataclass(frozen=True)
+class ClusterState:
+    ctx: KubeContext
+    clients: KubeClients
+    hydrolix_host: str
+    snapshot_path: Path
+    pre_patch_deployment_generation: int | None
+
+
+def _missing_env_message(missing: list[str]) -> str:
+    return (
+        "You appear to have run the e2e suite without the required env vars: "
+        f"{', '.join(missing)}. If you intended to run unit tests, re-run with "
+        "`-m 'not end_to_end'`."
+    )
 
 
 @pytest.fixture(scope="session")
-def _e2e_env_guard() -> Any:
-    pytest.skip(_PENDING)
+def _e2e_env_guard() -> E2EConfig:
+    env_file = os.environ.get("MCP_HYDROLIX_E2E_ENV_FILE", str(REPO_ROOT / ".env.e2e"))
+    if Path(env_file).exists():
+        # override=True because tests/__init__.py calls load_dotenv() at package
+        # import time, which loads tests/.env (HYDROLIX_HOST=localhost for unit
+        # tests). Without override, that pre-set value wins and e2e tests would
+        # talk to localhost instead of the live cluster.
+        load_dotenv(env_file, override=True)
+    missing = [v for v in REQUIRED_VARS if not os.environ.get(v)]
+    if missing:
+        pytest.fail(_missing_env_message(missing), pytrace=False)
+
+    def _opt(name: str) -> str | None:
+        v = os.environ.get(name)
+        return v if v else None
+
+    return E2EConfig(
+        hydrolix_user=os.environ["HYDROLIX_USER"],
+        hydrolix_password=os.environ["HYDROLIX_PASSWORD"],
+        hydrolix_host_override=_opt("HYDROLIX_HOST"),
+        image_override=_opt("MCP_HYDROLIX_E2E_IMAGE"),
+        image_tag_override=_opt("MCP_HYDROLIX_E2E_IMAGE_TAG"),
+        skip_build=os.environ.get("MCP_HYDROLIX_E2E_SKIP_BUILD", "0") == "1",
+        kubeconfig=_opt("MCP_HYDROLIX_E2E_KUBECONFIG"),
+        kube_context=_opt("MCP_HYDROLIX_E2E_KUBE_CONTEXT"),
+        namespace=_opt("MCP_HYDROLIX_E2E_NAMESPACE"),
+        cluster_name=_opt("MCP_HYDROLIX_E2E_CLUSTER_NAME"),
+        deployment_name=os.environ.get("MCP_HYDROLIX_E2E_DEPLOYMENT_NAME", DEFAULT_DEPLOYMENT_NAME),
+        ready_timeout=float(os.environ.get("MCP_HYDROLIX_E2E_READY_TIMEOUT", "180")),
+    )
+
+
+def _git_output(*args: str) -> str:
+    return subprocess.check_output(["git", *args], cwd=REPO_ROOT, text=True).strip()
+
+
+def _is_dirty() -> bool:
+    return subprocess.call(["git", "diff", "--quiet", "HEAD"], cwd=REPO_ROOT) != 0
+
+
+def _os_user_fallback() -> str:
+    """Match the shell parity of `${USER:-$(id -un)}` in build_and_push.sh.
+
+    Python's getpass.getuser() checks $LOGNAME first, which would diverge from
+    the shell. Mirror the shell precisely: $USER, then OS lookup, then a
+    literal sentinel so image names remain deterministic in container
+    environments without USER set.
+    """
+    user = os.environ.get("USER")
+    if user:
+        return user
+    try:
+        import pwd
+
+        # `id -un` reports the effective UID's name, so geteuid() matches.
+        return pwd.getpwuid(os.geteuid()).pw_name
+    except (ImportError, KeyError, AttributeError, OSError):
+        return "unknown"
+
+
+def _derive_image_and_tag(cfg: E2EConfig) -> tuple[str, str]:
+    # MCP_HYDROLIX_E2E_BRANCH mirrors the override accepted by
+    # build_and_push.sh so manual and pytest-driven invocations produce the
+    # same image identity for a given branch.
+    branch = os.environ.get("MCP_HYDROLIX_E2E_BRANCH") or _git_output(
+        "rev-parse", "--abbrev-ref", "HEAD"
+    )
+    short_sha = _git_output("rev-parse", "--short=7", "HEAD")
+    sanitized = re.sub(r"[^a-zA-Z0-9._-]", "-", branch)
+    dirty = "-dirty" if _is_dirty() else ""
+    if cfg.image_override:
+        image = cfg.image_override
+        default_tag = f"branch-{sanitized}-{short_sha}{dirty}"
+    else:
+        user = _os_user_fallback()
+        image = f"ttl.sh/mcp-hydrolix-e2e-{user}-{sanitized}-{short_sha}{dirty}"
+        default_tag = "1h"
+    tag = cfg.image_tag_override or default_tag
+    return image, tag
 
 
 @pytest.fixture(scope="session")
-def built_image(_e2e_env_guard: Any) -> tuple[str, str]:
-    pytest.skip(_PENDING)
+def built_image(_e2e_env_guard: E2EConfig) -> tuple[str, str]:
+    image, tag = _derive_image_and_tag(_e2e_env_guard)
+    if _e2e_env_guard.skip_build:
+        print(f"[e2e] MCP_HYDROLIX_E2E_SKIP_BUILD=1; using {image}:{tag}", file=sys.stderr)
+        return image, tag
+    print(f"[e2e] docker build -t {image}:{tag} .", file=sys.stderr)
+    subprocess.check_call(["docker", "build", "-t", f"{image}:{tag}", "."], cwd=REPO_ROOT)
+    print(f"[e2e] docker push {image}:{tag}", file=sys.stderr)
+    subprocess.check_call(["docker", "push", f"{image}:{tag}"])
+    return image, tag
+
+
+def _hydrolix_host_from_cr(cr: dict, override: str | None) -> str:
+    if override:
+        return override
+    spec = cr.get("spec") or {}
+    url = spec.get("hydrolix_url")
+    if not url:
+        raise RuntimeError("spec.hydrolix_url not set on the CR and HYDROLIX_HOST not provided")
+    parsed = urlparse(url)
+    host = parsed.netloc or parsed.path
+    if not host:
+        raise RuntimeError(f"could not parse host from spec.hydrolix_url={url!r}")
+    return host.rstrip("/")
+
+
+def _idempotent_precleanup(
+    clients: KubeClients, ctx: KubeContext, containers: dict | None
+) -> dict | None:
+    """Best-effort recovery from a prior crashed run before snapshotting state.
+
+    The advisory lock and the session try/finally cleanup are the primary
+    safety net. This is a third tier that only fires for the narrow case
+    where a previous run died, released the lock, but failed to restore
+    `spec.containers`. We detect that by sniffing for the ttl.sh image-name
+    prefix the harness uses (`mcp-hydrolix-e2e-`) and re-apply the most
+    recent on-disk snapshot, returning the post-restore containers value as
+    the new "original" to snapshot.
+
+    Limitations: only covers the ttl.sh path. Runs that override
+    MCP_HYDROLIX_E2E_IMAGE to a non-ttl.sh registry produce image strings
+    that don't match this heuristic; for those, use the manual recovery
+    CLI documented in tests/e2e/README.md.
+    """
+    if not containers or CONTAINER_KEY not in containers:
+        return containers
+    leftover_image = (containers[CONTAINER_KEY] or {}).get("image", "")
+    if "mcp-hydrolix-e2e-" not in leftover_image:
+        return containers
+    prior = latest_snapshot(ctx.cluster_name, ctx.namespace)
+    if not prior:
+        print(
+            f"[e2e] WARNING: leftover e2e override (image={leftover_image!r}) "
+            f"detected but no snapshot file exists; leaving as-is.",
+            file=sys.stderr,
+        )
+        return containers
+    snap = load_snapshot_file(prior)
+    print(
+        f"[e2e] orphaned e2e override detected; restoring from {prior} before starting",
+        file=sys.stderr,
+    )
+    restore_containers(clients.custom, ctx, snap.get("containers_value"))
+    cr = read_cr(clients.custom, ctx)
+    return extract_containers(cr)
 
 
 @pytest.fixture(scope="session")
-def cluster_state(_e2e_env_guard: Any, built_image: Any) -> Any:
-    pytest.skip(_PENDING)
+def cluster_state(
+    _e2e_env_guard: E2EConfig, built_image: tuple[str, str]
+) -> Generator[ClusterState, None, None]:
+    cfg = _e2e_env_guard
+    image, tag = built_image
+    ctx = discover_kube_context(cfg.kubeconfig, cfg.kube_context, cfg.namespace, cfg.cluster_name)
+    clients = make_clients()
+    cr = read_cr(clients.custom, ctx)
+    assert_mcp_enabled(cr, ctx)
+    hydrolix_host = _hydrolix_host_from_cr(cr, cfg.hydrolix_host_override)
+
+    # Acquire the advisory lock BEFORE any CR-mutating call (precleanup or
+    # apply_image_override). Otherwise a concurrent run could clobber an active
+    # holder's deployed state via _idempotent_precleanup before failing on the
+    # lock.
+    owner = make_owner_token()
+    acquire_advisory_lock(clients.custom, ctx, owner)
+
+    snap_path: Path | None = None
+    original_containers: Any = None
+    original_containers_set = False
+    try:
+        # Re-read the CR after taking the lock so precleanup operates on a
+        # post-lock view of state.
+        cr = read_cr(clients.custom, ctx)
+        original_containers = _idempotent_precleanup(clients, ctx, extract_containers(cr))
+        original_containers_set = True
+        snap_path = snapshot_path_for(ctx)
+        write_snapshot(snap_path, ctx, original_containers)
+
+        # Snapshot Deployment generation BEFORE the CR patch so wait_for_rollout
+        # doesn't satisfy readiness against pre-patch pods.
+        pre_patch_gen = read_deployment_generation(clients, ctx, _e2e_env_guard.deployment_name)
+
+        state = ClusterState(
+            ctx=ctx,
+            clients=clients,
+            hydrolix_host=hydrolix_host,
+            snapshot_path=snap_path,
+            pre_patch_deployment_generation=pre_patch_gen,
+        )
+        apply_image_override(clients.custom, ctx, image, tag)
+        yield state
+    finally:
+        restore_ok = False
+        if original_containers_set:
+            try:
+                restore_containers(clients.custom, ctx, original_containers)
+                restore_ok = True
+            except Exception as exc:
+                snap_hint = str(snap_path) if snap_path is not None else "<snapshot not written>"
+                cmd = "uv run python -m tests.e2e._kube cleanup" + (
+                    f" --snapshot {snap_path}" if snap_path is not None else ""
+                )
+                print(
+                    f"[e2e] FAILED to restore spec.containers on {ctx.cluster_name}: {exc}\n"
+                    f"[e2e] Snapshot left at {snap_hint} for manual recovery via\n"
+                    f"[e2e]   {cmd}",
+                    file=sys.stderr,
+                )
+        try:
+            release_advisory_lock(clients.custom, ctx)
+        except Exception as exc:
+            print(
+                f"[e2e] WARNING: failed to release advisory lock on {ctx.cluster_name}: {exc}",
+                file=sys.stderr,
+            )
+        if restore_ok and snap_path is not None:
+            try:
+                snap_path.unlink()
+            except OSError:
+                pass
 
 
 @pytest.fixture(scope="session")
-def mcp_ready(_e2e_env_guard: Any, cluster_state: Any) -> Any:
-    pytest.skip(_PENDING)
+def mcp_ready(_e2e_env_guard: E2EConfig, cluster_state: ClusterState) -> ClusterState:
+    wait_for_rollout(
+        cluster_state.clients,
+        cluster_state.ctx,
+        deployment_name=_e2e_env_guard.deployment_name,
+        timeout=_e2e_env_guard.ready_timeout,
+        min_generation=cluster_state.pre_patch_deployment_generation,
+    )
+    # k8s reports the Deployment Ready before the front-end LB has finished
+    # routing traffic to the new pods, so the public endpoint can still serve
+    # 502s after wait_for_rollout returns. Require a stable streak of healthy
+    # /mcp responses before yielding to tests.
+    wait_for_endpoint_ready(
+        cluster_state.hydrolix_host,
+        timeout=_e2e_env_guard.ready_timeout,
+    )
+    return cluster_state
 
 
 @pytest.fixture(scope="session")
-def bearer_token(_e2e_env_guard: Any, mcp_ready: Any) -> str:
-    pytest.skip(_PENDING)
+def bearer_token(_e2e_env_guard: E2EConfig, mcp_ready: ClusterState) -> str:
+    return login_for_bearer_token(
+        host=mcp_ready.hydrolix_host,
+        username=_e2e_env_guard.hydrolix_user,
+        password=_e2e_env_guard.hydrolix_password,
+    )
 
 
 @pytest.fixture
-async def mcp_client(mcp_ready: Any, bearer_token: str) -> Any:
-    pytest.skip(_PENDING)
+async def mcp_client(mcp_ready: ClusterState, bearer_token: str) -> AsyncGenerator[Client, None]:
+    """Yields an entered, authed `fastmcp.Client`.
+
+    The MCP `initialize` handshake runs inside `__aenter__`. Tests that need
+    to assert the tool surface should do so explicitly (see
+    `test_initialize_lists_expected_tools`).
+    """
+    async with make_client(mcp_ready.hydrolix_host, bearer_token) as client:
+        yield client
