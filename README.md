@@ -415,3 +415,11 @@ HYDROLIX_MCP_SERVER_TRANSPORT=http
 Though not part of the MCP specification, many MCP clients allow adding headers to MCP-issued requests. When this is possible, we recommend configuring the MCP client to pass a service account token via the `Authorization: Bearer <sa-token-here>` header instead of as a query parameter for greater security.
 
 Note: The bind host and port settings are only used when transport is set to "http" or "sse".
+
+## End-to-end tests
+
+A separate suite under `tests/e2e/` deploys the local working tree to a live
+Hydrolix Kubernetes cluster and smoke-tests the MCP tools against the running
+pod. It is excluded from default test runs and from the pre-push hook; running
+it requires explicit opt-in via the `end_to_end` pytest marker plus
+credentials. See [`tests/e2e/README.md`](tests/e2e/README.md) for the runbook.
