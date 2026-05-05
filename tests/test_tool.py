@@ -3,7 +3,7 @@ import inspect
 import pytest
 from fastmcp.exceptions import ToolError
 
-from mcp_hydrolix import (
+from mcp_hydrolix.mcp_server import (
     get_table_info,
     list_databases,
     list_tables,

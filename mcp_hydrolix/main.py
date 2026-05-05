@@ -1,113 +1,92 @@
 import atexit
 import logging.config as lconfig
+import multiprocessing
 import os
 import shutil
 import tempfile
 
-from fastmcp.server.http import StarletteWithLifespan
-from gunicorn.app.base import BaseApplication
-from prometheus_client import multiprocess as prom_multiprocess
+import uvicorn
 
-from . import metrics
+from . import mcp_env
 from .log import setup_logging
-from .mcp_env import TransportType, get_config
-from .mcp_server import mcp
+from .mcp_env import TransportType
+
+# NOTE: do NOT import ``.mcp_server`` at module scope. It transitively imports
+# ``.metrics``, whose module-level code reads ``PROMETHEUS_MULTIPROC_DIR`` to
+# decide between live and no-op collectors and to register the bypass warning.
+# ``main()`` must be allowed to set that env var *before* metrics.py is first
+# imported; otherwise the supervisor process trips its own "launcher bypassed"
+# warning on every legitimate multi-worker startup. The stdio branch imports
+# ``mcp`` lazily below.
 
 
-def _child_exit(_server, worker) -> None:
-    prom_multiprocess.mark_process_dead(worker.pid)
+def _prepare_prometheus_multiproc_dir():
+    """Wipe and recreate ``PROMETHEUS_MULTIPROC_DIR`` when workers will share it."""
+    # Module-qualified so tests can monkeypatch mcp_env.get_config.
+    config = mcp_env.get_config()
+    if (not config.metrics_enabled) or config.mcp_workers == 1:
+        return config
 
+    if "PROMETHEUS_MULTIPROC_DIR" not in os.environ:
+        # Use a temporary directory for the prometheus multiproc dir if none was explicitly set
+        tmpdir = tempfile.mkdtemp(prefix="prom_mcp_")
+        os.environ["PROMETHEUS_MULTIPROC_DIR"] = tmpdir
+        atexit.register(lambda: shutil.rmtree(tmpdir, ignore_errors=True))
 
-class CoreApplication(BaseApplication):
-    """Gunicorn Core Application"""
-
-    def __init__(self, app: StarletteWithLifespan, options: dict = None) -> None:
-        """Initialize the core application."""
-        self.options = options or {}
-        self.app = app
-        super().__init__()
-
-    def load_config(self) -> None:
-        """Load the options specific to this application."""
-        config = {
-            key: value
-            for key, value in self.options.items()
-            if key in self.cfg.settings and value is not None
-        }
-        for key, value in config.items():
-            self.cfg.set(key.lower(), value)
-
-    def load(self) -> BaseApplication:
-        """Load the application."""
-        return self.app
+    # "The PROMETHEUS_MULTIPROC_DIR environment variable must be set to a directory that
+    # the client library can use for metrics. This directory must be wiped between process/Gunicorn
+    # runs (before startup is recommended)." ~ https://prometheus.github.io/client_python/multiprocess/
+    shutil.rmtree(os.environ["PROMETHEUS_MULTIPROC_DIR"], ignore_errors=True)
+    os.makedirs(os.environ["PROMETHEUS_MULTIPROC_DIR"], exist_ok=True)
+    return config
 
 
 def main():
-    config = get_config()
+    # Force spawn universally: workers get a fresh interpreter, so no
+    # supervisor state (prometheus collectors, open fds, cached config,
+    # RNG state, etc.) can leak to them via fork inheritance. This is the
+    # primary correctness guarantee; the PID guard in metrics.py is the
+    # structural backstop.
+    multiprocessing.set_start_method("spawn", force=True)
 
-    if "PROMETHEUS_MULTIPROC_DIR" in os.environ:
-        # Wipe on startup — clears stale files from any previous run
-        shutil.rmtree(os.environ["PROMETHEUS_MULTIPROC_DIR"], ignore_errors=True)
-
-    if config.metrics_enabled and config.mcp_workers > 1:
-        if "PROMETHEUS_MULTIPROC_DIR" not in os.environ:
-            # Local multi-worker: create a temp dir and clean it up on exit
-            tmpdir = tempfile.mkdtemp(prefix="prom_mcp_")
-            os.environ["PROMETHEUS_MULTIPROC_DIR"] = tmpdir
-            atexit.register(lambda: shutil.rmtree(tmpdir, ignore_errors=True))
-        os.makedirs(os.environ["PROMETHEUS_MULTIPROC_DIR"], exist_ok=True)
-
-    if config.metrics_enabled:
-        metrics.enable()
+    config = _prepare_prometheus_multiproc_dir()
 
     transport = config.mcp_server_transport
 
     # For HTTP and SSE transports, we need to specify host and port
     http_transports = [TransportType.HTTP.value, TransportType.SSE.value]
     if transport in http_transports:
-        # Use the configured bind host (defaults to 127.0.0.1, can be set to 0.0.0.0)
-        # and bind port (defaults to 8000)
-        workers = config.mcp_workers
-        if workers == 1:
-            log_dict_config = setup_logging(None, "INFO", "json")
-            lconfig.dictConfig(log_dict_config)
-            mcp.run(
-                transport=transport,
-                host=config.mcp_bind_host,
-                port=config.mcp_bind_port,
-                uvicorn_config={"log_config": log_dict_config},
-                stateless_http=True,
-            )
-        else:
-            log_dict_config = setup_logging(None, "INFO", "json")
-            lconfig.dictConfig(log_dict_config)
-
-            options = {
-                "bind": f"{config.mcp_bind_host}:{config.mcp_bind_port}",
-                "timeout": config.mcp_timeout,
-                "workers": config.mcp_workers,
-                "worker_class": "uvicorn_worker.UvicornWorker",
-                "worker_connections": config.mcp_worker_connections,
-                "max_requests": config.mcp_max_requests,
-                "max_requests_jitter": config.mcp_max_requests_jitter,
-                "keepalive": config.mcp_keepalive,
-                "logconfig_dict": log_dict_config,
-            }
-
-            if os.path.isdir("/dev/shm"):
-                options["worker_tmp_dir"] = "/dev/shm"
-
-            if config.metrics_enabled:
-                options["child_exit"] = _child_exit
-
-            CoreApplication(
-                mcp.http_app(path="/mcp", stateless_http=True, transport=transport), options
-            ).run()
+        log_dict_config = setup_logging(None, "INFO", "json")
+        lconfig.dictConfig(log_dict_config)
+        # Uvicorn requires an import string (not an app instance) to support
+        # workers > 1, since each child process re-imports the factory.
+        uvicorn.run(
+            "mcp_hydrolix.webapp:create_app",
+            factory=True,
+            host=config.mcp_bind_host,
+            port=config.mcp_bind_port,
+            workers=config.mcp_workers,
+            timeout_keep_alive=config.mcp_keepalive,
+            limit_concurrency=config.mcp_worker_connections,
+            limit_max_requests=(
+                config.mcp_max_requests
+                if config.mcp_workers > 1 and config.mcp_max_requests > 0
+                else None
+            ),
+            limit_max_requests_jitter=config.mcp_max_requests_jitter,
+            log_config=log_dict_config,
+            access_log=False,
+            server_header=False,
+            timeout_graceful_shutdown=config.mcp_graceful_timeout,
+            timeout_worker_healthcheck=config.mcp_worker_healthcheck_timeout,
+        )
     else:
-        # For stdio transport, no host or port is needed
         log_dict_config = setup_logging(None, "INFO", "json")
         if log_dict_config:
             lconfig.dictConfig(log_dict_config)
+        # Lazy import — see module docstring for why this must not be hoisted.
+        from .mcp_server import mcp
+
         mcp.run(transport=transport)
 
 

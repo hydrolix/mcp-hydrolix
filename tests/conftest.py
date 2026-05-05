@@ -3,7 +3,7 @@ import pytest_asyncio
 from mcp_clickhouse.mcp_server import create_clickhouse_client
 
 from mcp_hydrolix.mcp_server import mcp
-from mcp_hydrolix import create_hydrolix_client
+from mcp_hydrolix.mcp_server import create_hydrolix_client
 
 
 @pytest.fixture(scope="session")

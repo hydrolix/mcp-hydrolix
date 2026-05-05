@@ -1,5 +1,28 @@
+"""Prometheus metrics for the MCP Hydrolix server.
+
+Lifecycle
+---------
+When ``HYDROLIX_METRICS_ENABLED=true`` and ``HYDROLIX_MCP_WORKERS > 1``:
+
+1. The launcher (``main.py``) forces ``multiprocessing`` to the ``spawn`` start
+   method and sets ``PROMETHEUS_MULTIPROC_DIR`` to a fresh, empty directory
+   before uvicorn starts.
+2. Collectors are built at import time from ``HYDROLIX_METRICS_ENABLED`` and
+   ``PROMETHEUS_MULTIPROC_DIR``.
+3. Any worker's ``/metrics`` endpoint uses ``MultiProcessCollector`` to merge
+   every worker's mmap files into a single scrape response.
+
+When disabled, ``METRICS`` holds inert``_NoOpMetric`` stand-ins and the default
+``REGISTRY`` is untouched.
+"""
+
+from __future__ import annotations
+
+import atexit
+import logging
 import os
 from dataclasses import dataclass
+from typing import Final, Generic, Self, TypeVar
 
 from prometheus_client import (
     CONTENT_TYPE_LATEST,
@@ -12,62 +35,200 @@ from prometheus_client import (
     multiprocess,
 )
 
+from .mcp_env import get_config
+
 NAMESPACE = "mcp_hydrolix"
 LATENCY_BUCKETS = (0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, float("inf"))
 
 
-@dataclass
-class _Metrics:
-    tool_calls_total: Counter
-    tool_call_duration_seconds: Histogram
-    queries_total: Counter
-    query_duration_seconds: Histogram
-    active_requests: Gauge
+class _NoOpMetric:
+    def labels(self, *args: object, **kwargs: object) -> "_NoOpMetric":
+        return self
+
+    def inc(self, amount: float = 1.0) -> None:
+        pass
+
+    def dec(self, amount: float = 1.0) -> None:
+        pass
+
+    def observe(self, amount: float) -> None:
+        pass
 
 
-_instance: _Metrics | None = None
+_NOOP: Final[_NoOpMetric] = _NoOpMetric()
+
+_MetricT = TypeVar("_MetricT", Counter, Gauge, Histogram)
 
 
-def enable() -> None:
-    """Register all metrics. Must be called before any instrumentation."""
-    global _instance
-    _instance = _Metrics(
-        tool_calls_total=Counter(
-            "tool_calls_total",
-            "Total MCP tool calls by tool name and outcome",
-            ["tool", "status"],
-            namespace=NAMESPACE,
+class _PidGuarded(Generic[_MetricT]):
+    """Decorator pinning a prometheus collector to its construction PID.
+
+    prometheus_client's mmap files are keyed by the PID recorded at collector
+    construction, so cross-process access corrupts aggregation silently. This
+    wrapper is the sole runtime check guarding that invariant -- any access
+    from a foreign process raises ``RuntimeError`` instead.
+    """
+
+    __slots__ = ("_inner", "_owner_pid", "_children")
+    _inner: _MetricT
+    _owner_pid: int
+
+    def __init__(self, inner: _MetricT, *, owner_pid: int | None = None) -> None:
+        self._inner = inner
+        self._owner_pid = os.getpid() if owner_pid is None else owner_pid
+        self._children: dict[tuple[tuple[object, ...], tuple[tuple[str, object], ...]], Self] = (
+            dict()
+        )
+
+    def _check(self) -> None:
+        cur = os.getpid()
+        if cur != self._owner_pid:
+            raise RuntimeError(
+                f"Prometheus collector accessed from pid={cur} but was "
+                f"constructed in pid={self._owner_pid}. Cross-process access "
+                "corrupts prometheus_client's multiprocess mmap files."
+            )
+
+    def labels(self, *args: object, **kwargs: object) -> Self:
+        self._check()
+        # Wrap the child in the same concrete guard subclass so static types
+        # flow through, and cache per label tuple (mirroring prometheus_client's
+        # own caching in MetricWrapperBase).
+        key = (args, tuple(sorted(kwargs.items())))
+        cached = self._children.get(key)
+        if cached is None:
+            cached = type(self)(self._inner.labels(*args, **kwargs), owner_pid=self._owner_pid)
+            self._children[key] = cached
+        return cached
+
+
+class _PidGuardedCounter(_PidGuarded[Counter]):
+    __slots__ = ()
+
+    def inc(self, amount: float = 1.0) -> None:
+        self._check()
+        self._inner.inc(amount)
+
+
+class _PidGuardedGauge(_PidGuarded[Gauge]):
+    __slots__ = ()
+
+    def inc(self, amount: float = 1.0) -> None:
+        self._check()
+        self._inner.inc(amount)
+
+    def dec(self, amount: float = 1.0) -> None:
+        self._check()
+        self._inner.dec(amount)
+
+
+class _PidGuardedHistogram(_PidGuarded[Histogram]):
+    __slots__ = ()
+
+    def observe(self, amount: float) -> None:
+        self._check()
+        self._inner.observe(amount)
+
+
+@dataclass(frozen=True)
+class Metrics:
+    tool_calls_total: _PidGuardedCounter | _NoOpMetric
+    tool_call_duration_seconds: _PidGuardedHistogram | _NoOpMetric
+    queries_total: _PidGuardedCounter | _NoOpMetric
+    query_duration_seconds: _PidGuardedHistogram | _NoOpMetric
+    active_requests: _PidGuardedGauge | _NoOpMetric
+
+
+def _build_live() -> Metrics:
+    return Metrics(
+        tool_calls_total=_PidGuardedCounter(
+            Counter(
+                "tool_calls_total",
+                "Total MCP tool calls by tool name and outcome",
+                ["tool", "status"],
+                namespace=NAMESPACE,
+            )
         ),
-        tool_call_duration_seconds=Histogram(
-            "tool_call_duration_seconds",
-            "MCP tool call latency in seconds",
-            ["tool"],
-            namespace=NAMESPACE,
-            buckets=LATENCY_BUCKETS,
+        tool_call_duration_seconds=_PidGuardedHistogram(
+            Histogram(
+                "tool_call_duration_seconds",
+                "MCP tool call latency in seconds",
+                ["tool"],
+                namespace=NAMESPACE,
+                buckets=LATENCY_BUCKETS,
+            )
         ),
-        queries_total=Counter(
-            "queries_total",
-            "Total Hydrolix queries by outcome",
-            ["status"],
-            namespace=NAMESPACE,
+        queries_total=_PidGuardedCounter(
+            Counter(
+                "queries_total",
+                "Total Hydrolix queries by outcome",
+                ["status"],
+                namespace=NAMESPACE,
+            )
         ),
-        query_duration_seconds=Histogram(
-            "query_duration_seconds",
-            "Hydrolix query latency in seconds",
-            namespace=NAMESPACE,
-            buckets=LATENCY_BUCKETS,
+        query_duration_seconds=_PidGuardedHistogram(
+            Histogram(
+                "query_duration_seconds",
+                "Hydrolix query latency in seconds",
+                namespace=NAMESPACE,
+                buckets=LATENCY_BUCKETS,
+            )
         ),
-        active_requests=Gauge(
-            "active_requests",
-            "Number of in-flight MCP tool calls",
-            namespace=NAMESPACE,
-            multiprocess_mode="sum",
+        active_requests=_PidGuardedGauge(
+            Gauge(
+                "active_requests",
+                "Number of in-flight MCP tool calls",
+                namespace=NAMESPACE,
+                multiprocess_mode="sum",
+            )
         ),
     )
 
 
-def get_instance() -> _Metrics | None:
-    return _instance
+_NOOP_METRICS: Final[Metrics] = Metrics(
+    tool_calls_total=_NOOP,
+    tool_call_duration_seconds=_NOOP,
+    queries_total=_NOOP,
+    query_duration_seconds=_NOOP,
+    active_requests=_NOOP,
+)
+
+
+_config: Final = get_config()
+_enabled: Final[bool] = _config.metrics_enabled
+METRICS: Final[Metrics] = _build_live() if _enabled else _NOOP_METRICS
+
+
+def _mark_worker_dead() -> None:
+    """atexit handler for prometheus multiprocess mode."""
+    multiprocess.mark_process_dead(os.getpid())
+
+
+if _enabled and "PROMETHEUS_MULTIPROC_DIR" in os.environ:
+    atexit.register(_mark_worker_dead)
+    if _config.mcp_workers == 1:
+        # prometheus_client is now in mmap mode (that decision was already
+        # baked in at its own import time), but the launcher only wipes the
+        # dir when workers>1. Stale samples from a prior run will merge into
+        # scrapes; single-worker mode should use the default REGISTRY instead.
+        logging.getLogger(__name__).warning(
+            "HYDROLIX_METRICS_ENABLED=true with workers=1 but "
+            "PROMETHEUS_MULTIPROC_DIR is set. prometheus_client is operating "
+            "in multiprocess mode and the directory was not wiped at startup, "
+            "so stale samples from prior runs may appear in /metrics. Unset "
+            "PROMETHEUS_MULTIPROC_DIR for single-worker mode."
+        )
+elif _enabled and _config.mcp_workers > 1:
+    # With workers>1 this means the launcher was bypassed (e.g.
+    # ``uvicorn mcp_hydrolix.webapp:create_app --workers 2`` directly, or a
+    # container manifest that forgets the ``mcp-hydrolix`` CLI): each worker
+    # would register its own in-memory REGISTRY and /metrics would return
+    # per-process, inconsistent data across scrapes.
+    logging.getLogger(__name__).warning(
+        "HYDROLIX_METRICS_ENABLED=true and workers>1 but PROMETHEUS_MULTIPROC_DIR "
+        "is unset. Metrics will not be aggregated correctly across workers. "
+        "Please launch via the mcp-hydrolix:main module."
+    )
 
 
 def generate_metrics() -> tuple[bytes, str]:
