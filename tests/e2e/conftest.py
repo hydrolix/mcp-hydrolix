@@ -287,7 +287,23 @@ def cluster_state(
 
 
 @pytest.fixture(scope="session")
-def mcp_ready(_e2e_env_guard: E2EConfig, cluster_state: ClusterState) -> ClusterState:
+def bearer_token(_e2e_env_guard: E2EConfig, cluster_state: ClusterState) -> str:
+    # Login is served by the always-on Hydrolix API (`/config/v1/login`), not
+    # by the mcp-hydrolix process under test, so it's available immediately —
+    # no need to gate on mcp_ready.
+    return login_for_bearer_token(
+        host=cluster_state.hydrolix_host,
+        username=_e2e_env_guard.hydrolix_user,
+        password=_e2e_env_guard.hydrolix_password,
+    )
+
+
+@pytest.fixture(scope="session")
+def mcp_ready(
+    _e2e_env_guard: E2EConfig,
+    cluster_state: ClusterState,
+    bearer_token: str,
+) -> ClusterState:
     wait_for_rollout(
         cluster_state.clients,
         cluster_state.ctx,
@@ -297,22 +313,15 @@ def mcp_ready(_e2e_env_guard: E2EConfig, cluster_state: ClusterState) -> Cluster
     )
     # k8s reports the Deployment Ready before the front-end LB has finished
     # routing traffic to the new pods, so the public endpoint can still serve
-    # 502s after wait_for_rollout returns. Require a stable streak of healthy
-    # /mcp responses before yielding to tests.
+    # 5xx — or 401s minted by the LB itself before requests reach us — after
+    # wait_for_rollout returns. Probe authed and require a JSON-RPC serverInfo
+    # response so an LB-issued 401 can't masquerade as readiness.
     wait_for_endpoint_ready(
         cluster_state.hydrolix_host,
+        bearer_token,
         timeout=_e2e_env_guard.ready_timeout,
     )
     return cluster_state
-
-
-@pytest.fixture(scope="session")
-def bearer_token(_e2e_env_guard: E2EConfig, mcp_ready: ClusterState) -> str:
-    return login_for_bearer_token(
-        host=mcp_ready.hydrolix_host,
-        username=_e2e_env_guard.hydrolix_user,
-        password=_e2e_env_guard.hydrolix_password,
-    )
 
 
 @pytest.fixture

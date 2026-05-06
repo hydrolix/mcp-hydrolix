@@ -48,30 +48,38 @@ def login_for_bearer_token(host: str, username: str, password: str, timeout: flo
 
 def wait_for_endpoint_ready(
     host: str,
+    token: str,
     *,
     timeout: float = 120.0,
     poll_interval: float = 2.0,
     success_streak: int = 3,
     probe_timeout: float = 5.0,
 ) -> None:
-    """Poll `/mcp` until it serves a stable, non-infrastructure response.
+    """Poll `/mcp` with an authenticated `initialize` until it returns a real
+    MCP response.
 
     A k8s Deployment is reported Ready as soon as its readiness probe passes,
     which can happen well before the front-end LB has finished cutting traffic
-    over from old pods or before the new pods' gunicorn workers have fully
-    accepted load. During that window, the public `/mcp` endpoint returns 502
-    or transient connection errors. Requiring a streak of consecutive non-5xx
-    responses (401 is the expected healthy answer for an unauthed POST) avoids
-    that race without coupling the test harness to LB internals.
+    over from old pods or before the new pods' uvicorn workers have fully
+    accepted load. During that window, the public `/mcp` endpoint can return
+    5xx, transient connection errors, or — when the LB itself rejects requests
+    that haven't been routed to a backend yet — 401s that look identical to
+    FastMCP's own auth challenge. Probing unauthed and treating any non-5xx as
+    "ready" therefore false-positives on LB-issued 401s.
+
+    The authenticated probe sidesteps that: only the actual mcp-hydrolix
+    process can mint a 200 carrying a JSON-RPC `serverInfo` payload. We still
+    require a streak of consecutive successes to ride out brief route flaps
+    during rollout.
     """
     deadline = time.monotonic() + timeout
     streak = 0
     last_signal = "no-attempts-yet"
     while time.monotonic() < deadline:
         try:
-            status, _body = unauthed_initialize_status(host, timeout=probe_timeout)
-            last_signal = f"HTTP {status}"
-            if status < 500:
+            ok, signal = _probe_authed_initialize(host, token, timeout=probe_timeout)
+            last_signal = signal
+            if ok:
                 streak += 1
                 if streak >= success_streak:
                     return
@@ -85,6 +93,42 @@ def wait_for_endpoint_ready(
         f"MCP endpoint at https://{host.rstrip('/')}/mcp did not stabilize within "
         f"{timeout}s (last_signal={last_signal!r}, streak={streak}/{success_streak})"
     )
+
+
+def _probe_authed_initialize(host: str, token: str, *, timeout: float) -> tuple[bool, str]:
+    """Send an authed `initialize` POST and verify the body shape.
+
+    Returns `(is_healthy, signal_description)`. The body check looks for
+    `serverInfo` as a substring because Streamable HTTP can respond with
+    either `application/json` or SSE-framed `text/event-stream`; both shapes
+    embed the JSON-RPC result verbatim.
+    """
+    url = f"https://{host.rstrip('/')}/mcp"
+    payload = {
+        "jsonrpc": "2.0",
+        "method": "initialize",
+        "params": {
+            "protocolVersion": PROTOCOL_VERSION,
+            "capabilities": {},
+            "clientInfo": {"name": "mcp-hydrolix-e2e-readiness-probe", "version": "0.1"},
+        },
+        "id": 1,
+    }
+    resp = httpx.post(
+        url,
+        json=payload,
+        headers={
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/event-stream",
+            "Authorization": f"Bearer {token}",
+        },
+        timeout=timeout,
+    )
+    if resp.status_code != 200:
+        return False, f"HTTP {resp.status_code}: {resp.text[:200]!r}"
+    if "serverInfo" not in resp.text:
+        return False, f"HTTP 200 but no serverInfo in body: {resp.text[:200]!r}"
+    return True, "HTTP 200 with serverInfo"
 
 
 def unauthed_initialize_status(host: str, timeout: float = 15.0) -> tuple[int, str]:
