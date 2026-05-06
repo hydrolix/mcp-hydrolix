@@ -66,26 +66,30 @@ class ClusterState:
     pre_patch_deployment_generation: int | None
 
 
-def _missing_env_message(missing: list[str]) -> str:
-    return (
-        "You appear to have run the e2e suite without the required env vars: "
-        f"{', '.join(missing)}. If you intended to run unit tests, re-run with "
-        "`-m 'not end_to_end'`."
-    )
+_SKIP_MSG = (
+    "e2e suite skipped: no .env.e2e file found and MCP_HYDROLIX_E2E_ENV_FILE "
+    "is not set.  Copy .env.e2e.example → .env.e2e and fill in credentials to "
+    "run the end-to-end tests."
+)
 
 
 @pytest.fixture(scope="session")
 def _e2e_env_guard() -> E2EConfig:
-    env_file = os.environ.get("MCP_HYDROLIX_E2E_ENV_FILE", str(REPO_ROOT / ".env.e2e"))
-    if Path(env_file).exists():
-        # override=True because tests/__init__.py calls load_dotenv() at package
-        # import time, which loads tests/.env (HYDROLIX_HOST=localhost for unit
-        # tests). Without override, that pre-set value wins and e2e tests would
-        # talk to localhost instead of the live cluster.
-        load_dotenv(env_file, override=True)
+    explicit = os.environ.get("MCP_HYDROLIX_E2E_ENV_FILE")
+    env_file = explicit or str(REPO_ROOT / ".env.e2e")
+    if not Path(env_file).exists():
+        pytest.skip(_SKIP_MSG)
+    # override=True because tests/__init__.py calls load_dotenv() at package
+    # import time, which loads tests/.env (HYDROLIX_HOST=localhost for unit
+    # tests). Without override, that pre-set value wins and e2e tests would
+    # talk to localhost instead of the live cluster.
+    load_dotenv(env_file, override=True)
     missing = [v for v in REQUIRED_VARS if not os.environ.get(v)]
     if missing:
-        pytest.fail(_missing_env_message(missing), pytrace=False)
+        pytest.fail(
+            f"e2e env file {env_file} is missing required vars: {', '.join(missing)}",
+            pytrace=False,
+        )
 
     def _opt(name: str) -> str | None:
         v = os.environ.get(name)

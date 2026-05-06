@@ -19,8 +19,8 @@ independent guards are in place:
 2. The pre-push hook in `.pre-commit-config.yaml` filters with
    `-m "not integration_clickhouse and not end_to_end"`.
 3. CI runs `uv run pytest -m "not end_to_end"` until secrets are populated.
-4. A session-scoped env-var guard in `conftest.py` calls `pytest.fail()` on any
-   missing required var with a clear remediation hint.
+4. A session-scoped env-file guard in `conftest.py` skips the entire suite when
+   `.env.e2e` is absent (the default state after clone).
 
 ## Prerequisites
 
@@ -126,9 +126,9 @@ the CR, and removes the advisory lock annotation. Flags:
 
 ## Troubleshooting
 
-- **`pytest.fail` at session start with "missing required env vars":** you ran
-  the suite without `HYDROLIX_USER`/`HYDROLIX_PASSWORD`. If you intended to run
-  the unit tests instead, re-run with `-m "not end_to_end"`.
+- **All e2e tests show SKIPPED:** no `.env.e2e` file exists. Copy
+  `.env.e2e.example` to `.env.e2e` and fill in `HYDROLIX_USER` /
+  `HYDROLIX_PASSWORD`.
 - **`advisory lock held by another run`:** another machine or session is mid-run
   against the same cluster. Verify there is no other invocation, then remove
   the `mcp-hydrolix-e2e/lock` annotation from the CR by hand:
