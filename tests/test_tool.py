@@ -10,9 +10,8 @@ from mcp_hydrolix.mcp_server import (
     run_select_query,
 )
 
-pytestmark = pytest.mark.integration_clickhouse
 
-
+@pytest.mark.integration_clickhouse
 class TestHydrolixTools:
     async def test_list_databases(self, setup_tool_test_database):
         """Test listing databases."""
