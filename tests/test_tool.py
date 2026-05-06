@@ -16,24 +16,22 @@ class TestHydrolixTools:
         """Test listing databases."""
         test_db, _ = setup_tool_test_database
         result = await list_databases()
-        assert test_db in result
+        assert test_db in result.databases
 
     async def test_list_tables_without_like(self, setup_tool_test_database):
         """Test listing tables without a 'LIKE' filter."""
         test_db, test_table = setup_tool_test_database
         result = await list_tables(test_db)
-        assert isinstance(result, list)
-        assert len(result) == 1
-        table = result[0]
+        assert len(result.tables) == 1
+        table = result.tables[0]
         assert table.name == test_table
 
     async def test_list_tables_with_like(self, setup_tool_test_database):
         """Test listing tables with a 'LIKE' filter."""
         test_db, test_table = setup_tool_test_database
         result = await list_tables(test_db, like=f"{test_table}%")
-        assert isinstance(result, list)
-        assert len(result) == 1
-        table = result[0]
+        assert len(result.tables) == 1
+        table = result.tables[0]
         assert table.name == test_table
 
     async def test_run_select_query_success(self, setup_tool_test_database):
@@ -41,10 +39,9 @@ class TestHydrolixTools:
         test_db, test_table = setup_tool_test_database
         query = f"SELECT * FROM {test_db}.{test_table}"
         result = await inspect.unwrap(run_select_query)(query)
-        assert isinstance(result, dict)
-        assert len(result["rows"]) == 2
-        assert result["rows"][0][0] == 1
-        assert result["rows"][0][1] == "Alice"
+        assert len(result.rows) == 2
+        assert result.rows[0][0] == 1
+        assert result.rows[0][1] == "Alice"
 
     async def test_run_select_query_failure(self, setup_tool_test_database):
         """Test running a SELECT query with an error."""
@@ -65,10 +62,9 @@ class TestHydrolixTools:
         test_db, test_table = setup_tool_test_database
 
         # First verify the table exists
-        tables = await list_tables(test_db)
-        assert isinstance(tables, list)
-        assert len(tables) == 1
-        assert tables[0].name == test_table
+        result = await list_tables(test_db)
+        assert len(result.tables) == 1
+        assert result.tables[0].name == test_table
 
         # Now get detailed table info including columns
         table_info = await get_table_info(test_db, test_table)
