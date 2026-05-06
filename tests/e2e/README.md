@@ -84,17 +84,7 @@ The fixture detects ttl.sh by prefix and switches conventions automatically:
 | anything else      | identity in tag; mirrors `publish-feature.yml` |
 
 You can pin both `MCP_HYDROLIX_E2E_IMAGE` and `MCP_HYDROLIX_E2E_IMAGE_TAG`
-explicitly to bypass derivation. To pin only the branch identity that flows
-into the derived image/tag (e.g. when running detached HEAD or with
-uncommitted changes whose branch you want to override), set
-`MCP_HYDROLIX_E2E_BRANCH=<name>`. Both `_derive_image_and_tag` and
-`build_and_push.sh` honor this override identically.
-
-## Standalone build helper
-
-`tests/e2e/build_and_push.sh` is a thin shell wrapper around the same image
-derivation logic. It prints `export` lines so you can run it once and re-use
-the IMAGE/TAG with `MCP_HYDROLIX_E2E_SKIP_BUILD=1`.
+explicitly to bypass derivation.
 
 ## Cleanup behavior
 

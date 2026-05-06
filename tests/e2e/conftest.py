@@ -115,33 +115,21 @@ def _is_dirty() -> bool:
     return subprocess.call(["git", "diff", "--quiet", "HEAD"], cwd=REPO_ROOT) != 0
 
 
-def _os_user_fallback() -> str:
-    """Match the shell parity of `${USER:-$(id -un)}` in build_and_push.sh.
-
-    Python's getpass.getuser() checks $LOGNAME first, which would diverge from
-    the shell. Mirror the shell precisely: $USER, then OS lookup, then a
-    literal sentinel so image names remain deterministic in container
-    environments without USER set.
-    """
-    user = os.environ.get("USER")
-    if user:
-        return user
+def _git_user_id() -> str:
+    """Local part of `git config user.email`, sanitized for image names."""
     try:
-        import pwd
-
-        # `id -un` reports the effective UID's name, so geteuid() matches.
-        return pwd.getpwuid(os.geteuid()).pw_name
-    except (ImportError, KeyError, AttributeError, OSError):
-        return "unknown"
+        email = _git_output("config", "user.email")
+    except subprocess.CalledProcessError as exc:
+        raise RuntimeError(
+            "git config user.email is not set; required for e2e image naming. "
+            "Set it with `git config --global user.email <you@example.com>`."
+        ) from exc
+    local = email.split("@", 1)[0]
+    return re.sub(r"[^a-zA-Z0-9._-]", "-", local)
 
 
 def _derive_image_and_tag(cfg: E2EConfig) -> tuple[str, str]:
-    # MCP_HYDROLIX_E2E_BRANCH mirrors the override accepted by
-    # build_and_push.sh so manual and pytest-driven invocations produce the
-    # same image identity for a given branch.
-    branch = os.environ.get("MCP_HYDROLIX_E2E_BRANCH") or _git_output(
-        "rev-parse", "--abbrev-ref", "HEAD"
-    )
+    branch = _git_output("rev-parse", "--abbrev-ref", "HEAD")
     short_sha = _git_output("rev-parse", "--short=7", "HEAD")
     sanitized = re.sub(r"[^a-zA-Z0-9._-]", "-", branch)
     dirty = "-dirty" if _is_dirty() else ""
@@ -149,8 +137,7 @@ def _derive_image_and_tag(cfg: E2EConfig) -> tuple[str, str]:
         image = cfg.image_override
         default_tag = f"branch-{sanitized}-{short_sha}{dirty}"
     else:
-        user = _os_user_fallback()
-        image = f"ttl.sh/mcp-hydrolix-e2e-{user}-{sanitized}-{short_sha}{dirty}"
+        image = f"ttl.sh/mcp-hydrolix-e2e-{_git_user_id()}-{sanitized}-{short_sha}{dirty}"
         default_tag = "1h"
     tag = cfg.image_tag_override or default_tag
     return image, tag
