@@ -1,73 +1,39 @@
-import inspect
 import ipaddress
-import json
 import logging
 from datetime import date, datetime, time
 from decimal import Decimal
-from functools import wraps
+from typing import Any, List
 
 import sqlglot
 import sqlglot.errors as sqlglot_errors
 import sqlglot.expressions as exp
-from fastmcp.tools.tool import ToolResult
 
 logger = logging.getLogger(__name__)
 
 
-class ExtendedEncoder(json.JSONEncoder):
-    """Extends JSONEncoder to apply custom serialization of CH data types."""
+def coerce_cell(v: Any) -> Any:
+    """Coerce ClickHouse-specific Python types in a result cell to JSON-friendly
+    equivalents.
 
-    def default(self, obj):
-        if isinstance(obj, ipaddress.IPv4Address):
-            return str(obj)
-        if isinstance(obj, datetime):
-            return obj.timestamp()
-        if isinstance(obj, (date, time)):
-            return obj.isoformat()
-        if isinstance(obj, bytes):
-            return obj.decode()
-        if isinstance(obj, Decimal):
-            return str(obj)
-        return super().default(obj)
-
-
-def with_serializer(fn):
+    `null` values pass through unchanged — `None` in a query result is data
+    (the user's SELECT may legitimately return SQL NULLs) and must be preserved.
     """
-    Decorator to apply custom serialization to CH query tool result.
-    Should be applied as a first decorator of the tool function.
+    if isinstance(v, ipaddress.IPv4Address):
+        return str(v)
+    if isinstance(v, datetime):
+        return v.timestamp()
+    if isinstance(v, (date, time)):
+        return v.isoformat()
+    if isinstance(v, bytes):
+        return v.decode()
+    if isinstance(v, Decimal):
+        return str(v)
+    return v
 
-    :returns: sync/async wrapper of mcp tool function
-    """
 
-    @wraps(fn)
-    def wrapper(*args, **kwargs):
-        """
-        Sync wrapper of mcpt tool `fn` function.
-        Function should return a dict or None.
-
-        :returns: ToolResult object with text-serialized and structured content.
-        """
-        result = fn(*args, **kwargs)
-        if not isinstance(result, dict):
-            result = {"result": result}
-        enc = json.dumps(result, cls=ExtendedEncoder)
-        return ToolResult(content=enc, structured_content=json.loads(enc))
-
-    @wraps(fn)
-    async def async_wrapper(*args, **kwargs):
-        """
-        Async wrapper of mcp tool `fn` function.
-        Function should return a dict or None.
-
-        :returns: ToolResult object with text-serialized and structured content.
-        """
-        result = await fn(*args, **kwargs)
-        if not isinstance(result, dict):
-            result = {"result": result}
-        enc = json.dumps(result, cls=ExtendedEncoder)
-        return ToolResult(content=enc, structured_content=json.loads(enc))
-
-    return async_wrapper if inspect.iscoroutinefunction(fn) else wrapper
+def coerce_rows(rows: List[List[Any]]) -> List[List[Any]]:
+    """Apply `coerce_cell` to every cell in a 2D result set."""
+    return [[coerce_cell(c) for c in row] for row in rows]
 
 
 def inject_limit(query: str, max_rows: int) -> str:

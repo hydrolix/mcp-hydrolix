@@ -80,7 +80,7 @@ class TestListDatabasesAndTables:
         async with Client(mcp_server) as client:
             result = await client.call_tool("list_databases", {})
 
-            databases = result.structured_content["result"]
+            databases = result.structured_content["databases"]
             assert len(databases) >= 1
             assert test_db in databases
             assert "system" in databases  # System database should always exist
@@ -95,7 +95,7 @@ class TestListDatabasesAndTables:
         async with Client(mcp_server) as client:
             result = await client.call_tool("list_tables", {"database": test_db})
 
-            tables = result.structured_content["result"]
+            tables = result.structured_content["tables"]
             assert len(tables) >= 1
 
             # Should have exactly 2 tables
@@ -125,7 +125,7 @@ class TestListDatabasesAndTables:
             # Test with LIKE filter
             result = await client.call_tool("list_tables", {"database": test_db, "like": "test_%"})
 
-            tables = result.structured_content["result"]
+            tables = result.structured_content["tables"]
 
             assert len(tables) == 1
             assert tables[0]["name"] == test_table
@@ -140,7 +140,7 @@ class TestListDatabasesAndTables:
                 "list_tables", {"database": test_db, "not_like": "test_%"}
             )
 
-            tables = result.structured_content["result"]
+            tables = result.structured_content["tables"]
 
             assert len(tables) == 1
             assert tables[0]["name"] == test_table2
@@ -253,7 +253,7 @@ class TestTableMetadata:
         async with Client(mcp_server) as client:
             # First, list tables to discover available tables
             result = await client.call_tool("list_tables", {"database": test_db})
-            tables = result.structured_content["result"]
+            tables = result.structured_content["tables"]
 
             # Verify our test table exists in the list
             test_table_exists = any(t["name"] == test_table for t in tables)
@@ -299,7 +299,7 @@ class TestTableMetadata:
         async with Client(mcp_server) as client:
             # List tables in system database
             result = await client.call_tool("list_tables", {"database": "system"})
-            tables = result.structured_content["result"]
+            tables = result.structured_content["tables"]
 
             # System database should have many tables
             assert len(tables) > 10
@@ -480,7 +480,7 @@ class TestRunSelectQueryTruncation:
             query = f"SELECT id, name, age FROM {test_db}.{test_table} ORDER BY id"
             result = await client.call_tool("run_select_query", {"query": query, "max_cells": 100})
 
-            query_result = result.data
+            query_result = result.structured_content
             assert query_result["truncated"] is False
             assert query_result["row_count"] == 4
             assert len(query_result["rows"]) == 4
@@ -498,7 +498,7 @@ class TestRunSelectQueryTruncation:
             query = f"SELECT id, name, age FROM {test_db}.{test_table} ORDER BY id"
             result = await client.call_tool("run_select_query", {"query": query, "max_cells": 12})
 
-            query_result = result.data
+            query_result = result.structured_content
             assert query_result["truncated"] is False
             assert query_result["row_count"] == 4
 
@@ -511,7 +511,7 @@ class TestRunSelectQueryTruncation:
             query = f"SELECT id, name, age, created_at FROM {test_db}.{test_table} ORDER BY id"
             result = await client.call_tool("run_select_query", {"query": query, "max_cells": 4})
 
-            query_result = result.data
+            query_result = result.structured_content
             assert query_result["truncated"] is True
             assert query_result["row_count"] == 1
             assert query_result["total_row_count"] == 4
@@ -529,7 +529,7 @@ class TestRunSelectQueryTruncation:
             query = f"SELECT id, name, age, created_at FROM {test_db}.{test_table} ORDER BY id"
             result = await client.call_tool("run_select_query", {"query": query, "max_cells": 0})
 
-            query_result = result.data
+            query_result = result.structured_content
             assert query_result["truncated"] is False
             assert query_result["row_count"] == 4
             assert len(query_result["rows"]) == 4
@@ -555,7 +555,7 @@ class TestRunSelectQueryTruncation:
             query = f"SELECT id, name, age, created_at FROM {test_db}.{test_table} ORDER BY id"
             result = await client.call_tool("run_select_query", {"query": query, "max_cells": 2})
 
-            query_result = result.data
+            query_result = result.structured_content
             assert query_result["truncated"] is True
             assert query_result["row_count"] == 0
             assert len(query_result["rows"]) == 0
@@ -577,7 +577,7 @@ class TestRunSelectQueryTruncation:
             query = f"SELECT id, name, age, created_at FROM {test_db}.{test_table} ORDER BY id"
             result = await client.call_tool("run_select_query", {"query": query, "max_cells": 1000})
 
-            query_result = result.data
+            query_result = result.structured_content
             assert query_result["truncated"] is True
             assert query_result["row_count"] == 1
             assert query_result["total_row_count"] == 4
@@ -599,7 +599,7 @@ class TestRunSelectQueryTruncation:
             query = f"SELECT id, name, age, created_at FROM {test_db}.{test_table} ORDER BY id"
             result = await client.call_tool("run_select_query", {"query": query, "max_cells": 0})
 
-            query_result = result.data
+            query_result = result.structured_content
             assert query_result["truncated"] is True
             assert query_result["row_count"] == 1
             assert "administrator" in query_result["message"]
@@ -618,7 +618,7 @@ class TestRunSelectQueryTruncation:
             query = f"SELECT id, name, age, created_at FROM {test_db}.{test_table} ORDER BY id"
             result = await client.call_tool("run_select_query", {"query": query})
 
-            query_result = result.data
+            query_result = result.structured_content
             assert query_result["truncated"] is True
             assert query_result["row_count"] == 1
             assert query_result["total_row_count"] == 4
@@ -640,7 +640,7 @@ class TestRunSelectQueryTruncation:
             query = f"SELECT id, name, age, created_at FROM {test_db}.{test_table} ORDER BY id"
             result = await client.call_tool("run_select_query", {"query": query})
 
-            query_result = result.data
+            query_result = result.structured_content
             assert query_result["truncated"] is True
             assert query_result["row_count"] == 1  # 4 cells // 4 columns = 1 row
             assert query_result["total_row_count"] == 4
@@ -681,7 +681,7 @@ class TestRunSelectQueryUnit:
                     {"query": "SELECT a, b FROM t", "max_cells": 4},
                 )
 
-        query_result = result.data
+        query_result = result.structured_content
         assert query_result["truncated"] is True
         assert query_result["total_row_count"] == 100_000
         assert "total_row_count" in query_result["message"]
@@ -797,25 +797,25 @@ class TestBuildTruncationResponse:
         columns = ["a", "b"]
         rows = [["v1", "v2"]] * 10  # 10 rows, 2 cols = 20 cells; cell_limit=4 -> max_rows=2
         result = _build_truncation_response(columns, rows, cell_limit=4, capped_by_operator=False)
-        assert result["truncated"] is True
-        assert result["row_count"] == 2
-        assert result["total_row_count"] == 10
-        assert len(result["rows"]) == 2
-        assert result["columns"] == columns
-        assert "max_cells" in result["message"]
+        assert result.truncated is True
+        assert result.row_count == 2
+        assert result.total_row_count == 10
+        assert len(result.rows) == 2
+        assert result.columns == columns
+        assert "max_cells" in result.message
 
     def test_build_truncation_response_capped_by_operator(self):
         columns = ["x"]
         rows = [["v"]] * 5
         result = _build_truncation_response(columns, rows, cell_limit=3, capped_by_operator=True)
-        assert "enforced by the server" in result["message"]
-        assert "HYDROLIX_MAX_RESULT_CELLS_LIMIT" in result["message"]
+        assert "enforced by the server" in result.message
+        assert "HYDROLIX_MAX_RESULT_CELLS_LIMIT" in result.message
 
     def test_build_truncation_response_not_capped_by_operator(self):
         columns = ["x"]
         rows = [["v"]] * 5
         result = _build_truncation_response(columns, rows, cell_limit=3, capped_by_operator=False)
-        assert "larger max_cells" in result["message"]
+        assert "larger max_cells" in result.message
 
     def test_build_truncation_response_large_result_advisory(self):
         columns = ["x"]
@@ -823,7 +823,7 @@ class TestBuildTruncationResponse:
         result = _build_truncation_response(
             columns, rows, cell_limit=50_000, capped_by_operator=False
         )
-        assert "total_row_count reflects rows fetched" in result["message"]
+        assert "total_row_count reflects rows fetched" in result.message
 
     def test_build_truncation_response_no_advisory_below_threshold(self):
         columns = ["x"]
@@ -831,4 +831,4 @@ class TestBuildTruncationResponse:
         result = _build_truncation_response(
             columns, rows, cell_limit=50_000, capped_by_operator=False
         )
-        assert "total_row_count reflects rows fetched" not in result["message"]
+        assert "total_row_count reflects rows fetched" not in result.message

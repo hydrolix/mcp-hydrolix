@@ -1,60 +1,87 @@
-import dataclasses as _dc
-from dataclasses import dataclass
-from typing import Annotated, Any, ClassVar, List, Optional, TypedDict, Union, get_type_hints
+from typing import (
+    Annotated,
+    Any,
+    List,
+    Literal,
+    Optional,
+    TypedDict,
+    Union,
+    get_type_hints,
+)
 
-from pydantic import Field, field_serializer, model_serializer
+from pydantic import Field, model_serializer
 from pydantic.dataclasses import dataclass as pydantic_dataclass
 
 
-@dataclass(frozen=True)
+def _strip_empty(self, handler) -> dict:
+    """Drop None and empty-string fields from the serialized dict (token saver)."""
+    return {k: v for k, v in handler(self).items() if v is not None and v != ""}
+
+
+@pydantic_dataclass(frozen=True)
 class Column:
     """A plain dimension column."""
-
-    column_category: ClassVar[str] = "Column"
 
     name: str
     type: str
     comment: Optional[str] = None
+    column_category: Literal["Column"] = "Column"
+
+    @model_serializer(mode="wrap")
+    def _serialize(self, handler) -> dict:
+        return _strip_empty(self, handler)
 
 
-@dataclass(frozen=True)
+@pydantic_dataclass(frozen=True)
 class AliasColumn:
     """A grouper/dimension alias."""
-
-    column_category: ClassVar[str] = "AliasColumn"
 
     name: str
     type: str
     default_expr: str
     comment: Optional[str] = None
+    column_category: Literal["AliasColumn"] = "AliasColumn"
+
+    @model_serializer(mode="wrap")
+    def _serialize(self, handler) -> dict:
+        return _strip_empty(self, handler)
 
 
-@dataclass(frozen=True)
+@pydantic_dataclass(frozen=True)
 class AggregateColumn:
     """A column with AggregateFunction or SimpleAggregateFunction type."""
-
-    column_category: ClassVar[str] = "AggregateColumn"
 
     name: str
     type: str
     base_function: str
     merge_function: str
     comment: Optional[str] = None
+    column_category: Literal["AggregateColumn"] = "AggregateColumn"
+
+    @model_serializer(mode="wrap")
+    def _serialize(self, handler) -> dict:
+        return _strip_empty(self, handler)
 
 
-@dataclass(frozen=True)
+@pydantic_dataclass(frozen=True)
 class SummaryColumn:
     """An ALIAS column that transitively depends on aggregate functions."""
-
-    column_category: ClassVar[str] = "SummaryColumn"
 
     name: str
     type: str
     default_expr: str
     comment: Optional[str] = None
+    column_category: Literal["SummaryColumn"] = "SummaryColumn"
+
+    @model_serializer(mode="wrap")
+    def _serialize(self, handler) -> dict:
+        return _strip_empty(self, handler)
 
 
-ColumnType = Union[Column, AliasColumn, AggregateColumn, SummaryColumn]
+ColumnType = Annotated[
+    Union[Column, AliasColumn, AggregateColumn, SummaryColumn],
+    Field(discriminator="column_category"),
+]
 
 
 class _SystemCol:
@@ -83,24 +110,11 @@ class Table:
     is_summary_table: Optional[bool] = None
     summary_table_info: Optional[str] = None
 
-    @field_serializer("columns")
-    def serialize_columns(self, columns: Optional[List[ColumnType]]) -> List[dict]:
-        return [
-            {
-                k: v
-                for k, v in {
-                    **_dc.asdict(col),
-                    "column_category": type(col).column_category,
-                }.items()
-                if v is not None and v != ""
-            }
-            for col in (columns or [])
-        ]
-
     @model_serializer(mode="wrap")
     def serialize_table(self, handler) -> dict:
-        # handler runs Pydantic's default serialization (including serialize_columns)
-        # and returns the result as a dict, which we then filter.
+        # handler runs Pydantic's default serialization (which now invokes each
+        # column type's own _strip_empty serializer) and returns a dict, which
+        # we then filter at the table level.
         d = handler(self)
         return {k: v for k, v in d.items() if v is not None and v != ""}
 
@@ -118,3 +132,46 @@ class Table:
 class HdxQueryResult(TypedDict):
     columns: List[str]
     rows: List[List[Any]]
+
+
+@pydantic_dataclass(frozen=True)
+class DatabaseList:
+    """Result of `list_databases` — wraps a list of database names so the
+    structured payload is a JSON object (as MCP requires) with an explicit
+    field name instead of fastmcp's generic `result` wrapper."""
+
+    databases: List[str]
+
+
+@pydantic_dataclass(frozen=True)
+class TableList:
+    """Result of `list_tables` — wraps a list of tables so the structured
+    payload is a JSON object (as MCP requires) with an explicit field name
+    instead of fastmcp's generic `result` wrapper."""
+
+    tables: List[Table]
+
+
+@pydantic_dataclass(frozen=True)
+class RunSelectQueryResult:
+    """Stable typed shape for `run_select_query`.
+
+    `total_row_count` and `message` are only meaningful when `truncated=True`;
+    they default to None and are stripped from the wire payload by the
+    serializer when absent (token saver). Schema still declares them Optional
+    so strict clients accept the missing fields.
+
+    `rows` cells are passed through as-is — `null`s inside user query results
+    are kept (they may be meaningful data from the user's SELECT).
+    """
+
+    columns: List[str]
+    rows: List[List[Any]]
+    truncated: bool
+    row_count: int
+    total_row_count: Optional[int] = None
+    message: Optional[str] = None
+
+    @model_serializer(mode="wrap")
+    def _serialize(self, handler) -> dict:
+        return {k: v for k, v in handler(self).items() if v is not None}

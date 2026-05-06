@@ -1,7 +1,7 @@
-What does this MR do?
+What does this PR do?
 -----------------------
 
-Does this MR meet the acceptance criteria?
+Does this PR meet the acceptance criteria?
 --------------------------------------------
 
 * [ ] Documentation created/updated

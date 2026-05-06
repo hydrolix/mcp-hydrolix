@@ -23,7 +23,6 @@ from dotenv import load_dotenv
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from fastmcp.server.dependencies import get_access_token
-from fastmcp.tools.tool import ToolResult
 from fastmcp.server.middleware import Middleware, MiddlewareContext
 from jwt import DecodeError
 from mcp.types import ToolAnnotations
@@ -46,11 +45,14 @@ from mcp_hydrolix.column_analysis import (
 )
 from mcp_hydrolix.models import (
     ColumnType,
+    DatabaseList,
     HdxQueryResult,
+    RunSelectQueryResult,
     SummaryColumn,
     Table,
+    TableList,
 )
-from mcp_hydrolix.utils import inject_limit, with_serializer
+from mcp_hydrolix.utils import coerce_rows, inject_limit
 
 
 MCP_SERVER_NAME = "mcp-hydrolix"
@@ -371,7 +373,7 @@ async def _describe_columns(database: str, table_name: str) -> list[ColumnType]:
         openWorldHint=True,
     )
 )
-async def list_databases() -> List[str]:
+async def list_databases() -> DatabaseList:
     """List available Hydrolix databases"""
     logger.info("Listing all databases")
     result = await execute_cmd("SHOW DATABASES")
@@ -383,7 +385,7 @@ async def list_databases() -> List[str]:
         databases = [result]
 
     logger.info(f"Found {len(databases)} databases")
-    return databases
+    return DatabaseList(databases=databases)
 
 
 @mcp.tool(
@@ -469,7 +471,7 @@ async def get_table_info(database: str, table: str) -> Table:
 )
 async def list_tables(
     database: str, like: Optional[str] = None, not_like: Optional[str] = None
-) -> List[Table]:
+) -> TableList:
     """List all tables in a database for exploration and discovery.
 
     Use this tool to:
@@ -519,7 +521,7 @@ async def list_tables(
     logger.info(
         f"Found {len(tables)} tables (columns not populated - use get_table_info for schema)"
     )
-    return tables
+    return TableList(tables=tables)
 
 
 def _resolve_cell_limit(max_cells: Optional[int]) -> tuple[int, bool]:
@@ -543,8 +545,8 @@ def _build_truncation_response(
     rows: list,
     cell_limit: int,
     capped_by_operator: bool,
-) -> dict:
-    """Build the truncated response dict, logging the truncation event.
+) -> RunSelectQueryResult:
+    """Build the truncated response, logging the truncation event.
 
     Precondition: len(columns) > 0 (caller already guards this).
     """
@@ -571,13 +573,13 @@ def _build_truncation_response(
             "(e.g. max_cells=200000), or set max_cells=0 to disable truncation entirely."
         )
 
-    return {
-        "columns": columns,
-        "rows": rows[:max_rows],
-        "truncated": True,
-        "row_count": max_rows,
-        "total_row_count": num_rows,
-        "message": (
+    return RunSelectQueryResult(
+        columns=columns,
+        rows=coerce_rows(rows[:max_rows]),
+        truncated=True,
+        row_count=max_rows,
+        total_row_count=num_rows,
+        message=(
             f"Result truncated: showing {max_rows:,} of {num_rows:,} fetched rows "
             f"({num_cols} columns). "
             f"Exceeded the cell limit of {cell_limit:,} "
@@ -590,7 +592,7 @@ def _build_truncation_response(
             )
             + retrieve_more
         ),
-    }
+    )
 
 
 @mcp.tool(
@@ -602,11 +604,10 @@ def _build_truncation_response(
         openWorldHint=True,
     )
 )
-@with_serializer
 async def run_select_query(
     query: str,
     max_cells: Optional[int] = None,
-) -> ToolResult:
+) -> RunSelectQueryResult:
     """Run a SELECT query in a Hydrolix time-series database using the Clickhouse SQL dialect.
     Queries run using this tool will timeout after 30 seconds.
 
@@ -766,4 +767,9 @@ async def run_select_query(
     if cell_limit > 0 and num_cols > 0 and num_rows * num_cols > cell_limit:
         return _build_truncation_response(columns, rows, cell_limit, capped_by_operator)
 
-    return {"columns": columns, "rows": rows, "truncated": False, "row_count": num_rows}
+    return RunSelectQueryResult(
+        columns=columns,
+        rows=coerce_rows(rows),
+        truncated=False,
+        row_count=num_rows,
+    )
