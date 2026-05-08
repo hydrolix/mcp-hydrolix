@@ -163,13 +163,10 @@ def unauthed_initialize_status(host: str, timeout: float = 15.0) -> tuple[int, s
 def parsed_payload(result: CallToolResult) -> Any:
     """Return the canonical MCP-spec JSON payload from a CallToolResult.
 
-    All four mcp-hydrolix tools return Pydantic-modeled responses, so
-    `structured_content` is always populated. We avoid `result.data` because
-    fastmcp's typed-data synthesis is unreliable when the server's output
-    schema is permissive (e.g. `Table` uses `model_serializer(mode="wrap")`
-    that strips None/empty fields, collapsing the JSON-Schema item shape to
-    `additionalProperties: true` and causing the client to emit empty
-    `Root()` dataclasses).
+    All four mcp-hydrolix tools return typed Pydantic result models
+    (``DatabaseList``, ``TableList``, ``Table``, ``RunSelectQueryResult``),
+    so ``structured_content`` should contain a self-describing dict like
+    ``{"databases": [...]}``.
     """
     assert result.structured_content is not None, (
         f"expected structured_content on tool result; got {result!r}"

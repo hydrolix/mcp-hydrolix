@@ -11,14 +11,11 @@ EXPECTED_TOOLS = {"list_databases", "list_tables", "get_table_info", "run_select
 
 
 def _first_database_name(payload: dict) -> str:
-    # list_databases returns List[str]; fastmcp wraps non-object lists in
-    # `{"result": [...]}` to satisfy MCP's object-typed outputSchema rule.
-    return payload["result"][0]
+    return payload["databases"][0]
 
 
 def _first_table_name(payload: dict) -> str:
-    # list_tables returns List[Table]; same wrapping convention as above.
-    return payload["result"][0]["name"]
+    return payload["tables"][0]["name"]
 
 
 @pytest.mark.end_to_end

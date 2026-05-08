@@ -48,15 +48,15 @@ uv run pytest -m end_to_end tests/e2e/
 This will:
 
 1. Build the local working tree into a Docker image.
-2. Push it to `ttl.sh/mcp-hydrolix-e2e-<user>-<branch>-<shortsha>[-dirty]:1h`.
-   ttl.sh requires no auth and TTLs the image after one hour.
-3. Snapshot the current `spec.containers` value on the
+2. Push it to `ttl.sh/mcp-hydrolix-e2e-<user>-<branch>-<shortsha>[-dirty]-<epoch>:10m`.
+   ttl.sh requires no auth and TTLs the image after ten minutes.
+3. Annotate the CR with an advisory lock so concurrent runs against the same
+   cluster fail fast instead of stomping each other.
+4. Snapshot the current `spec.containers` value on the
    `hydrolixclusters.hydrolix.io` CR (typically null/absent) to
    `~/.cache/mcp-hydrolix-e2e/<cluster>-<ns>-<ts>.json`. The full
    `spec.containers` map is captured so any sibling container entries are
    restored faithfully.
-4. Annotate the CR with an advisory lock so concurrent runs against the same
-   cluster fail fast instead of stomping each other.
 5. JSON-merge-patch `spec.containers.mcp-hydrolix = {image, tag}` so the
    operator restarts the Deployment with our image.
 6. Wait up to `MCP_HYDROLIX_E2E_READY_TIMEOUT` seconds for the rollout.
@@ -80,7 +80,7 @@ The fixture detects ttl.sh by prefix and switches conventions automatically:
 
 | Registry           | Tag convention                                |
 | ------------------ | --------------------------------------------- |
-| `ttl.sh/...`       | identity in image name; tag is `1h`           |
+| `ttl.sh/...`       | identity in image name; tag is `10m`          |
 | anything else      | identity in tag; mirrors `publish-feature.yml` |
 
 You can pin both `MCP_HYDROLIX_E2E_IMAGE` and `MCP_HYDROLIX_E2E_IMAGE_TAG`

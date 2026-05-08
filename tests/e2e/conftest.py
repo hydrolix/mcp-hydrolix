@@ -4,6 +4,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, AsyncGenerator, Generator
@@ -141,8 +142,9 @@ def _derive_image_and_tag(cfg: E2EConfig) -> tuple[str, str]:
         image = cfg.image_override
         default_tag = f"branch-{sanitized}-{short_sha}{dirty}"
     else:
-        image = f"ttl.sh/mcp-hydrolix-e2e-{_git_user_id()}-{sanitized}-{short_sha}{dirty}"
-        default_tag = "1h"
+        epoch = int(time.time())
+        image = f"ttl.sh/mcp-hydrolix-e2e-{_git_user_id()}-{sanitized}-{short_sha}{dirty}-{epoch}"
+        default_tag = "10m"
     tag = cfg.image_tag_override or default_tag
     return image, tag
 
