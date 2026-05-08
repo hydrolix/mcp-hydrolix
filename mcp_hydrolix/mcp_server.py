@@ -270,21 +270,22 @@ async def execute_cmd(query: str):
         metrics.METRICS.query_duration_seconds.observe(time.perf_counter() - start)
 
 
-@mcp.custom_route("/health", methods=["GET"])
-async def health_check(request: Request) -> PlainTextResponse:
-    """Health check endpoint for monitoring server status.
+@mcp.custom_route("/healthz", methods=["GET"])
+async def liveness_check(request: Request) -> PlainTextResponse:
+    """Liveness endpoint: returns 200 if the process is alive."""
+    return PlainTextResponse("OK")
 
-    Returns OK if the server is running and can connect to Hydrolix.
-    """
+
+@mcp.custom_route("/health", methods=["GET"])
+async def readiness_check(request: Request) -> PlainTextResponse:
+    """Readiness endpoint: returns 200 only when able to connect to Hydrolix."""
     try:
-        # Try to create a client connection to verify query-head connectivity
         async with await create_hydrolix_client(
             client_shared_pool, get_request_credential()
         ) as client:
             version = client.client.server_version
         return PlainTextResponse(f"OK - Connected to Hydrolix compatible with ClickHouse {version}")
     except Exception as e:
-        # Return 503 Service Unavailable if we can't connect to Hydrolix
         return PlainTextResponse(f"ERROR - Cannot connect to Hydrolix: {str(e)}", status_code=503)
 
 
