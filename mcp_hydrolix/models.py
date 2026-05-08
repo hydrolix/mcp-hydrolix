@@ -153,6 +153,66 @@ class TableList:
 
 
 @pydantic_dataclass(frozen=True)
+class Finding:
+    """One advisory finding from query analysis."""
+
+    code: str
+    severity: Literal["info", "warn", "high"]
+    message: str
+    suggested_rewrite: Optional[str] = None
+
+    @model_serializer(mode="wrap")
+    def _serialize(self, handler) -> dict:
+        return _strip_empty(self, handler)
+
+
+@pydantic_dataclass(frozen=True)
+class QueryAnalysis:
+    """Result of analyzing a SELECT query for common foot-guns.
+
+    `ok` is True iff no high-severity findings were emitted. `parsed_tables` is
+    the sorted set of fully-qualified table names referenced by the query.
+    """
+
+    ok: bool
+    findings: List[Finding]
+    parsed_tables: List[str]
+
+
+@pydantic_dataclass(frozen=True)
+class BadQuery:
+    """One row in the find_bad_queries result.
+
+    `exec_time_ms` is the wall-clock execution time the query head observed.
+    `analysis` is the static analyzer's verdict on `query`; it is None only
+    when the SQL text was missing from the log row.
+    """
+
+    query: str
+    timestamp: Optional[str] = None
+    user: Optional[str] = None
+    query_id: Optional[str] = None
+    exec_time_ms: Optional[int] = None
+    num_partitions: Optional[int] = None
+    num_peers: Optional[int] = None
+    result_rows: Optional[int] = None
+    memory_usage_bytes: Optional[int] = None
+    error: Optional[str] = None
+    analysis: Optional[QueryAnalysis] = None
+
+    @model_serializer(mode="wrap")
+    def _serialize(self, handler) -> dict:
+        return _strip_empty(self, handler)
+
+
+@pydantic_dataclass(frozen=True)
+class BadQueryList:
+    """Result of find_bad_queries — wraps the list so MCP receives a JSON object."""
+
+    queries: List[BadQuery]
+
+
+@pydantic_dataclass(frozen=True)
 class RunSelectQueryResult:
     """Stable typed shape for `run_select_query`.
 

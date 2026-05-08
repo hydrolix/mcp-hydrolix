@@ -44,14 +44,18 @@ from mcp_hydrolix.column_analysis import (
     summary_tips_for_columns,
 )
 from mcp_hydrolix.models import (
+    BadQuery,
+    BadQueryList,
     ColumnType,
     DatabaseList,
     HdxQueryResult,
+    QueryAnalysis,
     RunSelectQueryResult,
     SummaryColumn,
     Table,
     TableList,
 )
+from mcp_hydrolix.query_analysis import analyze_sql
 from mcp_hydrolix.utils import coerce_rows, inject_limit
 
 
@@ -773,3 +777,162 @@ async def run_select_query(
         truncated=False,
         row_count=num_rows,
     )
+
+
+@mcp.tool(
+    annotations=ToolAnnotations(
+        title="Analyze Query",
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=False,
+    )
+)
+async def analyze_query(query: str, timestamp_column: str = "timestamp") -> QueryAnalysis:
+    """Static analysis of a Hydrolix SELECT query before you run it.
+
+    Returns advisory findings — this tool never blocks. Each finding has a stable
+    code, a severity (info/warn/high), a human-readable message, and (when
+    unambiguous) a suggested rewrite. `ok=True` means no high-severity issues.
+
+    Checks:
+      - NO_TIME_RANGE (HIGH): no predicate on the primary-key timestamp column.
+        The query reads every partition for the referenced tables — a common cause
+        of query-head OOM and catalog overload.
+      - UNBOUNDED_TIME_RANGE (WARN): a predicate exists but is open-ended (missing
+        upper or lower bound).
+      - FN_ON_TS_PK (HIGH): the timestamp PK is wrapped in a function or cast
+        inside a predicate (e.g. `toDate(timestamp) = '2024-01-01'`). This defeats
+        partition pruning.
+      - SELECT_STAR (WARN): `SELECT *` reads every column from columnar storage.
+      - BROAD_LIKE (WARN): leading-wildcard `LIKE '%foo%'` forces a full
+        substring scan.
+
+    NOTE: This tool intentionally does NOT flag missing LIMIT clauses or recommend
+    adding LIMIT. In Hydrolix, LIMIT does not reduce cluster work — the query
+    head and peers still scan every matching partition before LIMIT applies.
+
+    `timestamp_column` defaults to "timestamp", the most common PK name. Pass the
+    actual PK name (from `get_table_info`) for tables whose PK is named
+    differently (e.g. `day_ts`, `dt`); otherwise the time-range checks will
+    false-positive on those tables.
+    """
+    return analyze_sql(query, timestamp_column=timestamp_column)
+
+
+@mcp.tool(
+    annotations=ToolAnnotations(
+        title="Find Bad Queries",
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=True,
+    )
+)
+async def find_bad_queries(
+    window_minutes: int = 60,
+    min_exec_time_ms: int = 30000,
+    limit: int = 20,
+) -> BadQueryList:
+    """Find recently-completed slow queries from `hydro.logs` and analyze each.
+
+    Returns completed queries from the last `window_minutes`, ordered by
+    `exec_time` descending, where `exec_time >= min_exec_time_ms`. Each row
+    includes the SQL text, exec_time, num_partitions, num_peers, the user, any
+    error, and the static analyzer's findings. Use during incidents to identify
+    offenders, or for periodic audits.
+
+    LIMITATION: the analyzer's time-range checks default to `timestamp` as the
+    PK column name. Tables whose PK uses a different name (e.g. `day_ts`, `dt`)
+    will appear to have NO_TIME_RANGE findings even when their predicate is
+    perfectly bounded. Treat per-query findings as a starting point.
+    """
+    # Two-stage CTE: the inner query reads only small columns to find the top-N
+    # query_ids by exec_time. The outer query then joins back on query_id to
+    # fetch the heavy `query` text column for just those rows. Going single-stage
+    # OOMs the 2GiB query-memory cap on busy clusters because evaluating
+    # `query IS NOT NULL` (or selecting `query`) over a wide window forces
+    # materializing the large unbounded text column for every row scanned.
+    if await _check_parameterized_query_support():
+        sql = """
+            WITH top AS (
+                SELECT query_id, exec_time
+                FROM hydro.logs
+                WHERE timestamp >= now() - toIntervalMinute({win:UInt32})
+                  AND timestamp < now()
+                  AND query_phase = 'end'
+                  AND exec_time IS NOT NULL
+                  AND exec_time >= {ms:UInt64}
+                ORDER BY exec_time DESC
+                LIMIT {lim:UInt32}
+            )
+            SELECT l.query, l.query_id, l.user, l.timestamp, l.exec_time,
+                   l.num_partitions, l.num_peers, l.result_rows,
+                   l.memory_usage_bytes, l.error
+            FROM hydro.logs l
+            WHERE l.query_id IN (SELECT query_id FROM top)
+              AND l.timestamp >= now() - toIntervalMinute({win:UInt32})
+              AND l.timestamp < now()
+              AND l.query_phase = 'end'
+            ORDER BY l.exec_time DESC
+        """
+        params: Optional[Dict[str, Any]] = {
+            "win": int(window_minutes),
+            "ms": int(min_exec_time_ms),
+            "lim": int(limit),
+        }
+    else:
+        win_i = int(window_minutes)
+        ms_i = int(min_exec_time_ms)
+        lim_i = int(limit)
+        sql = f"""
+            WITH top AS (
+                SELECT query_id, exec_time
+                FROM hydro.logs
+                WHERE timestamp >= now() - toIntervalMinute({win_i})
+                  AND timestamp < now()
+                  AND query_phase = 'end'
+                  AND exec_time IS NOT NULL
+                  AND exec_time >= {ms_i}
+                ORDER BY exec_time DESC
+                LIMIT {lim_i}
+            )
+            SELECT l.query, l.query_id, l.user, l.timestamp, l.exec_time,
+                   l.num_partitions, l.num_peers, l.result_rows,
+                   l.memory_usage_bytes, l.error
+            FROM hydro.logs l
+            WHERE l.query_id IN (SELECT query_id FROM top)
+              AND l.timestamp >= now() - toIntervalMinute({win_i})
+              AND l.timestamp < now()
+              AND l.query_phase = 'end'
+            ORDER BY l.exec_time DESC
+        """
+        params = None
+
+    result = await execute_query(sql, parameters=params)
+    cols = result["columns"]
+    queries: List[BadQuery] = []
+    for row in result["rows"]:
+        rec = dict(zip(cols, row))
+        sql_text = rec.get("query") or ""
+        analysis = analyze_sql(sql_text) if sql_text else None
+        ts = rec.get("timestamp")
+        ts_str: Optional[str] = (
+            ts.isoformat() if hasattr(ts, "isoformat") else (str(ts) if ts is not None else None)
+        )
+        queries.append(
+            BadQuery(
+                query=sql_text,
+                timestamp=ts_str,
+                user=rec.get("user"),
+                query_id=rec.get("query_id"),
+                exec_time_ms=rec.get("exec_time"),
+                num_partitions=rec.get("num_partitions"),
+                num_peers=rec.get("num_peers"),
+                result_rows=rec.get("result_rows"),
+                memory_usage_bytes=rec.get("memory_usage_bytes"),
+                error=rec.get("error"),
+                analysis=analysis,
+            )
+        )
+    return BadQueryList(queries=queries)
