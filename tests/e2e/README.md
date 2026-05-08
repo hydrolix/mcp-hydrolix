@@ -60,10 +60,17 @@ This will:
 5. JSON-merge-patch `spec.containers.mcp-hydrolix = {image, tag}` so the
    operator restarts the Deployment with our image.
 6. Wait up to `MCP_HYDROLIX_E2E_READY_TIMEOUT` seconds for the rollout.
-7. Log in via `POST https://{HYDROLIX_HOST}/config/v1/login` for a bearer token.
-8. Run the smoke tests over `/mcp`.
-9. Restore the snapshotted CR state and drop the advisory lock — even on
-   failure or interrupt.
+   The check requires `unavailable_replicas == 0` in addition to the usual
+   ready/updated replica counts, so the suite will time out (rather than
+   silently test old pods) when the new image fails its readiness or
+   liveness probe.
+7. Verify that every pod backing the Deployment is running the expected
+   image. This catches edge cases where Deployment status counters look
+   healthy but k8s never cut traffic from old pods to new ones.
+8. Log in via `POST https://{HYDROLIX_HOST}/config/v1/login` for a bearer token.
+9. Run the smoke tests over `/mcp`.
+10. Restore the snapshotted CR state and drop the advisory lock — even on
+    failure or interrupt.
 
 ## Alternative: image already published via publish-feature.yml
 
@@ -134,7 +141,18 @@ the CR, and removes the advisory lock annotation. Flags:
   the `mcp-hydrolix-e2e/lock` annotation from the CR by hand:
   `kubectl annotate hydrolixclusters/<name> mcp-hydrolix-e2e/lock-`.
 - **Rollout timeout:** the failure message includes the last observed pod
-  statuses. Bump `MCP_HYDROLIX_E2E_READY_TIMEOUT` if you have a slow scheduler.
+  statuses and `unavailable_replicas`. Common causes: the new image fails
+  its readiness or liveness probe (e.g. missing `/healthz` endpoint), or
+  the scheduler is slow. Check pod events with
+  `kubectl describe pod -l app=mcp-hydrolix` for probe failures or
+  CrashLoopBackOff. Bump `MCP_HYDROLIX_E2E_READY_TIMEOUT` only after
+  ruling out probe issues.
+- **`Expected all 'mcp-hydrolix' pods to run <image>`:** the rollout
+  completed per Deployment status, but at least one pod is still running a
+  different image. This typically means a parallel branch changed the
+  readiness/liveness probe contract and the image under test does not
+  satisfy the probe the cluster expects. Merge the probe changes into your
+  branch and rebuild.
 - **`mcp_hydrolix.enabled` is false:** the suite refuses to flip it. Enable
   MCP via `spec.mcp_hydrolix.enabled` on the CR or run against a different
   cluster.

@@ -252,6 +252,7 @@ def wait_for_rollout(
             "ready_replicas": status.ready_replicas,
             "updated_replicas": status.updated_replicas,
             "available_replicas": status.available_replicas,
+            "unavailable_replicas": status.unavailable_replicas,
             "spec_replicas": spec_replicas,
             "min_generation": min_generation,
         }
@@ -265,6 +266,7 @@ def wait_for_rollout(
             and status.observed_generation >= dep.metadata.generation
             and (status.ready_replicas or 0) >= spec_replicas
             and (status.updated_replicas or 0) >= spec_replicas
+            and (status.unavailable_replicas or 0) == 0
         ):
             return
         time.sleep(poll_interval)
@@ -273,6 +275,42 @@ def wait_for_rollout(
         f"Deployment {deployment_name!r} did not become ready within {timeout}s. "
         f"Last status: {last_status}\nPods:\n{pod_dump}"
     )
+
+
+def assert_pod_image(
+    clients: KubeClients,
+    ctx: KubeContext,
+    deployment_name: str,
+    expected_image: str,
+    expected_tag: str,
+) -> None:
+    """Verify every running pod under the Deployment uses the expected image.
+
+    Catches the case where ``wait_for_rollout`` passes based on Deployment
+    status counters but old pods are still serving (e.g. because the new
+    image fails its readiness/liveness probes and k8s never cuts over).
+    """
+    dep = clients.apps.read_namespaced_deployment(name=deployment_name, namespace=ctx.namespace)
+    selector_match = (dep.spec.selector.match_labels or {}) if dep.spec.selector else {}
+    if not selector_match:
+        return
+    label_selector = ",".join(f"{k}={v}" for k, v in selector_match.items())
+    pods = clients.core.list_namespaced_pod(namespace=ctx.namespace, label_selector=label_selector)
+    expected = f"{expected_image}:{expected_tag}"
+    bad: list[str] = []
+    for pod in pods.items:
+        for cs in pod.status.container_statuses or []:
+            if cs.name != CONTAINER_KEY:
+                continue
+            if cs.image != expected:
+                bad.append(f"  {pod.metadata.name}: image={cs.image!r}")
+    if bad:
+        raise AssertionError(
+            f"Expected all {CONTAINER_KEY!r} pods to run {expected!r}, "
+            f"but found mismatches:\n" + "\n".join(bad) + "\n"
+            "This usually means the new image failed its readiness or "
+            "liveness probe and k8s never cut traffic over from old pods."
+        )
 
 
 def pod_status_dump(clients: KubeClients, ctx: KubeContext, deployment_name: str) -> str:

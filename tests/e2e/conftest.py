@@ -22,6 +22,7 @@ from tests.e2e._kube import (
     acquire_advisory_lock,
     apply_image_override,
     assert_mcp_enabled,
+    assert_pod_image,
     discover_kube_context,
     extract_containers,
     latest_snapshot,
@@ -65,6 +66,8 @@ class ClusterState:
     hydrolix_host: str
     snapshot_path: Path
     pre_patch_deployment_generation: int | None
+    expected_image: str
+    expected_tag: str
 
 
 _SKIP_MSG = (
@@ -258,6 +261,8 @@ def cluster_state(
             hydrolix_host=hydrolix_host,
             snapshot_path=snap_path,
             pre_patch_deployment_generation=pre_patch_gen,
+            expected_image=image,
+            expected_tag=tag,
         )
         apply_image_override(clients.custom, ctx, image, tag)
         yield state
@@ -316,6 +321,13 @@ def mcp_ready(
         deployment_name=_e2e_env_guard.deployment_name,
         timeout=_e2e_env_guard.ready_timeout,
         min_generation=cluster_state.pre_patch_deployment_generation,
+    )
+    assert_pod_image(
+        cluster_state.clients,
+        cluster_state.ctx,
+        deployment_name=_e2e_env_guard.deployment_name,
+        expected_image=cluster_state.expected_image,
+        expected_tag=cluster_state.expected_tag,
     )
     # k8s reports the Deployment Ready before the front-end LB has finished
     # routing traffic to the new pods, so the public endpoint can still serve
