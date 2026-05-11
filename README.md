@@ -3,6 +3,8 @@
 <!-- mcp-name: io.github.hydrolix/mcp-hydrolix -->
 
 [![PyPI - Version](https://img.shields.io/pypi/v/mcp-hydrolix)](https://pypi.org/project/mcp-hydrolix)
+[![Install in VS Code](https://img.shields.io/badge/VS_Code-Install_mcp--hydrolix-0098FF?style=flat-square&logo=visualstudiocode&logoColor=white)](vscode:mcp/install?%7B%22name%22%3A%22mcp-hydrolix%22%2C%22type%22%3A%22stdio%22%2C%22command%22%3A%22uvx%22%2C%22args%22%3A%5B%22--python%22%2C%223.13%22%2C%22--refresh-package%22%2C%22mcp-hydrolix%22%2C%22mcp-hydrolix%22%5D%2C%22env%22%3A%7B%22HYDROLIX_HOST%22%3A%22%24%7Binput%3Ahydrolix_host%7D%22%2C%22HYDROLIX_USER%22%3A%22%24%7Binput%3Ahydrolix_user%7D%22%2C%22HYDROLIX_PASSWORD%22%3A%22%24%7Binput%3Ahydrolix_password%7D%22%7D%2C%22inputs%22%3A%5B%7B%22id%22%3A%22hydrolix_host%22%2C%22type%22%3A%22promptString%22%2C%22description%22%3A%22Hydrolix%20hostname%20%28e.g.%20mycluster.hydrolix.live%29%22%7D%2C%7B%22id%22%3A%22hydrolix_user%22%2C%22type%22%3A%22promptString%22%2C%22description%22%3A%22Hydrolix%20username%22%7D%2C%7B%22id%22%3A%22hydrolix_password%22%2C%22type%22%3A%22promptString%22%2C%22description%22%3A%22Hydrolix%20password%22%2C%22password%22%3Atrue%7D%5D%7D)
+[![Install in VS Code Insiders](https://img.shields.io/badge/VS_Code_Insiders-Install_mcp--hydrolix-24bfa5?style=flat-square&logo=visualstudiocode&logoColor=white)](vscode-insiders:mcp/install?%7B%22name%22%3A%22mcp-hydrolix%22%2C%22type%22%3A%22stdio%22%2C%22command%22%3A%22uvx%22%2C%22args%22%3A%5B%22--python%22%2C%223.13%22%2C%22--refresh-package%22%2C%22mcp-hydrolix%22%2C%22mcp-hydrolix%22%5D%2C%22env%22%3A%7B%22HYDROLIX_HOST%22%3A%22%24%7Binput%3Ahydrolix_host%7D%22%2C%22HYDROLIX_USER%22%3A%22%24%7Binput%3Ahydrolix_user%7D%22%2C%22HYDROLIX_PASSWORD%22%3A%22%24%7Binput%3Ahydrolix_password%7D%22%7D%2C%22inputs%22%3A%5B%7B%22id%22%3A%22hydrolix_host%22%2C%22type%22%3A%22promptString%22%2C%22description%22%3A%22Hydrolix%20hostname%20%28e.g.%20mycluster.hydrolix.live%29%22%7D%2C%7B%22id%22%3A%22hydrolix_user%22%2C%22type%22%3A%22promptString%22%2C%22description%22%3A%22Hydrolix%20username%22%7D%2C%7B%22id%22%3A%22hydrolix_password%22%2C%22type%22%3A%22promptString%22%2C%22description%22%3A%22Hydrolix%20password%22%2C%22password%22%3Atrue%7D%5D%7D)
 
 An MCP server for Hydrolix.
 
@@ -128,6 +130,12 @@ claude mcp add --transport stdio hydrolix \
 Then open Claude Code and test with the same prompt:
 
 > Using your Hydrolix MCP tools, list the available databases.
+
+### Using VS Code instead?
+
+Click one of the **Install mcp-hydrolix** badges at the top of this README. VS Code will prompt you for your Hydrolix hostname, username, and password (stored in the OS keychain), then register the server in your user-level `mcp.json`. To verify, open the Command Palette → **MCP: List Servers** and start `mcp-hydrolix`.
+
+If you authenticate with a service token instead of a password, install via the badge with placeholder credentials and then edit the entry (Command Palette → **MCP: Open User Configuration**) to swap `HYDROLIX_USER` / `HYDROLIX_PASSWORD` for `HYDROLIX_TOKEN`.
 
 ## Tools
 
