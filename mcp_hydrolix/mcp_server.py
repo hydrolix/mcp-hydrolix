@@ -2,6 +2,7 @@ import asyncio
 import base64
 import logging
 import time
+from pathlib import Path
 from typing import (
     Any,
     Dict,
@@ -270,21 +271,42 @@ async def execute_cmd(query: str):
         metrics.METRICS.query_duration_seconds.observe(time.perf_counter() - start)
 
 
-@mcp.custom_route("/health", methods=["GET"])
-async def health_check(request: Request) -> PlainTextResponse:
-    """Health check endpoint for monitoring server status.
+# only relevant when running in a Hydrolix cluster
+_K8S_SERVICE_TOKEN_DIR = Path("/var/run/secrets/service-tokens")
+_K8S_SERVICE_TOKEN_NAMES = ("SA_READONLY_TOKEN", "SA_ADMIN_TOKEN")
 
-    Returns OK if the server is running and can connect to Hydrolix.
+
+def _load_k8s_service_credential() -> Optional[HydrolixCredential]:
+    """Load a service account credential from the k8s secret mount, if available.
+
+    Tries SA_READONLY_TOKEN first, then SA_ADMIN_TOKEN. Returns None if neither
+    can be read or parsed (e.g. running outside k8s).
     """
+    for name in _K8S_SERVICE_TOKEN_NAMES:
+        try:
+            token = (_K8S_SERVICE_TOKEN_DIR / name).read_text().strip()
+            if token:
+                return ServiceAccountToken(token, None)
+        except Exception:
+            continue
+    return None
+
+
+@mcp.custom_route("/healthz", methods=["GET"])
+async def liveness_check(request: Request) -> PlainTextResponse:
+    """Liveness endpoint: returns 200 if the process is alive."""
+    return PlainTextResponse("OK")
+
+
+@mcp.custom_route("/health", methods=["GET"])
+async def readiness_check(request: Request) -> PlainTextResponse:
+    """Readiness endpoint: returns 200 only when able to connect to Hydrolix."""
+    credential = get_request_credential() or _load_k8s_service_credential()
     try:
-        # Try to create a client connection to verify query-head connectivity
-        async with await create_hydrolix_client(
-            client_shared_pool, get_request_credential()
-        ) as client:
+        async with await create_hydrolix_client(client_shared_pool, credential) as client:
             version = client.client.server_version
         return PlainTextResponse(f"OK - Connected to Hydrolix compatible with ClickHouse {version}")
     except Exception as e:
-        # Return 503 Service Unavailable if we can't connect to Hydrolix
         return PlainTextResponse(f"ERROR - Cannot connect to Hydrolix: {str(e)}", status_code=503)
 
 
