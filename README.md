@@ -102,7 +102,7 @@ Claude Desktop launches without your shell's PATH, so it may not locate the bina
 - **macOS / Linux:** `which mcp-hydrolix`
 - **Windows:** `where.exe mcp-hydrolix`
 
-If `which`/`where.exe` returns nothing, the install location isn't on your PATH. For pip, run `python3 -c "import sysconfig; print(sysconfig.get_path('scripts'))"` (macOS/Linux) or `python -c "import sysconfig; print(sysconfig.get_path('scripts'))"` (Windows) to find where pip placed the executable. Run it using the same Python interpreter you used to pip install (e.g., activate your virtual environment first if you used one).
+If `which`/`where.exe` returns nothing, the binary isn't on your PATH. The cleanest fix is to switch to Option A (uv), which manages the Python environment and PATH for you.
 
 </details>
 
@@ -143,35 +143,7 @@ Then open Claude Code and test with the same prompt:
 
 ### Using VS Code instead?
 
-If you haven't installed `uv` yet, run:
-
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
-```
-
-Then, in VS Code:
-
-1. Open the Command Palette: **Cmd+Shift+P** (macOS) or **Ctrl+Shift+P** (Windows/Linux).
-2. Run **MCP: Add Server**.
-3. Choose the source: **Command (stdio)**.
-4. Enter the command: `uvx --python 3.13 --refresh-package mcp-hydrolix mcp-hydrolix`
-5. Choose where to install: **User Settings** (recommended) or **Workspace Settings**.
-6. Name the server: `mcp-hydrolix`
-7. VS Code opens `mcp.json` for you. Add an `env` block under the new server entry with your credentials:
-
-   ```json
-   "env": {
-     "HYDROLIX_HOST": "<your-hydrolix-hostname>",
-     "HYDROLIX_USER": "<your-username>",
-     "HYDROLIX_PASSWORD": "<your-password>"
-   }
-   ```
-
-8. Save `mcp.json`. The server starts automatically. Verify with **MCP: List Servers** and try the prompt above.
-
-If you authenticate with a service token instead of a password, use `HYDROLIX_TOKEN` in place of `HYDROLIX_USER` / `HYDROLIX_PASSWORD` in the `env` block above.
-
-> Prefer a different path? Click the **Install in VS Code** badge at the top of this README, or run `code --add-mcp '{...}'` from your shell with the same JSON config.
+Click the **Install in VS Code** badge at the top of this README for a one-click install. If you prefer the UI flow, open the Command Palette (**Cmd+Shift+P** / **Ctrl+Shift+P**), run **MCP: Add Server**, choose **Command (stdio)**, and reuse the `uvx ...` command and `env` block from [Step 3](#step-3--configure-claude-desktop).
 
 ## Tools
 
