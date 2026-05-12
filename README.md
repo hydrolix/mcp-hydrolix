@@ -133,9 +133,35 @@ Then open Claude Code and test with the same prompt:
 
 ### Using VS Code instead?
 
-Click one of the **Install mcp-hydrolix** badges at the top of this README. VS Code will prompt you for your Hydrolix hostname, username, and password (stored in the OS keychain), then register the server in your user-level `mcp.json`. To verify, open the Command Palette → **MCP: List Servers** and start `mcp-hydrolix`.
+If you haven't installed `uv` yet, run:
 
-If you authenticate with a service token instead of a password, install via the badge with placeholder credentials and then edit the entry (Command Palette → **MCP: Open User Configuration**) to swap `HYDROLIX_USER` / `HYDROLIX_PASSWORD` for `HYDROLIX_TOKEN`.
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+Then, in VS Code:
+
+1. Open the Command Palette: **Cmd+Shift+P** (macOS) or **Ctrl+Shift+P** (Windows/Linux).
+2. Run **MCP: Add Server**.
+3. Choose the source: **Command (stdio)**.
+4. Enter the command: `uvx --python 3.13 --refresh-package mcp-hydrolix mcp-hydrolix`
+5. Choose where to install: **User Settings** (recommended) or **Workspace Settings**.
+6. Name the server: `mcp-hydrolix`
+7. VS Code opens `mcp.json` for you. Add an `env` block under the new server entry with your credentials:
+
+   ```json
+   "env": {
+     "HYDROLIX_HOST": "<your-hydrolix-hostname>",
+     "HYDROLIX_USER": "<your-username>",
+     "HYDROLIX_PASSWORD": "<your-password>"
+   }
+   ```
+
+8. Save `mcp.json`. The server starts automatically. Verify with **MCP: List Servers** and try the prompt above.
+
+If you authenticate with a service token instead of a password, use `HYDROLIX_TOKEN` in place of `HYDROLIX_USER` / `HYDROLIX_PASSWORD` in the `env` block above.
+
+> Prefer a different path? Click the **Install in VS Code** badge at the top of this README, or run `code --add-mcp '{...}'` from your shell with the same JSON config.
 
 ## Tools
 
