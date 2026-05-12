@@ -78,23 +78,33 @@ pip install mcp-hydrolix
 
 Replace `<your-hydrolix-hostname>`, `<your-username>`, and `<your-password>` with your actual credentials.
 
-> **Using Option B (pip)?** Use `"command": "mcp-hydrolix"` with no `"args"` field instead.
+> [!NOTE]
+> If you used Option B (pip), use `"command": "mcp-hydrolix"` with no `"args"` field instead.
 
-> **Tip:** If the file already has other entries, add the `"mcp-hydrolix"` block inside the existing `"mcpServers"` object rather than replacing the whole file.
+> [!TIP]
+> If the file already has other entries, add the `"mcp-hydrolix"` block inside the existing `"mcpServers"` object rather than replacing the whole file.
 
-> **Using a service account token instead of username/password?** See [Authentication](#authentication).
+> [!NOTE]
+> If you authenticate with a service account token instead of username/password, see [Authentication](#authentication).
 
-> **Command not found?** Claude Desktop launches without your shell's PATH, so it may not locate the binary even if it is installed. Find the full path and use it as the `"command"` value in the config:
->
-> Option A (uv): find `uvx`:
-> - **macOS / Linux:** `which uvx`
-> - **Windows:** `where.exe uvx`
->
-> Option B (pip): find `mcp-hydrolix`:
-> - **macOS / Linux:** `which mcp-hydrolix`
-> - **Windows:** `where.exe mcp-hydrolix`
->
-> If `which`/`where.exe` returns nothing, the install location isn't on your PATH. For pip, run `python3 -c "import sysconfig; print(sysconfig.get_path('scripts'))"` (macOS/Linux) or `python -c "import sysconfig; print(sysconfig.get_path('scripts'))"` (Windows) to find where pip placed the executable. Run it using the same Python interpreter you used to pip install (e.g., activate your virtual environment first if you used one).
+<details>
+<summary><strong>Command not found?</strong></summary>
+
+Claude Desktop launches without your shell's PATH, so it may not locate the binary even if it is installed. Find the full path and use it as the `"command"` value in the config.
+
+**Option A (uv):** find `uvx`:
+
+- **macOS / Linux:** `which uvx`
+- **Windows:** `where.exe uvx`
+
+**Option B (pip):** find `mcp-hydrolix`:
+
+- **macOS / Linux:** `which mcp-hydrolix`
+- **Windows:** `where.exe mcp-hydrolix`
+
+If `which`/`where.exe` returns nothing, the install location isn't on your PATH. For pip, run `python3 -c "import sysconfig; print(sysconfig.get_path('scripts'))"` (macOS/Linux) or `python -c "import sysconfig; print(sysconfig.get_path('scripts'))"` (Windows) to find where pip placed the executable. Run it using the same Python interpreter you used to pip install (e.g., activate your virtual environment first if you used one).
+
+</details>
 
 ### Step 4 — Restart Claude Desktop
 
