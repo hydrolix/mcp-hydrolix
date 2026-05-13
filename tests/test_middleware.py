@@ -40,80 +40,76 @@ def _http_scope(headers: list[tuple[bytes, bytes]] | None = None) -> dict[str, A
     }
 
 
-# ---------------------------------------------------------------------------
-# RequestTimeoutMiddleware
-# ---------------------------------------------------------------------------
+class TestRequestTimeoutMiddleware:
+    """Behavior of ``RequestTimeoutMiddleware``: pass-through, 504, post-headers
+    truncation, and non-HTTP scope forwarding."""
 
+    def test_request_timeout_middleware_passes_through_fast_responses(self):
+        from mcp_hydrolix.middleware import RequestTimeoutMiddleware
 
-def test_request_timeout_middleware_passes_through_fast_responses():
-    from mcp_hydrolix.middleware import RequestTimeoutMiddleware
+        async def app(scope, receive, send):
+            await send({"type": "http.response.start", "status": 200, "headers": []})
+            await send({"type": "http.response.body", "body": b"ok"})
 
-    async def app(scope, receive, send):
-        await send({"type": "http.response.start", "status": 200, "headers": []})
-        await send({"type": "http.response.body", "body": b"ok"})
-
-    middleware = RequestTimeoutMiddleware(app, timeout=1.0)
-    sent, _ = asyncio.run(_collect_response(middleware, _http_scope()))
-
-    statuses = [m["status"] for m in sent if m["type"] == "http.response.start"]
-    assert statuses == [200]
-
-
-def test_request_timeout_middleware_returns_504_on_timeout():
-    from mcp_hydrolix.middleware import RequestTimeoutMiddleware
-
-    async def app(scope, receive, send):
-        await asyncio.sleep(1.0)
-        await send({"type": "http.response.start", "status": 200, "headers": []})
-        await send({"type": "http.response.body", "body": b"ok"})
-
-    middleware = RequestTimeoutMiddleware(app, timeout=0.01)
-    sent, _ = asyncio.run(_collect_response(middleware, _http_scope()))
-
-    starts = [m for m in sent if m["type"] == "http.response.start"]
-    assert len(starts) == 1, "expected an http.response.start message"
-    assert starts[0]["status"] == 504
-
-
-def test_request_timeout_middleware_truncates_on_timeout_after_headers(caplog):
-    from mcp_hydrolix.middleware import RequestTimeoutMiddleware
-
-    async def app(scope, receive, send):
-        await send({"type": "http.response.start", "status": 200, "headers": []})
-        await asyncio.sleep(2.0)
-        await send({"type": "http.response.body", "body": b"ok"})
-
-    middleware = RequestTimeoutMiddleware(app, timeout=0.2)
-    with caplog.at_level(logging.WARNING, logger="mcp_hydrolix.middleware"):
+        middleware = RequestTimeoutMiddleware(app, timeout=1.0)
         sent, _ = asyncio.run(_collect_response(middleware, _http_scope()))
 
-    starts = [m for m in sent if m["type"] == "http.response.start"]
-    assert len(starts) == 1, "must not emit a second http.response.start"
-    assert starts[0]["status"] == 200, "original app status must be preserved"
+        statuses = [m["status"] for m in sent if m["type"] == "http.response.start"]
+        assert statuses == [200]
 
-    bodies = [m for m in sent if m["type"] == "http.response.body"]
-    assert len(bodies) == 0, "app body after timeout must not be delivered"
+    def test_request_timeout_middleware_returns_504_on_timeout(self):
+        from mcp_hydrolix.middleware import RequestTimeoutMiddleware
 
-    assert any(
-        r.levelno == logging.WARNING and "timeout" in r.getMessage() for r in caplog.records
-    ), "expected a WARNING log mentioning the timeout"
+        async def app(scope, receive, send):
+            await asyncio.sleep(1.0)
+            await send({"type": "http.response.start", "status": 200, "headers": []})
+            await send({"type": "http.response.body", "body": b"ok"})
 
+        middleware = RequestTimeoutMiddleware(app, timeout=0.01)
+        sent, _ = asyncio.run(_collect_response(middleware, _http_scope()))
 
-def test_request_timeout_middleware_ignores_non_http_scope():
-    from mcp_hydrolix.middleware import RequestTimeoutMiddleware
+        starts = [m for m in sent if m["type"] == "http.response.start"]
+        assert len(starts) == 1, "expected an http.response.start message"
+        assert starts[0]["status"] == 504
 
-    called = {"count": 0}
+    def test_request_timeout_middleware_truncates_on_timeout_after_headers(self, caplog):
+        from mcp_hydrolix.middleware import RequestTimeoutMiddleware
 
-    async def app(scope, receive, send):
-        called["count"] += 1
+        async def app(scope, receive, send):
+            await send({"type": "http.response.start", "status": 200, "headers": []})
+            await asyncio.sleep(2.0)
+            await send({"type": "http.response.body", "body": b"ok"})
 
-    middleware = RequestTimeoutMiddleware(app, timeout=0.01)
+        middleware = RequestTimeoutMiddleware(app, timeout=0.2)
+        with caplog.at_level(logging.WARNING, logger="mcp_hydrolix.middleware"):
+            sent, _ = asyncio.run(_collect_response(middleware, _http_scope()))
 
-    async def receive():
-        return {"type": "lifespan.startup"}
+        starts = [m for m in sent if m["type"] == "http.response.start"]
+        assert len(starts) == 1, "must not emit a second http.response.start"
+        assert starts[0]["status"] == 200, "original app status must be preserved"
 
-    async def send(message):
-        pass
+        bodies = [m for m in sent if m["type"] == "http.response.body"]
+        assert len(bodies) == 0, "app body after timeout must not be delivered"
 
-    asyncio.run(middleware({"type": "lifespan"}, receive, send))
-    assert called["count"] == 1
+        assert any(
+            r.levelno == logging.WARNING and "timeout" in r.getMessage() for r in caplog.records
+        ), "expected a WARNING log mentioning the timeout"
+
+    def test_request_timeout_middleware_ignores_non_http_scope(self):
+        from mcp_hydrolix.middleware import RequestTimeoutMiddleware
+
+        called = {"count": 0}
+
+        async def app(scope, receive, send):
+            called["count"] += 1
+
+        middleware = RequestTimeoutMiddleware(app, timeout=0.01)
+
+        async def receive():
+            return {"type": "lifespan.startup"}
+
+        async def send(message):
+            pass
+
+        asyncio.run(middleware({"type": "lifespan"}, receive, send))
+        assert called["count"] == 1
