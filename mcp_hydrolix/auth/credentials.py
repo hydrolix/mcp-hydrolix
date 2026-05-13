@@ -27,17 +27,24 @@ class ServiceAccountToken(HydrolixCredential):
         authoritative.
         """
 
-        claims = jwt.decode(
-            token,
-            key="",  # NB service account signing key is not publicly-hosted, so we can't verify the signature
-            options={
-                "verify_signature": False,
-                "verify_iss": True,
-                "verify_iat": True,
-                "verify_exp": True,
-            },
-            issuer=expected_iss,
-        )
+        try:
+            claims = jwt.decode(
+                token,
+                key="",  # NB service account signing key is not publicly-hosted, so we can't verify the signature
+                options={
+                    "verify_signature": False,
+                    "verify_iss": True,
+                    "verify_iat": True,
+                    "verify_exp": True,
+                },
+                issuer=expected_iss,
+            )
+        except jwt.exceptions.PyJWTError as exc:
+            raise ValueError(
+                "HYDROLIX_TOKEN is not a valid Hydrolix service-account token. "
+                "Expected a JWT (three base64 segments separated by '.'). "
+                "If you authenticate with username and password, leave the token field blank."
+            ) from exc
         self.token = token
         self.service_account_id = claims["sub"]
         self.issued_at = claims["iss"]

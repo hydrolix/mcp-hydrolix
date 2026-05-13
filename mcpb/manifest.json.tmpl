@@ -46,26 +46,30 @@
       "title": "Service Account Token",
       "description": "Service-account token. Preferred over username/password. Leave blank if using username/password.",
       "sensitive": true,
-      "required": false
+      "required": false,
+      "default": ""
     },
     "hydrolix_user": {
       "type": "string",
       "title": "Username",
       "description": "Hydrolix username. Used with Password if no Service Account Token is set.",
-      "required": false
+      "required": false,
+      "default": ""
     },
     "hydrolix_password": {
       "type": "string",
       "title": "Password",
       "description": "Hydrolix password. Used with Username if no Service Account Token is set.",
       "sensitive": true,
-      "required": false
+      "required": false,
+      "default": ""
     },
     "hydrolix_database": {
       "type": "string",
       "title": "Default Database",
       "description": "Optional default database. The server uses the cluster default when this is empty.",
-      "required": false
+      "required": false,
+      "default": ""
     }
   },
   "compatibility": {

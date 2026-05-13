@@ -173,3 +173,12 @@ class TestCredentialResolution:
         cfg = self._make_config(monkeypatch)
         with pytest.raises(ValueError, match="No credentials available"):
             cfg.creds_with(None)
+
+    def test_non_jwt_token_raises_clean_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A non-JWT HYDROLIX_TOKEN surfaces a user-facing ValueError, not a JWT traceback."""
+        monkeypatch.setenv("HYDROLIX_HOST", "example.invalid")
+        monkeypatch.setenv("HYDROLIX_TOKEN", "not-a-jwt")
+        monkeypatch.delenv("HYDROLIX_USER", raising=False)
+        monkeypatch.delenv("HYDROLIX_PASSWORD", raising=False)
+        with pytest.raises(ValueError, match="not a valid Hydrolix service-account token"):
+            HydrolixConfig()
