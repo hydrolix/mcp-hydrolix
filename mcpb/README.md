@@ -28,10 +28,10 @@ You will be prompted for the following fields:
 
 Once installed, the following tools are available in conversations:
 
-- `run_select_query` — execute a SELECT SQL query on your Hydrolix cluster
-- `list_databases` — list all databases on the cluster
-- `list_tables` — list all tables in a given database
-- `get_table_info` — return schema and metadata for a table
+- `run_select_query`: execute a SELECT SQL query on your Hydrolix cluster
+- `list_databases`: list all databases on the cluster
+- `list_tables`: list all tables in a given database
+- `get_table_info`: return schema and metadata for a table
 
 ## Requirements
 
