@@ -1,5 +1,7 @@
 __pycache__/
 *.pyc
 .venv/
+dist/
+build.sh
 *.tmpl
 .DS_Store
