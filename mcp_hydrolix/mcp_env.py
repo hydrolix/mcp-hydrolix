@@ -73,11 +73,11 @@ class HydrolixConfig:
         # Both token and username/password are stripped and checked for non-empty so that
         # MCPB hosts injecting blank user_config fields (as empty strings) do not produce
         # bogus credentials.
-        if global_service_account := (os.getenv("HYDROLIX_TOKEN") or "").strip():
+        if global_service_account := os.getenv("HYDROLIX_TOKEN", "").strip():
             self._default_credential = ServiceAccountToken(global_service_account, None)
         else:
-            global_username = (os.getenv("HYDROLIX_USER") or "").strip()
-            global_password = (os.getenv("HYDROLIX_PASSWORD") or "").strip()
+            global_username = os.getenv("HYDROLIX_USER", "").strip()
+            global_password = os.getenv("HYDROLIX_PASSWORD", "").strip()
             if global_username and global_password:
                 self._default_credential = UsernamePassword(global_username, global_password)
 
