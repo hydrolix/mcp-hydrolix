@@ -39,7 +39,7 @@ from tests.e2e._kube import (
 )
 from tests.e2e._mcp_client import login_for_bearer_token, make_client, wait_for_endpoint_ready
 
-REQUIRED_VARS = ("HYDROLIX_USER", "HYDROLIX_PASSWORD")
+REQUIRED_VARS = ("HYDROLIX_USER", "HYDROLIX_PASSWORD", "MCP_HYDROLIX_E2E_KUBE_CONTEXT")
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -52,7 +52,7 @@ class E2EConfig:
     image_tag_override: str | None
     skip_build: bool
     kubeconfig: str | None
-    kube_context: str | None
+    kube_context: str
     namespace: str | None
     cluster_name: str | None
     deployment_name: str
@@ -82,6 +82,7 @@ def _e2e_env_guard() -> E2EConfig:
     explicit = os.environ.get("MCP_HYDROLIX_E2E_ENV_FILE")
     env_file = explicit or str(REPO_ROOT / ".env.e2e")
     if not Path(env_file).exists():
+        print(f"[e2e] {_SKIP_MSG}", file=sys.stderr)
         pytest.skip(_SKIP_MSG)
     # override=True because tests/__init__.py calls load_dotenv() at package
     # import time, which loads tests/.env (HYDROLIX_HOST=localhost for unit
@@ -107,7 +108,7 @@ def _e2e_env_guard() -> E2EConfig:
         image_tag_override=_opt("MCP_HYDROLIX_E2E_IMAGE_TAG"),
         skip_build=os.environ.get("MCP_HYDROLIX_E2E_SKIP_BUILD", "0") == "1",
         kubeconfig=_opt("MCP_HYDROLIX_E2E_KUBECONFIG"),
-        kube_context=_opt("MCP_HYDROLIX_E2E_KUBE_CONTEXT"),
+        kube_context=os.environ["MCP_HYDROLIX_E2E_KUBE_CONTEXT"],
         namespace=_opt("MCP_HYDROLIX_E2E_NAMESPACE"),
         cluster_name=_opt("MCP_HYDROLIX_E2E_CLUSTER_NAME"),
         deployment_name=os.environ.get("MCP_HYDROLIX_E2E_DEPLOYMENT_NAME", DEFAULT_DEPLOYMENT_NAME),
@@ -159,7 +160,10 @@ def built_image(_e2e_env_guard: E2EConfig) -> tuple[str, str]:
         print(f"[e2e] MCP_HYDROLIX_E2E_SKIP_BUILD=1; using {image}:{tag}", file=sys.stderr)
         return image, tag
     print(f"[e2e] docker build -t {image}:{tag} .", file=sys.stderr)
-    subprocess.check_call(["docker", "build", "-t", f"{image}:{tag}", "."], cwd=REPO_ROOT)
+    subprocess.check_call(
+        ["docker", "build", "--platform", "linux/amd64", "-t", f"{image}:{tag}", "."],
+        cwd=REPO_ROOT,
+    )
     print(f"[e2e] docker push {image}:{tag}", file=sys.stderr)
     subprocess.check_call(["docker", "push", f"{image}:{tag}"])
     return image, tag

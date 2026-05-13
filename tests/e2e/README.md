@@ -28,12 +28,14 @@ independent guards are in place:
 - A Docker daemon (only when building locally; see *skip build* below).
 - `HYDROLIX_USER` and `HYDROLIX_PASSWORD` for an account that can call
   `/config/v1/login` and run queries against the cluster.
+- `MCP_HYDROLIX_E2E_KUBE_CONTEXT` naming the kubectl context to use. The
+  suite never falls back to your default context.
 
 ## One-time setup
 
 ```bash
 cp .env.e2e.example .env.e2e
-$EDITOR .env.e2e   # fill in HYDROLIX_USER / HYDROLIX_PASSWORD
+$EDITOR .env.e2e   # fill in HYDROLIX_USER, HYDROLIX_PASSWORD, MCP_HYDROLIX_E2E_KUBE_CONTEXT
 ```
 
 Existing `inno2.env.private` already holds these credentials and is gitignored
@@ -134,8 +136,8 @@ the CR, and removes the advisory lock annotation. Flags:
 ## Troubleshooting
 
 - **All e2e tests show SKIPPED:** no `.env.e2e` file exists. Copy
-  `.env.e2e.example` to `.env.e2e` and fill in `HYDROLIX_USER` /
-  `HYDROLIX_PASSWORD`.
+  `.env.e2e.example` to `.env.e2e` and fill in `HYDROLIX_USER`,
+  `HYDROLIX_PASSWORD`, and `MCP_HYDROLIX_E2E_KUBE_CONTEXT`.
 - **`advisory lock held by another run`:** another machine or session is mid-run
   against the same cluster. Verify there is no other invocation, then remove
   the `mcp-hydrolix-e2e/lock` annotation from the CR by hand:
@@ -159,7 +161,7 @@ the CR, and removes the advisory lock annotation. Flags:
 
 ## Enabling in CI
 
-Once `HYDROLIX_USER` and `HYDROLIX_PASSWORD` (and a kubeconfig + image
-registry credentials) are wired into repository secrets, change the CI step in
+Once `HYDROLIX_USER`, `HYDROLIX_PASSWORD`, and `MCP_HYDROLIX_E2E_KUBE_CONTEXT`
+(and a kubeconfig + image registry credentials) are wired into repository secrets, change the CI step in
 `.github/workflows/tests.yaml` from `uv run pytest -m "not end_to_end"` back
 to `uv run pytest`.

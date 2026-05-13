@@ -39,15 +39,16 @@ class KubeClients:
 
 def discover_kube_context(
     kubeconfig: str | None,
-    context: str | None,
+    context: str,
     namespace: str | None,
     cluster_name: str | None,
 ) -> KubeContext:
     config.load_kube_config(config_file=kubeconfig, context=context)
     if namespace is None:
-        contexts, active = config.list_kube_config_contexts(config_file=kubeconfig)
-        target_name = context or active["name"]
-        target = next((c for c in contexts if c["name"] == target_name), active)
+        contexts, _active = config.list_kube_config_contexts(config_file=kubeconfig)
+        target = next((c for c in contexts if c["name"] == context), None)
+        if target is None:
+            raise RuntimeError(f"kubectl context {context!r} not found in kubeconfig")
         namespace = target.get("context", {}).get("namespace") or "default"
     if cluster_name is None:
         api = client.CustomObjectsApi()
@@ -224,6 +225,15 @@ def read_deployment_generation(
     return dep.metadata.generation
 
 
+def _has_terminating_pods(clients: KubeClients, ctx: KubeContext, dep: Any) -> bool:
+    selector_match = (dep.spec.selector.match_labels or {}) if dep.spec.selector else {}
+    if not selector_match:
+        return False
+    label_selector = ",".join(f"{k}={v}" for k, v in selector_match.items())
+    pods = clients.core.list_namespaced_pod(namespace=ctx.namespace, label_selector=label_selector)
+    return any(pod.metadata.deletion_timestamp is not None for pod in pods.items)
+
+
 def wait_for_rollout(
     clients: KubeClients,
     ctx: KubeContext,
@@ -267,6 +277,7 @@ def wait_for_rollout(
             and (status.ready_replicas or 0) >= spec_replicas
             and (status.updated_replicas or 0) >= spec_replicas
             and (status.unavailable_replicas or 0) == 0
+            and not _has_terminating_pods(clients, ctx, dep)
         ):
             return
         time.sleep(poll_interval)
