@@ -7,13 +7,20 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "${REPO_ROOT}"
 
 # ---------------------------------------------------------------------------
-# 1. Read the version from pyproject.toml using stdlib tomllib (Python 3.11+).
+# 1. Determine the version. MCPB_VERSION overrides; otherwise read from
+#    pyproject.toml using stdlib tomllib (Python 3.11+). The override is
+#    useful for testing the bundle against an already-published PyPI
+#    release that differs from the in-development version.
 # ---------------------------------------------------------------------------
-VERSION="$(uv run --quiet python -c \
-  'import tomllib; f=open("pyproject.toml","rb"); print(tomllib.load(f)["project"]["version"])')"
+if [[ -n "${MCPB_VERSION:-}" ]]; then
+  VERSION="${MCPB_VERSION}"
+else
+  VERSION="$(uv run --quiet python -c \
+    'import tomllib; f=open("pyproject.toml","rb"); print(tomllib.load(f)["project"]["version"])')"
+fi
 
 if [[ -z "${VERSION}" ]]; then
-  echo "ERROR: could not read version from pyproject.toml" >&2
+  echo "ERROR: could not determine version (MCPB_VERSION unset, pyproject.toml unreadable)" >&2
   exit 1
 fi
 
