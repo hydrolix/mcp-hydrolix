@@ -319,12 +319,14 @@ def mcp_ready(
     cluster_state: ClusterState,
     bearer_token: str,
 ) -> ClusterState:
+    expected_full = f"{cluster_state.expected_image}:{cluster_state.expected_tag}"
     wait_for_rollout(
         cluster_state.clients,
         cluster_state.ctx,
         deployment_name=_e2e_env_guard.deployment_name,
         timeout=_e2e_env_guard.ready_timeout,
         min_generation=cluster_state.pre_patch_deployment_generation,
+        expected_image=expected_full,
     )
     assert_pod_image(
         cluster_state.clients,

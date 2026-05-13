@@ -225,13 +225,28 @@ def read_deployment_generation(
     return dep.metadata.generation
 
 
-def _has_terminating_pods(clients: KubeClients, ctx: KubeContext, dep: Any) -> bool:
+def _pods_fully_rolled(
+    clients: KubeClients, ctx: KubeContext, dep: Any, expected_image: str | None
+) -> bool:
+    """Return True only when every live pod matches the new rollout.
+
+    Checks that no pods are terminating AND (when *expected_image* is given)
+    that every non-terminating pod runs exactly that image.  This is the only
+    reliable signal — Deployment status counters lag behind actual pod state.
+    """
     selector_match = (dep.spec.selector.match_labels or {}) if dep.spec.selector else {}
     if not selector_match:
-        return False
+        return True
     label_selector = ",".join(f"{k}={v}" for k, v in selector_match.items())
     pods = clients.core.list_namespaced_pod(namespace=ctx.namespace, label_selector=label_selector)
-    return any(pod.metadata.deletion_timestamp is not None for pod in pods.items)
+    for pod in pods.items:
+        if pod.metadata.deletion_timestamp is not None:
+            return False
+        if expected_image is not None:
+            for cs in pod.status.container_statuses or []:
+                if cs.name == CONTAINER_KEY and cs.image != expected_image:
+                    return False
+    return True
 
 
 def wait_for_rollout(
@@ -241,6 +256,7 @@ def wait_for_rollout(
     timeout: float,
     poll_interval: float = 3.0,
     min_generation: int | None = None,
+    expected_image: str | None = None,
 ) -> None:
     deadline = time.monotonic() + timeout
     last_status: dict[str, Any] | None = None
@@ -259,6 +275,7 @@ def wait_for_rollout(
         last_status = {
             "generation": dep.metadata.generation,
             "observed_generation": status.observed_generation,
+            "replicas": status.replicas,
             "ready_replicas": status.ready_replicas,
             "updated_replicas": status.updated_replicas,
             "available_replicas": status.available_replicas,
@@ -274,10 +291,11 @@ def wait_for_rollout(
             and status.observed_generation
             and dep.metadata.generation
             and status.observed_generation >= dep.metadata.generation
+            and (status.replicas or 0) <= spec_replicas
             and (status.ready_replicas or 0) >= spec_replicas
             and (status.updated_replicas or 0) >= spec_replicas
             and (status.unavailable_replicas or 0) == 0
-            and not _has_terminating_pods(clients, ctx, dep)
+            and _pods_fully_rolled(clients, ctx, dep, expected_image)
         ):
             return
         time.sleep(poll_interval)
