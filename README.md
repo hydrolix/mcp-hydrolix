@@ -3,6 +3,8 @@
 <!-- mcp-name: io.github.hydrolix/mcp-hydrolix -->
 
 [![PyPI - Version](https://img.shields.io/pypi/v/mcp-hydrolix)](https://pypi.org/project/mcp-hydrolix)
+[![Install in VS Code](https://img.shields.io/badge/VS_Code-Install_mcp--hydrolix-0098FF?style=flat-square&logo=visualstudiocode&logoColor=white)](https://vscode.dev/redirect/mcp/install?name=mcp-hydrolix&config=%7B%22type%22%3A%22stdio%22%2C%22command%22%3A%22uvx%22%2C%22args%22%3A%5B%22--python%22%2C%223.13%22%2C%22--refresh-package%22%2C%22mcp-hydrolix%22%2C%22mcp-hydrolix%22%5D%2C%22env%22%3A%7B%22HYDROLIX_HOST%22%3A%22%24%7Binput%3Ahydrolix_host%7D%22%2C%22HYDROLIX_USER%22%3A%22%24%7Binput%3Ahydrolix_user%7D%22%2C%22HYDROLIX_PASSWORD%22%3A%22%24%7Binput%3Ahydrolix_password%7D%22%7D%7D&inputs=%5B%7B%22id%22%3A%22hydrolix_host%22%2C%22type%22%3A%22promptString%22%2C%22description%22%3A%22Hydrolix%20hostname%20%28e.g.%20mycluster.hydrolix.live%29%22%7D%2C%7B%22id%22%3A%22hydrolix_user%22%2C%22type%22%3A%22promptString%22%2C%22description%22%3A%22Hydrolix%20username%22%7D%2C%7B%22id%22%3A%22hydrolix_password%22%2C%22type%22%3A%22promptString%22%2C%22description%22%3A%22Hydrolix%20password%22%2C%22password%22%3Atrue%7D%5D)
+[![Install in VS Code Insiders](https://img.shields.io/badge/VS_Code_Insiders-Install_mcp--hydrolix-24bfa5?style=flat-square&logo=visualstudiocode&logoColor=white)](https://insiders.vscode.dev/redirect/mcp/install?name=mcp-hydrolix&quality=insiders&config=%7B%22type%22%3A%22stdio%22%2C%22command%22%3A%22uvx%22%2C%22args%22%3A%5B%22--python%22%2C%223.13%22%2C%22--refresh-package%22%2C%22mcp-hydrolix%22%2C%22mcp-hydrolix%22%5D%2C%22env%22%3A%7B%22HYDROLIX_HOST%22%3A%22%24%7Binput%3Ahydrolix_host%7D%22%2C%22HYDROLIX_USER%22%3A%22%24%7Binput%3Ahydrolix_user%7D%22%2C%22HYDROLIX_PASSWORD%22%3A%22%24%7Binput%3Ahydrolix_password%7D%22%7D%7D&inputs=%5B%7B%22id%22%3A%22hydrolix_host%22%2C%22type%22%3A%22promptString%22%2C%22description%22%3A%22Hydrolix%20hostname%20%28e.g.%20mycluster.hydrolix.live%29%22%7D%2C%7B%22id%22%3A%22hydrolix_user%22%2C%22type%22%3A%22promptString%22%2C%22description%22%3A%22Hydrolix%20username%22%7D%2C%7B%22id%22%3A%22hydrolix_password%22%2C%22type%22%3A%22promptString%22%2C%22description%22%3A%22Hydrolix%20password%22%2C%22password%22%3Atrue%7D%5D)
 
 An MCP server for Hydrolix.
 
@@ -76,23 +78,33 @@ pip install mcp-hydrolix
 
 Replace `<your-hydrolix-hostname>`, `<your-username>`, and `<your-password>` with your actual credentials.
 
-> **Using Option B (pip)?** Use `"command": "mcp-hydrolix"` with no `"args"` field instead.
+> [!NOTE]
+> If you used Option B (pip), use `"command": "mcp-hydrolix"` with no `"args"` field instead.
 
-> **Tip:** If the file already has other entries, add the `"mcp-hydrolix"` block inside the existing `"mcpServers"` object rather than replacing the whole file.
+> [!TIP]
+> If the file already has other entries, add the `"mcp-hydrolix"` block inside the existing `"mcpServers"` object rather than replacing the whole file.
 
-> **Using a service account token instead of username/password?** See [Authentication](#authentication).
+> [!NOTE]
+> If you authenticate with a service account token instead of username/password, see [Authentication](#authentication).
 
-> **Command not found?** Claude Desktop launches without your shell's PATH, so it may not locate the binary even if it is installed. Find the full path and use it as the `"command"` value in the config:
->
-> Option A (uv): find `uvx`:
-> - **macOS / Linux:** `which uvx`
-> - **Windows:** `where.exe uvx`
->
-> Option B (pip): find `mcp-hydrolix`:
-> - **macOS / Linux:** `which mcp-hydrolix`
-> - **Windows:** `where.exe mcp-hydrolix`
->
-> If `which`/`where.exe` returns nothing, the install location isn't on your PATH. For pip, run `python3 -c "import sysconfig; print(sysconfig.get_path('scripts'))"` (macOS/Linux) or `python -c "import sysconfig; print(sysconfig.get_path('scripts'))"` (Windows) to find where pip placed the executable. Run it using the same Python interpreter you used to pip install (e.g., activate your virtual environment first if you used one).
+<details>
+<summary><strong>Command not found?</strong></summary>
+
+Claude Desktop launches without your shell's PATH, so it may not locate the binary even if it is installed. Find the full path and use it as the `"command"` value in the config.
+
+**Option A (uv):** find `uvx`:
+
+- **macOS / Linux:** `which uvx`
+- **Windows:** `where.exe uvx`
+
+**Option B (pip):** find `mcp-hydrolix`:
+
+- **macOS / Linux:** `which mcp-hydrolix`
+- **Windows:** `where.exe mcp-hydrolix`
+
+If `which`/`where.exe` returns nothing, the binary isn't on your PATH. The cleanest fix is to switch to Option A (uv), which manages the Python environment and PATH for you.
+
+</details>
 
 ### Step 4 — Restart Claude Desktop
 
@@ -128,6 +140,10 @@ claude mcp add --transport stdio hydrolix \
 Then open Claude Code and test with the same prompt:
 
 > Using your Hydrolix MCP tools, list the available databases.
+
+### Using VS Code instead?
+
+Click the **Install in VS Code** badge at the top of this README for a one-click install. If you prefer the UI flow, open the Command Palette (**Cmd+Shift+P** / **Ctrl+Shift+P**), run **MCP: Add Server**, choose **Command (stdio)**, and reuse the `uvx ...` command and `env` block from [Step 3](#step-3--configure-claude-desktop).
 
 ## Tools
 
