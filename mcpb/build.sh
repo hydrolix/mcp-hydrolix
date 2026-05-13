@@ -7,7 +7,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "${REPO_ROOT}"
 
 # ---------------------------------------------------------------------------
-# 1. Read the version from pyproject.toml using stdlib tomllib (Python 3.13+).
+# 1. Read the version from pyproject.toml using stdlib tomllib (Python 3.11+).
 # ---------------------------------------------------------------------------
 VERSION="$(uv run --quiet python -c \
   'import tomllib; f=open("pyproject.toml","rb"); print(tomllib.load(f)["project"]["version"])')"
@@ -34,7 +34,10 @@ sed -e "s|\${VERSION}|${VERSION}|g" mcpb/pyproject.toml.tmpl > mcpb/pyproject.to
 cp icon.png mcpb/icon.png
 
 # ---------------------------------------------------------------------------
-# 4. Validate the manifest.
+# 4. Validate and pack via the MCPB CLI. `npx --yes` fetches the latest
+#    @anthropic-ai/mcpb on every run, which keeps the script simple but
+#    makes builds non-reproducible across CLI releases. Pin via
+#    `@anthropic-ai/mcpb@<version>` when reproducibility matters (e.g. CI).
 # ---------------------------------------------------------------------------
 npx --yes @anthropic-ai/mcpb validate mcpb/manifest.json
 
