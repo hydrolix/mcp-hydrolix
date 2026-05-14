@@ -70,15 +70,15 @@ class HydrolixConfig:
         self._default_credential: Optional[HydrolixCredential] = None
 
         # Set the default credential to the service account from the environment, if available.
-        # Both token and username/password are stripped and checked for non-empty so that
+        # Both token and username are stripped and checked for non-empty so that
         # MCPB hosts injecting blank user_config fields (as empty strings) do not produce
         # bogus credentials.
         if global_service_account := os.getenv("HYDROLIX_TOKEN", "").strip():
             self._default_credential = ServiceAccountToken(global_service_account, None)
         else:
-            global_username = os.getenv("HYDROLIX_USER", "").strip()
-            global_password = os.getenv("HYDROLIX_PASSWORD", "").strip()
-            if global_username and global_password:
+            if (global_username := os.getenv("HYDROLIX_USER", "").strip()) and (
+                global_password := os.getenv("HYDROLIX_PASSWORD", "")
+            ):
                 self._default_credential = UsernamePassword(global_username, global_password)
 
     def creds_with(self, request_credential: Optional[HydrolixCredential]) -> HydrolixCredential:
