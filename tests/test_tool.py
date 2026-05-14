@@ -11,6 +11,7 @@ from mcp_hydrolix.mcp_server import (
 )
 
 
+@pytest.mark.integration_clickhouse
 class TestHydrolixTools:
     async def test_list_databases(self, setup_tool_test_database):
         """Test listing databases."""

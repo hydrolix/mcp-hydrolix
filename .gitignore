@@ -138,6 +138,9 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+.env.e2e
+.env.e2e.*
+!.env.e2e.example
 
 # Spyder project settings
 .spyderproject

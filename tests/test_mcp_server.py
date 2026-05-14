@@ -30,276 +30,290 @@ def _assert_structured_matches_content(result, tool_name: str):
     )
 
 
-async def test_list_databases_structured_matches_content(mcp_server, setup_test_database):
-    """Verify structured and unstructured responses match for list_databases."""
-    async with Client(mcp_server) as client:
-        result = await client.call_tool("list_databases", {})
-        _assert_structured_matches_content(result, "list_databases")
+@pytest.mark.integration_clickhouse
+class TestStructuredContentParity:
+    """Each tool's structured_content must equal its parsed content[0].text."""
+
+    async def test_list_databases_structured_matches_content(self, mcp_server, setup_test_database):
+        """Verify structured and unstructured responses match for list_databases."""
+        async with Client(mcp_server) as client:
+            result = await client.call_tool("list_databases", {})
+            _assert_structured_matches_content(result, "list_databases")
+
+    async def test_list_tables_structured_matches_content(self, mcp_server, setup_test_database):
+        """Verify structured and unstructured responses match for list_tables."""
+        test_db, _, _ = setup_test_database
+        async with Client(mcp_server) as client:
+            result = await client.call_tool("list_tables", {"database": test_db})
+            _assert_structured_matches_content(result, "list_tables")
+
+    async def test_get_table_info_structured_matches_content(self, mcp_server, setup_test_database):
+        """Verify structured and unstructured responses match for get_table_info."""
+        test_db, test_table, _ = setup_test_database
+        async with Client(mcp_server) as client:
+            result = await client.call_tool(
+                "get_table_info", {"database": test_db, "table": test_table}
+            )
+            _assert_structured_matches_content(result, "get_table_info")
+
+    async def test_run_select_query_structured_matches_content(
+        self, mcp_server, setup_test_database
+    ):
+        """Verify structured and unstructured responses match for run_select_query."""
+        test_db, test_table, _ = setup_test_database
+        async with Client(mcp_server) as client:
+            result = await client.call_tool(
+                "run_select_query",
+                {"query": f"SELECT id, name FROM {test_db}.{test_table} ORDER BY id"},
+            )
+            _assert_structured_matches_content(result, "run_select_query")
 
 
-async def test_list_tables_structured_matches_content(mcp_server, setup_test_database):
-    """Verify structured and unstructured responses match for list_tables."""
-    test_db, _, _ = setup_test_database
-    async with Client(mcp_server) as client:
-        result = await client.call_tool("list_tables", {"database": test_db})
-        _assert_structured_matches_content(result, "list_tables")
+@pytest.mark.integration_clickhouse
+class TestListDatabasesAndTables:
+    """End-to-end behavior of ``list_databases`` and ``list_tables`` against a live DB."""
 
+    async def test_list_databases(self, mcp_server, setup_test_database):
+        """Test the list_databases tool."""
+        test_db, _, _ = setup_test_database
 
-async def test_get_table_info_structured_matches_content(mcp_server, setup_test_database):
-    """Verify structured and unstructured responses match for get_table_info."""
-    test_db, test_table, _ = setup_test_database
-    async with Client(mcp_server) as client:
-        result = await client.call_tool(
-            "get_table_info", {"database": test_db, "table": test_table}
-        )
-        _assert_structured_matches_content(result, "get_table_info")
+        async with Client(mcp_server) as client:
+            result = await client.call_tool("list_databases", {})
 
+            databases = result.structured_content["databases"]
+            assert len(databases) >= 1
+            assert test_db in databases
+            assert "system" in databases  # System database should always exist
 
-async def test_run_select_query_structured_matches_content(mcp_server, setup_test_database):
-    """Verify structured and unstructured responses match for run_select_query."""
-    test_db, test_table, _ = setup_test_database
-    async with Client(mcp_server) as client:
-        result = await client.call_tool(
-            "run_select_query",
-            {"query": f"SELECT id, name FROM {test_db}.{test_table} ORDER BY id"},
-        )
-        _assert_structured_matches_content(result, "run_select_query")
+    async def test_list_tables_basic(self, mcp_server, setup_test_database):
+        """Test the list_tables tool without filters.
 
-
-async def test_list_databases(mcp_server, setup_test_database):
-    """Test the list_databases tool."""
-    test_db, _, _ = setup_test_database
-
-    async with Client(mcp_server) as client:
-        result = await client.call_tool("list_databases", {})
-
-        databases = result.structured_content["databases"]
-        assert len(databases) >= 1
-        assert test_db in databases
-        assert "system" in databases  # System database should always exist
-
-
-async def test_list_tables_basic(mcp_server, setup_test_database):
-    """Test the list_tables tool without filters.
-
-    Updated: list_tables() now returns only basic table info without columns.
-    """
-    test_db, test_table, test_table2 = setup_test_database
-
-    async with Client(mcp_server) as client:
-        result = await client.call_tool("list_tables", {"database": test_db})
-
-        tables = result.structured_content["tables"]
-        assert len(tables) >= 1
-
-        # Should have exactly 2 tables
-        assert len(tables) == 2
-
-        # Get table names
-        table_names = [table["name"] for table in tables]
-        assert test_table in table_names
-        assert test_table2 in table_names
-
-        # Check basic table details (without columns)
-        for table in tables:
-            assert table["database"] == test_db
-            assert "total_rows" in table
-            assert "engine" in table
-            assert "name" in table
-            assert "primary_key" in table
-
-            # Columns should be empty or None (not populated by list_tables)
-            assert table.get("columns") is None or len(table.get("columns", [])) == 0
-
-
-async def test_list_tables_with_like_filter(mcp_server, setup_test_database):
-    """Test the list_tables tool with LIKE filter."""
-    test_db, test_table, _ = setup_test_database
-
-    async with Client(mcp_server) as client:
-        # Test with LIKE filter
-        result = await client.call_tool("list_tables", {"database": test_db, "like": "test_%"})
-
-        tables = result.structured_content["tables"]
-
-        assert len(tables) == 1
-        assert tables[0]["name"] == test_table
-
-
-async def test_list_tables_with_not_like_filter(mcp_server, setup_test_database):
-    """Test the list_tables tool with NOT LIKE filter."""
-    test_db, _, test_table2 = setup_test_database
-
-    async with Client(mcp_server) as client:
-        # Test with NOT LIKE filter
-        result = await client.call_tool("list_tables", {"database": test_db, "not_like": "test_%"})
-
-        tables = result.structured_content["tables"]
-
-        assert len(tables) == 1
-        assert tables[0]["name"] == test_table2
-
-
-async def test_run_select_query_success(mcp_server, setup_test_database):
-    """Test running a successful SELECT query."""
-    test_db, test_table, _ = setup_test_database
-
-    async with Client(mcp_server) as client:
-        query = f"SELECT id, name, age FROM {test_db}.{test_table} ORDER BY id"
-        result = await client.call_tool("run_select_query", {"query": query})
-
-        query_result = result.structured_content
-
-        # Check structure
-        assert "columns" in query_result
-        assert "rows" in query_result
-
-        # Check columns
-        assert query_result["columns"] == ["id", "name", "age"]
-
-        # Check rows
-        assert len(query_result["rows"]) == 4
-        assert query_result["rows"][0] == [1, "Alice", 30]
-        assert query_result["rows"][1] == [2, "Bob", 25]
-        assert query_result["rows"][2] == [3, "Charlie", 35]
-        assert query_result["rows"][3] == [4, "Diana", 28]
-
-        # Verify truncation metadata is present even when not truncated
-        assert query_result["truncated"] is False
-        assert query_result["row_count"] == 4
-
-
-async def test_run_select_query_with_aggregation(mcp_server, setup_test_database):
-    """Test running a SELECT query with aggregation."""
-    test_db, test_table, _ = setup_test_database
-
-    async with Client(mcp_server) as client:
-        query = f"SELECT COUNT(*) as count, AVG(age) as avg_age FROM {test_db}.{test_table}"
-        result = await client.call_tool("run_select_query", {"query": query})
-
-        query_result = result.structured_content
-
-        assert query_result["columns"] == ["count", "avg_age"]
-        assert len(query_result["rows"]) == 1
-        assert query_result["rows"][0][0] == 4  # count
-        assert query_result["rows"][0][1] == 29.5  # average age
-
-
-async def test_run_select_query_with_join(mcp_server, setup_test_database):
-    """Test running a SELECT query with JOIN."""
-    test_db, test_table, test_table2 = setup_test_database
-
-    async with Client(mcp_server) as client:
-        # Insert related data for join
-        client_direct = create_clickhouse_client()
-        client_direct.command(f"""
-            INSERT INTO {test_db}.{test_table2} (event_id, event_type, timestamp) VALUES
-            (2001, 'purchase', '2024-01-01 14:00:00')
-        """)
-
-        query = f"""
-        SELECT
-            COUNT(DISTINCT event_type) as event_types_count
-        FROM {test_db}.{test_table2}
+        Updated: list_tables() now returns only basic table info without columns.
         """
-        result = await client.call_tool("run_select_query", {"query": query})
+        test_db, test_table, test_table2 = setup_test_database
 
-        query_result = result.structured_content
-        assert query_result["rows"][0][0] == 3  # login, logout, purchase
+        async with Client(mcp_server) as client:
+            result = await client.call_tool("list_tables", {"database": test_db})
 
+            tables = result.structured_content["tables"]
+            assert len(tables) >= 1
 
-async def test_run_select_query_error(mcp_server, setup_test_database):
-    """Test running a SELECT query that results in an error."""
-    test_db, _, _ = setup_test_database
+            # Should have exactly 2 tables
+            assert len(tables) == 2
 
-    async with Client(mcp_server) as client:
-        # Query non-existent table
-        query = f"SELECT * FROM {test_db}.non_existent_table"
+            # Get table names
+            table_names = [table["name"] for table in tables]
+            assert test_table in table_names
+            assert test_table2 in table_names
 
-        # Should raise ToolError
-        with pytest.raises(ToolError) as exc_info:
-            await client.call_tool("run_select_query", {"query": query})
+            # Check basic table details (without columns)
+            for table in tables:
+                assert table["database"] == test_db
+                assert "total_rows" in table
+                assert "engine" in table
+                assert "name" in table
+                assert "primary_key" in table
 
-        assert "Query execution failed" in str(exc_info.value)
+                # Columns should be empty or None (not populated by list_tables)
+                assert table.get("columns") is None or len(table.get("columns", [])) == 0
 
+    async def test_list_tables_with_like_filter(self, mcp_server, setup_test_database):
+        """Test the list_tables tool with LIKE filter."""
+        test_db, test_table, _ = setup_test_database
 
-async def test_run_select_query_syntax_error(mcp_server):
-    """Test running a SELECT query with syntax error."""
-    async with Client(mcp_server) as client:
-        # Invalid SQL syntax
-        query = "SELECT FROM WHERE"
+        async with Client(mcp_server) as client:
+            # Test with LIKE filter
+            result = await client.call_tool("list_tables", {"database": test_db, "like": "test_%"})
 
-        # Should raise ToolError
-        with pytest.raises(ToolError) as exc_info:
-            await client.call_tool("run_select_query", {"query": query})
+            tables = result.structured_content["tables"]
 
-        assert "Query execution failed" in str(exc_info.value)
+            assert len(tables) == 1
+            assert tables[0]["name"] == test_table
 
+    async def test_list_tables_with_not_like_filter(self, mcp_server, setup_test_database):
+        """Test the list_tables tool with NOT LIKE filter."""
+        test_db, _, test_table2 = setup_test_database
 
-async def test_table_metadata_details(mcp_server, setup_test_database):
-    """Test that table metadata is correctly retrieved."""
-    test_db, test_table, _ = setup_test_database
+        async with Client(mcp_server) as client:
+            # Test with NOT LIKE filter
+            result = await client.call_tool(
+                "list_tables", {"database": test_db, "not_like": "test_%"}
+            )
 
-    async with Client(mcp_server) as client:
-        # First, list tables to discover available tables
-        result = await client.call_tool("list_tables", {"database": test_db})
-        tables = result.structured_content["tables"]
+            tables = result.structured_content["tables"]
 
-        # Verify our test table exists in the list
-        test_table_exists = any(t["name"] == test_table for t in tables)
-        assert test_table_exists, f"Test table {test_table} not found in list_tables result"
-
-        # Now use get_table_info to get detailed metadata including columns
-        result = await client.call_tool(
-            "get_table_info", {"database": test_db, "table": test_table}
-        )
-        # Use structured_content (raw JSON) to reliably access column fields
-        # result.data goes through fastmcp's schema reconstruction which produces
-        # opaque Root objects for anyOf union types
-        test_table_info = result.structured_content
-
-        # Check engine info
-        assert test_table_info["engine"] == "MergeTree"
-
-        # Check row count
-        assert test_table_info["total_rows"] == 4
-
-        # Columns are plain dicts from @field_serializer with column_category injected
-        columns_by_name = {col["name"]: col for col in test_table_info["columns"]}
-
-        assert columns_by_name["id"]["comment"] == "Primary identifier"
-        assert columns_by_name["id"]["type"] == "UInt32"
-        assert columns_by_name["id"]["column_category"] == "Column"
-
-        assert columns_by_name["name"]["comment"] == "User name field"
-        assert columns_by_name["name"]["type"] == "String"
-        assert columns_by_name["name"]["column_category"] == "Column"
-
-        assert columns_by_name["age"]["comment"] == "User age"
-        assert columns_by_name["age"]["type"] == "UInt8"
-        assert columns_by_name["age"]["column_category"] == "Column"
-
-        assert columns_by_name["created_at"]["comment"] == "Record creation timestamp"
-        assert columns_by_name["created_at"]["type"] == "DateTime"
-        # DEFAULT columns are classified as plain Column — default_expression not exposed
-        assert columns_by_name["created_at"]["column_category"] == "Column"
+            assert len(tables) == 1
+            assert tables[0]["name"] == test_table2
 
 
-async def test_system_database_access(mcp_server):
-    """Test that we can access system databases."""
-    async with Client(mcp_server) as client:
-        # List tables in system database
-        result = await client.call_tool("list_tables", {"database": "system"})
-        tables = result.structured_content["tables"]
+@pytest.mark.integration_clickhouse
+class TestRunSelectQueryBasic:
+    """``run_select_query`` result shape, aggregation, joins, and error paths."""
 
-        # System database should have many tables
-        assert len(tables) > 10
+    async def test_run_select_query_success(self, mcp_server, setup_test_database):
+        """Test running a successful SELECT query."""
+        test_db, test_table, _ = setup_test_database
 
-        # Check for some common system tables
-        table_names = [t["name"] for t in tables]
-        assert "tables" in table_names
-        assert "columns" in table_names
-        assert "databases" in table_names
+        async with Client(mcp_server) as client:
+            query = f"SELECT id, name, age FROM {test_db}.{test_table} ORDER BY id"
+            result = await client.call_tool("run_select_query", {"query": query})
+
+            query_result = result.structured_content
+
+            # Check structure
+            assert "columns" in query_result
+            assert "rows" in query_result
+
+            # Check columns
+            assert query_result["columns"] == ["id", "name", "age"]
+
+            # Check rows
+            assert len(query_result["rows"]) == 4
+            assert query_result["rows"][0] == [1, "Alice", 30]
+            assert query_result["rows"][1] == [2, "Bob", 25]
+            assert query_result["rows"][2] == [3, "Charlie", 35]
+            assert query_result["rows"][3] == [4, "Diana", 28]
+
+            # Verify truncation metadata is present even when not truncated
+            assert query_result["truncated"] is False
+            assert query_result["row_count"] == 4
+
+    async def test_run_select_query_with_aggregation(self, mcp_server, setup_test_database):
+        """Test running a SELECT query with aggregation."""
+        test_db, test_table, _ = setup_test_database
+
+        async with Client(mcp_server) as client:
+            query = f"SELECT COUNT(*) as count, AVG(age) as avg_age FROM {test_db}.{test_table}"
+            result = await client.call_tool("run_select_query", {"query": query})
+
+            query_result = result.structured_content
+
+            assert query_result["columns"] == ["count", "avg_age"]
+            assert len(query_result["rows"]) == 1
+            assert query_result["rows"][0][0] == 4  # count
+            assert query_result["rows"][0][1] == 29.5  # average age
+
+    async def test_run_select_query_with_join(self, mcp_server, setup_test_database):
+        """Test running a SELECT query with JOIN."""
+        test_db, test_table, test_table2 = setup_test_database
+
+        async with Client(mcp_server) as client:
+            # Insert related data for join
+            client_direct = create_clickhouse_client()
+            client_direct.command(f"""
+                INSERT INTO {test_db}.{test_table2} (event_id, event_type, timestamp) VALUES
+                (2001, 'purchase', '2024-01-01 14:00:00')
+            """)
+
+            query = f"""
+            SELECT
+                COUNT(DISTINCT event_type) as event_types_count
+            FROM {test_db}.{test_table2}
+            """
+            result = await client.call_tool("run_select_query", {"query": query})
+
+            query_result = result.structured_content
+            assert query_result["rows"][0][0] == 3  # login, logout, purchase
+
+    async def test_run_select_query_error(self, mcp_server, setup_test_database):
+        """Test running a SELECT query that results in an error."""
+        test_db, _, _ = setup_test_database
+
+        async with Client(mcp_server) as client:
+            # Query non-existent table
+            query = f"SELECT * FROM {test_db}.non_existent_table"
+
+            # Should raise ToolError
+            with pytest.raises(ToolError) as exc_info:
+                await client.call_tool("run_select_query", {"query": query})
+
+            assert "Query execution failed" in str(exc_info.value)
+
+    async def test_run_select_query_syntax_error(self, mcp_server):
+        """Test running a SELECT query with syntax error."""
+        async with Client(mcp_server) as client:
+            # Invalid SQL syntax
+            query = "SELECT FROM WHERE"
+
+            # Should raise ToolError
+            with pytest.raises(ToolError) as exc_info:
+                await client.call_tool("run_select_query", {"query": query})
+
+            assert "Query execution failed" in str(exc_info.value)
+
+
+@pytest.mark.integration_clickhouse
+class TestTableMetadata:
+    """``get_table_info`` returns full column metadata; system database is reachable."""
+
+    async def test_table_metadata_details(self, mcp_server, setup_test_database):
+        """Test that table metadata is correctly retrieved."""
+        test_db, test_table, _ = setup_test_database
+
+        async with Client(mcp_server) as client:
+            # First, list tables to discover available tables
+            result = await client.call_tool("list_tables", {"database": test_db})
+            tables = result.structured_content["tables"]
+
+            # Verify our test table exists in the list
+            test_table_exists = any(t["name"] == test_table for t in tables)
+            assert test_table_exists, f"Test table {test_table} not found in list_tables result"
+
+            # Now use get_table_info to get detailed metadata including columns
+            result = await client.call_tool(
+                "get_table_info", {"database": test_db, "table": test_table}
+            )
+            # Use structured_content (raw JSON) to reliably access column fields
+            # result.data goes through fastmcp's schema reconstruction which produces
+            # opaque Root objects for anyOf union types
+            test_table_info = result.structured_content
+
+            # Check engine info
+            assert test_table_info["engine"] == "MergeTree"
+
+            # Check row count
+            assert test_table_info["total_rows"] == 4
+
+            # Columns are plain dicts from @field_serializer with column_category injected
+            columns_by_name = {col["name"]: col for col in test_table_info["columns"]}
+
+            assert columns_by_name["id"]["comment"] == "Primary identifier"
+            assert columns_by_name["id"]["type"] == "UInt32"
+            assert columns_by_name["id"]["column_category"] == "Column"
+
+            assert columns_by_name["name"]["comment"] == "User name field"
+            assert columns_by_name["name"]["type"] == "String"
+            assert columns_by_name["name"]["column_category"] == "Column"
+
+            assert columns_by_name["age"]["comment"] == "User age"
+            assert columns_by_name["age"]["type"] == "UInt8"
+            assert columns_by_name["age"]["column_category"] == "Column"
+
+            assert columns_by_name["created_at"]["comment"] == "Record creation timestamp"
+            assert columns_by_name["created_at"]["type"] == "DateTime"
+            # DEFAULT columns are classified as plain Column — default_expression not exposed
+            assert columns_by_name["created_at"]["column_category"] == "Column"
+
+    async def test_system_database_access(self, mcp_server):
+        """Test that we can access system databases."""
+        async with Client(mcp_server) as client:
+            # List tables in system database
+            result = await client.call_tool("list_tables", {"database": "system"})
+            tables = result.structured_content["tables"]
+
+            # System database should have many tables
+            assert len(tables) > 10
+
+            # Check for some common system tables
+            table_names = [t["name"] for t in tables]
+            assert "tables" in table_names
+            assert "columns" in table_names
+            assert "databases" in table_names
+
+
+# ---------------------------------------------------------------------------
+# Concurrency-test helpers (used by TestConcurrentQueries below).
+# ---------------------------------------------------------------------------
 
 
 class ServerMetrics:
@@ -330,345 +344,348 @@ class InFlightCounterMiddleware(Middleware):
                 pass
 
 
-async def test_concurrent_queries(monkeypatch, mcp_server, setup_test_database):
-    """Test running multiple queries concurrently."""
+@pytest.mark.integration_clickhouse
+class TestConcurrentQueries:
+    """Concurrent ``run_select_query`` calls must not serialize or cross-contaminate."""
 
-    from clickhouse_connect.driver import AsyncClient
+    async def test_concurrent_queries(self, monkeypatch, mcp_server, setup_test_database):
+        """Test running multiple queries concurrently."""
 
-    instance = AsyncClient
-    original_method = AsyncClient.query
+        from clickhouse_connect.driver import AsyncClient
 
-    async def wrapper_proxy(self, query: str, parameters=None, settings: dict[str, Any] = None):
-        settings["readonly"] = 0
-        # Call the original method
-        return await original_method(self, query, parameters=parameters, settings=settings)
+        instance = AsyncClient
+        original_method = AsyncClient.query
 
-    # Patch the instance method at runtime
-    monkeypatch.setattr(instance, "query", wrapper_proxy)
+        async def wrapper_proxy(self, query: str, parameters=None, settings: dict[str, Any] = None):
+            settings["readonly"] = 0
+            # Call the original method
+            return await original_method(self, query, parameters=parameters, settings=settings)
 
-    test_db, test_table, test_table2 = setup_test_database
+        # Patch the instance method at runtime
+        monkeypatch.setattr(instance, "query", wrapper_proxy)
 
-    mcp_server.add_middleware(InFlightCounterMiddleware())
+        test_db, test_table, test_table2 = setup_test_database
 
-    # limit mcp client request time
-    os.environ["HYDROLIX_SEND_RECEIVE_TIMEOUT"] = "10"
+        mcp_server.add_middleware(InFlightCounterMiddleware())
 
-    # limit mcp server waiting for query finish
-    os.environ["HYDROLIX_QUERY_TIMEOUT_SECS"] = "10"
+        # limit mcp client request time
+        os.environ["HYDROLIX_SEND_RECEIVE_TIMEOUT"] = "10"
 
-    ServerMetrics.inflight_requests = 0
-    async with Client(mcp_server) as client:
-        lq = "SELECT * FROM loop  (numbers(3)) LIMIT 7000000000000 SETTINGS max_execution_time=9"
-        lq_f = asyncio.gather(
-            *[client.call_tool("run_select_query", {"query": lq, "max_cells": 0})]
-        )
+        # limit mcp server waiting for query finish
+        os.environ["HYDROLIX_QUERY_TIMEOUT_SECS"] = "10"
 
-        # Run multiple queries concurrently
-        queries = [
-            f"SELECT COUNT(*) FROM {test_db}.{test_table}",
-            f"SELECT COUNT(*) FROM {test_db}.{test_table2}",
-            f"SELECT MAX(id) FROM {test_db}.{test_table}",
-            f"SELECT MIN(event_id) FROM {test_db}.{test_table2}",
-        ]
-
-        # Execute all queries concurrently
-        results = asyncio.gather(
-            *[client.call_tool("run_select_query", {"query": query}) for query in queries]
-        )
-
-        # let mcp server handle requests
-        await asyncio.sleep(20)
-
-    # Check that other queries were submitted to mcp server
-    assert lq_f.done() and isinstance(lq_f.exception(), ToolError)
-    assert ServerMetrics.inflight_requests > 1, (
-        "By now at least one another query should have been invoked."
-    )
-
-    # count queries started after long blocking query finished.
-    lq_end = ServerMetrics.queries[lq]["end"]
-    blocked_count = sum(
-        [1 for q, q_time in ServerMetrics.queries.items() if q != lq and q_time["start"] > lq_end]
-    )
-    assert blocked_count < len(queries), "All queries were blocked by long running query."
-
-    # all queries were invoked
-    for query in queries:
-        assert query in ServerMetrics.queries
-
-    # Check each result
-    assert results.done()
-    for result in results.result():
-        query_result = result.structured_content
-        assert "rows" in query_result
-        assert len(query_result["rows"]) == 1
-
-
-async def test_concurrent_queries_isolation(monkeypatch, mcp_server, setup_test_database):
-    """Test running multiple queries concurrently."""
-    from clickhouse_connect.driver import AsyncClient
-
-    instance = AsyncClient
-    original_method = AsyncClient.query
-
-    async def wrapper_proxy(self, query: str, parameters=None, settings: dict[str, Any] = None):
-        settings["readonly"] = 0
-        # Call the original method
-        return await original_method(self, query, parameters=parameters, settings=settings)
-
-    # Patch the instance method at runtime
-    monkeypatch.setattr(instance, "query", wrapper_proxy)
-
-    users = [[f"user_{i}", f"pass_{i}", uuid.uuid4().hex] for i in range(50)]
-
-    async def _call_tool(user, password, guid):
+        ServerMetrics.inflight_requests = 0
         async with Client(mcp_server) as client:
-            return await client.call_tool(
-                "run_select_query",
-                {
-                    "query": f"select '{user}', '{password}', '{guid}' from loop(numbers(3)) LIMIT 50"
-                },
+            lq = (
+                "SELECT * FROM loop  (numbers(3)) LIMIT 7000000000000 SETTINGS max_execution_time=9"
+            )
+            lq_f = asyncio.gather(
+                *[client.call_tool("run_select_query", {"query": lq, "max_cells": 0})]
             )
 
-    results = await asyncio.gather(
-        *[_call_tool(user, password, guid) for user, password, guid in users for _ in range(10)]
-    )
+            # Run multiple queries concurrently
+            queries = [
+                f"SELECT COUNT(*) FROM {test_db}.{test_table}",
+                f"SELECT COUNT(*) FROM {test_db}.{test_table2}",
+                f"SELECT MAX(id) FROM {test_db}.{test_table}",
+                f"SELECT MIN(event_id) FROM {test_db}.{test_table2}",
+            ]
 
-    for result in results:
-        res = result.structured_content["rows"]
-        user = res[0][0]
-        indata = list(filter(lambda x: x[0] == user, users))
-        assert len(indata) == 1
-        user_row = indata[0]
-        for res_row in res:
-            assert res_row == user_row
-
-
-@pytest.mark.asyncio
-async def test_run_select_query_no_truncation(mcp_server, setup_test_database):
-    """Test that results within the cell budget are returned without truncation."""
-    test_db, test_table, _ = setup_test_database
-
-    async with Client(mcp_server) as client:
-        # test_table has 4 rows × 3 selected columns = 12 cells; max_cells=100 won't truncate
-        query = f"SELECT id, name, age FROM {test_db}.{test_table} ORDER BY id"
-        result = await client.call_tool("run_select_query", {"query": query, "max_cells": 100})
-
-        query_result = result.structured_content
-        assert query_result["truncated"] is False
-        assert query_result["row_count"] == 4
-        assert len(query_result["rows"]) == 4
-        assert "total_row_count" not in query_result
-        assert "message" not in query_result
-
-
-@pytest.mark.asyncio
-async def test_run_select_query_no_truncation_at_exact_budget(mcp_server, setup_test_database):
-    """Test that a result exactly at the cell budget is not truncated (boundary: > not >=)."""
-    test_db, test_table, _ = setup_test_database
-
-    async with Client(mcp_server) as client:
-        # test_table has 4 rows × 3 selected columns = 12 cells; max_cells=12 must NOT truncate.
-        query = f"SELECT id, name, age FROM {test_db}.{test_table} ORDER BY id"
-        result = await client.call_tool("run_select_query", {"query": query, "max_cells": 12})
-
-        query_result = result.structured_content
-        assert query_result["truncated"] is False
-        assert query_result["row_count"] == 4
-
-
-@pytest.mark.asyncio
-async def test_run_select_query_truncation_triggered(mcp_server, setup_test_database):
-    """Test that results exceeding the cell budget are truncated with metadata."""
-    test_db, test_table, _ = setup_test_database
-
-    async with Client(mcp_server) as client:
-        # test_table has 4 rows × 4 columns = 16 cells; max_cells=4 forces max_rows = 4//4 = 1
-        query = f"SELECT id, name, age, created_at FROM {test_db}.{test_table} ORDER BY id"
-        result = await client.call_tool("run_select_query", {"query": query, "max_cells": 4})
-
-        query_result = result.structured_content
-        assert query_result["truncated"] is True
-        assert query_result["row_count"] == 1
-        assert query_result["total_row_count"] == 4
-        assert len(query_result["rows"]) == 1
-        assert "message" in query_result
-        assert "run_select_query" in query_result["message"]
-        assert "max_cells" in query_result["message"]
-
-
-@pytest.mark.asyncio
-async def test_run_select_query_truncation_disabled(mcp_server, setup_test_database):
-    """Test that max_cells=0 disables truncation even when the result would otherwise be truncated."""
-    test_db, test_table, _ = setup_test_database
-
-    async with Client(mcp_server) as client:
-        # 4 rows × 4 columns = 16 cells, which exceeds max_cells=4 but max_cells=0 disables truncation
-        query = f"SELECT id, name, age, created_at FROM {test_db}.{test_table} ORDER BY id"
-        result = await client.call_tool("run_select_query", {"query": query, "max_cells": 0})
-
-        query_result = result.structured_content
-        assert query_result["truncated"] is False
-        assert query_result["row_count"] == 4
-        assert len(query_result["rows"]) == 4
-
-
-@pytest.mark.asyncio
-async def test_run_select_query_negative_max_cells_rejected(mcp_server, setup_test_database):
-    """Test that a negative max_cells value raises a ToolError."""
-    test_db, test_table, _ = setup_test_database
-
-    async with Client(mcp_server) as client:
-        query = f"SELECT id FROM {test_db}.{test_table}"
-        with pytest.raises(ToolError) as exc_info:
-            await client.call_tool("run_select_query", {"query": query, "max_cells": -1})
-        assert "max_cells" in str(exc_info.value)
-
-
-@pytest.mark.asyncio
-async def test_run_select_query_truncation_max_rows_zero(mcp_server, setup_test_database):
-    """Test truncation when cell limit is smaller than the column count (max_rows=0)."""
-    test_db, test_table, _ = setup_test_database
-
-    async with Client(mcp_server) as client:
-        # test_table has 4 columns; max_cells=2 → max_rows = 2//4 = 0
-        query = f"SELECT id, name, age, created_at FROM {test_db}.{test_table} ORDER BY id"
-        result = await client.call_tool("run_select_query", {"query": query, "max_cells": 2})
-
-        query_result = result.structured_content
-        assert query_result["truncated"] is True
-        assert query_result["row_count"] == 0
-        assert len(query_result["rows"]) == 0
-        assert query_result["total_row_count"] == 2  # inject_limit caps the fetch to LIMIT 2
-        assert "run_select_query" in query_result["message"]
-        assert "max_cells" in query_result["message"]
-
-
-@pytest.mark.asyncio
-async def test_run_select_query_operator_limit_caps_max_cells(
-    monkeypatch, mcp_server, setup_test_database
-):
-    """Test that HYDROLIX_MAX_RESULT_CELLS_LIMIT caps a caller-supplied max_cells value."""
-    test_db, test_table, _ = setup_test_database
-
-    # Operator sets a hard cap of 4 cells; caller requests 1000 — should be capped to 4.
-    monkeypatch.setenv("HYDROLIX_MAX_RESULT_CELLS_LIMIT", "4")
-
-    async with Client(mcp_server) as client:
-        # 4 rows × 4 columns = 16 cells; operator cap of 4 → max_rows = 4//4 = 1
-        query = f"SELECT id, name, age, created_at FROM {test_db}.{test_table} ORDER BY id"
-        result = await client.call_tool("run_select_query", {"query": query, "max_cells": 1000})
-
-        query_result = result.structured_content
-        assert query_result["truncated"] is True
-        assert query_result["row_count"] == 1
-        assert query_result["total_row_count"] == 4
-        # Message should mention the operator cap, not advise using a larger max_cells value.
-        assert "administrator" in query_result["message"]
-        assert "max_cells value" not in query_result["message"]
-
-
-@pytest.mark.asyncio
-async def test_run_select_query_operator_limit_overrides_max_cells_zero(
-    monkeypatch, mcp_server, setup_test_database
-):
-    """Test that HYDROLIX_MAX_RESULT_CELLS_LIMIT is enforced even when max_cells=0."""
-    test_db, test_table, _ = setup_test_database
-
-    # Operator sets a hard cap of 4 cells; caller sets max_cells=0 to disable truncation.
-    monkeypatch.setenv("HYDROLIX_MAX_RESULT_CELLS_LIMIT", "4")
-
-    async with Client(mcp_server) as client:
-        # 4 rows × 4 columns = 16 cells; operator cap of 4 overrides max_cells=0.
-        query = f"SELECT id, name, age, created_at FROM {test_db}.{test_table} ORDER BY id"
-        result = await client.call_tool("run_select_query", {"query": query, "max_cells": 0})
-
-        query_result = result.structured_content
-        assert query_result["truncated"] is True
-        assert query_result["row_count"] == 1
-        assert "administrator" in query_result["message"]
-
-
-@pytest.mark.asyncio
-async def test_run_select_query_operator_limit_caps_default(
-    monkeypatch, mcp_server, setup_test_database
-):
-    """Test that HYDROLIX_MAX_RESULT_CELLS_LIMIT caps results even when caller omits max_cells."""
-    test_db, test_table, _ = setup_test_database
-
-    # Operator sets a hard cap of 4 cells; caller supplies no max_cells at all.
-    monkeypatch.setenv("HYDROLIX_MAX_RESULT_CELLS_LIMIT", "4")
-
-    async with Client(mcp_server) as client:
-        # 4 rows × 4 columns = 16 cells; operator cap of 4 → max_rows = 4//4 = 1
-        query = f"SELECT id, name, age, created_at FROM {test_db}.{test_table} ORDER BY id"
-        result = await client.call_tool("run_select_query", {"query": query})
-
-        query_result = result.structured_content
-        assert query_result["truncated"] is True
-        assert query_result["row_count"] == 1
-        assert query_result["total_row_count"] == 4
-        # Must show operator-cap guidance, NOT "use a larger max_cells value"
-        assert "administrator" in query_result["message"]
-        assert "max_cells value" not in query_result["message"]
-
-
-@pytest.mark.asyncio
-async def test_run_select_query_max_cells_in_tool_schema(mcp_server):
-    """Test that max_cells is visible in the tool schema advertised to MCP clients."""
-    async with Client(mcp_server) as client:
-        tools = await client.list_tools()
-        run_query_tool = next(t for t in tools if t.name == "run_select_query")
-        schema_props = run_query_tool.inputSchema.get("properties", {})
-        assert "max_cells" in schema_props, (
-            "max_cells parameter must appear in the tool schema so LLM clients can use it"
-        )
-
-
-@pytest.mark.asyncio
-async def test_run_select_query_env_default_max_cells(monkeypatch, mcp_server, setup_test_database):
-    """Test that HYDROLIX_MAX_RESULT_CELLS env var is respected as the default cell budget."""
-    test_db, test_table, _ = setup_test_database
-
-    # Set the default budget to 4 cells; the query returns 4 rows × 4 columns = 16 cells.
-    # With this budget, truncation must trigger even though no max_cells arg is supplied.
-    monkeypatch.setenv("HYDROLIX_MAX_RESULT_CELLS", "4")
-
-    async with Client(mcp_server) as client:
-        query = f"SELECT id, name, age, created_at FROM {test_db}.{test_table} ORDER BY id"
-        result = await client.call_tool("run_select_query", {"query": query})
-
-        query_result = result.structured_content
-        assert query_result["truncated"] is True
-        assert query_result["row_count"] == 1  # 4 cells // 4 columns = 1 row
-        assert query_result["total_row_count"] == 4
-        assert "run_select_query" in query_result["message"]
-        assert "max_cells" in query_result["message"]
-
-
-@pytest.mark.asyncio
-async def test_run_select_query_truncation_message_100k_note(monkeypatch, mcp_server):
-    """Test that the 100k-row advisory note appears when total_row_count >= 100,000."""
-    from unittest.mock import AsyncMock, patch
-
-    large_result = {
-        "columns": ["a", "b"],
-        "rows": [["x", "y"]] * 100_000,
-    }
-
-    with patch("mcp_hydrolix.mcp_server.execute_query", new=AsyncMock(return_value=large_result)):
-        async with Client(mcp_server) as client:
-            # 100,000 rows × 2 columns = 200,000 cells; max_cells=4 → max_rows=2
-            result = await client.call_tool(
-                "run_select_query",
-                {"query": "SELECT a, b FROM t", "max_cells": 4},
+            # Execute all queries concurrently
+            results = asyncio.gather(
+                *[client.call_tool("run_select_query", {"query": query}) for query in queries]
             )
 
-    query_result = result.data
-    assert query_result["truncated"] is True
-    assert query_result["total_row_count"] == 100_000
-    assert "total_row_count" in query_result["message"]
-    assert "100,000" in query_result["message"]
+            # let mcp server handle requests
+            await asyncio.sleep(20)
+
+        # Check that other queries were submitted to mcp server
+        assert lq_f.done() and isinstance(lq_f.exception(), ToolError)
+        assert ServerMetrics.inflight_requests > 1, (
+            "By now at least one another query should have been invoked."
+        )
+
+        # count queries started after long blocking query finished.
+        lq_end = ServerMetrics.queries[lq]["end"]
+        blocked_count = sum(
+            [
+                1
+                for q, q_time in ServerMetrics.queries.items()
+                if q != lq and q_time["start"] > lq_end
+            ]
+        )
+        assert blocked_count < len(queries), "All queries were blocked by long running query."
+
+        # all queries were invoked
+        for query in queries:
+            assert query in ServerMetrics.queries
+
+        # Check each result
+        assert results.done()
+        for result in results.result():
+            query_result = result.structured_content
+            assert "rows" in query_result
+            assert len(query_result["rows"]) == 1
+
+    async def test_concurrent_queries_isolation(self, monkeypatch, mcp_server, setup_test_database):
+        """Test running multiple queries concurrently."""
+        from clickhouse_connect.driver import AsyncClient
+
+        instance = AsyncClient
+        original_method = AsyncClient.query
+
+        async def wrapper_proxy(self, query: str, parameters=None, settings: dict[str, Any] = None):
+            settings["readonly"] = 0
+            # Call the original method
+            return await original_method(self, query, parameters=parameters, settings=settings)
+
+        # Patch the instance method at runtime
+        monkeypatch.setattr(instance, "query", wrapper_proxy)
+
+        users = [[f"user_{i}", f"pass_{i}", uuid.uuid4().hex] for i in range(50)]
+
+        async def _call_tool(user, password, guid):
+            async with Client(mcp_server) as client:
+                return await client.call_tool(
+                    "run_select_query",
+                    {
+                        "query": f"select '{user}', '{password}', '{guid}' from loop(numbers(3)) LIMIT 50"
+                    },
+                )
+
+        results = await asyncio.gather(
+            *[_call_tool(user, password, guid) for user, password, guid in users for _ in range(10)]
+        )
+
+        for result in results:
+            res = result.structured_content["rows"]
+            user = res[0][0]
+            indata = list(filter(lambda x: x[0] == user, users))
+            assert len(indata) == 1
+            user_row = indata[0]
+            for res_row in res:
+                assert res_row == user_row
+
+
+@pytest.mark.integration_clickhouse
+class TestRunSelectQueryTruncation:
+    """Cell-budget truncation, operator caps, and env defaults — live DB path."""
+
+    async def test_run_select_query_no_truncation(self, mcp_server, setup_test_database):
+        """Test that results within the cell budget are returned without truncation."""
+        test_db, test_table, _ = setup_test_database
+
+        async with Client(mcp_server) as client:
+            # test_table has 4 rows × 3 selected columns = 12 cells; max_cells=100 won't truncate
+            query = f"SELECT id, name, age FROM {test_db}.{test_table} ORDER BY id"
+            result = await client.call_tool("run_select_query", {"query": query, "max_cells": 100})
+
+            query_result = result.structured_content
+            assert query_result["truncated"] is False
+            assert query_result["row_count"] == 4
+            assert len(query_result["rows"]) == 4
+            assert "total_row_count" not in query_result
+            assert "message" not in query_result
+
+    async def test_run_select_query_no_truncation_at_exact_budget(
+        self, mcp_server, setup_test_database
+    ):
+        """Test that a result exactly at the cell budget is not truncated (boundary: > not >=)."""
+        test_db, test_table, _ = setup_test_database
+
+        async with Client(mcp_server) as client:
+            # test_table has 4 rows × 3 selected columns = 12 cells; max_cells=12 must NOT truncate.
+            query = f"SELECT id, name, age FROM {test_db}.{test_table} ORDER BY id"
+            result = await client.call_tool("run_select_query", {"query": query, "max_cells": 12})
+
+            query_result = result.structured_content
+            assert query_result["truncated"] is False
+            assert query_result["row_count"] == 4
+
+    async def test_run_select_query_truncation_triggered(self, mcp_server, setup_test_database):
+        """Test that results exceeding the cell budget are truncated with metadata."""
+        test_db, test_table, _ = setup_test_database
+
+        async with Client(mcp_server) as client:
+            # test_table has 4 rows × 4 columns = 16 cells; max_cells=4 forces max_rows = 4//4 = 1
+            query = f"SELECT id, name, age, created_at FROM {test_db}.{test_table} ORDER BY id"
+            result = await client.call_tool("run_select_query", {"query": query, "max_cells": 4})
+
+            query_result = result.structured_content
+            assert query_result["truncated"] is True
+            assert query_result["row_count"] == 1
+            assert query_result["total_row_count"] == 4
+            assert len(query_result["rows"]) == 1
+            assert "message" in query_result
+            assert "run_select_query" in query_result["message"]
+            assert "max_cells" in query_result["message"]
+
+    async def test_run_select_query_truncation_disabled(self, mcp_server, setup_test_database):
+        """Test that max_cells=0 disables truncation even when the result would otherwise be truncated."""
+        test_db, test_table, _ = setup_test_database
+
+        async with Client(mcp_server) as client:
+            # 4 rows × 4 columns = 16 cells, which exceeds max_cells=4 but max_cells=0 disables truncation
+            query = f"SELECT id, name, age, created_at FROM {test_db}.{test_table} ORDER BY id"
+            result = await client.call_tool("run_select_query", {"query": query, "max_cells": 0})
+
+            query_result = result.structured_content
+            assert query_result["truncated"] is False
+            assert query_result["row_count"] == 4
+            assert len(query_result["rows"]) == 4
+
+    async def test_run_select_query_negative_max_cells_rejected(
+        self, mcp_server, setup_test_database
+    ):
+        """Test that a negative max_cells value raises a ToolError."""
+        test_db, test_table, _ = setup_test_database
+
+        async with Client(mcp_server) as client:
+            query = f"SELECT id FROM {test_db}.{test_table}"
+            with pytest.raises(ToolError) as exc_info:
+                await client.call_tool("run_select_query", {"query": query, "max_cells": -1})
+            assert "max_cells" in str(exc_info.value)
+
+    async def test_run_select_query_truncation_max_rows_zero(self, mcp_server, setup_test_database):
+        """Test truncation when cell limit is smaller than the column count (max_rows=0)."""
+        test_db, test_table, _ = setup_test_database
+
+        async with Client(mcp_server) as client:
+            # test_table has 4 columns; max_cells=2 → max_rows = 2//4 = 0
+            query = f"SELECT id, name, age, created_at FROM {test_db}.{test_table} ORDER BY id"
+            result = await client.call_tool("run_select_query", {"query": query, "max_cells": 2})
+
+            query_result = result.structured_content
+            assert query_result["truncated"] is True
+            assert query_result["row_count"] == 0
+            assert len(query_result["rows"]) == 0
+            assert query_result["total_row_count"] == 2  # inject_limit caps the fetch to LIMIT 2
+            assert "run_select_query" in query_result["message"]
+            assert "max_cells" in query_result["message"]
+
+    async def test_run_select_query_operator_limit_caps_max_cells(
+        self, monkeypatch, mcp_server, setup_test_database
+    ):
+        """Test that HYDROLIX_MAX_RESULT_CELLS_LIMIT caps a caller-supplied max_cells value."""
+        test_db, test_table, _ = setup_test_database
+
+        # Operator sets a hard cap of 4 cells; caller requests 1000 — should be capped to 4.
+        monkeypatch.setenv("HYDROLIX_MAX_RESULT_CELLS_LIMIT", "4")
+
+        async with Client(mcp_server) as client:
+            # 4 rows × 4 columns = 16 cells; operator cap of 4 → max_rows = 4//4 = 1
+            query = f"SELECT id, name, age, created_at FROM {test_db}.{test_table} ORDER BY id"
+            result = await client.call_tool("run_select_query", {"query": query, "max_cells": 1000})
+
+            query_result = result.structured_content
+            assert query_result["truncated"] is True
+            assert query_result["row_count"] == 1
+            assert query_result["total_row_count"] == 4
+            # Message should mention the operator cap, not advise using a larger max_cells value.
+            assert "administrator" in query_result["message"]
+            assert "max_cells value" not in query_result["message"]
+
+    async def test_run_select_query_operator_limit_overrides_max_cells_zero(
+        self, monkeypatch, mcp_server, setup_test_database
+    ):
+        """Test that HYDROLIX_MAX_RESULT_CELLS_LIMIT is enforced even when max_cells=0."""
+        test_db, test_table, _ = setup_test_database
+
+        # Operator sets a hard cap of 4 cells; caller sets max_cells=0 to disable truncation.
+        monkeypatch.setenv("HYDROLIX_MAX_RESULT_CELLS_LIMIT", "4")
+
+        async with Client(mcp_server) as client:
+            # 4 rows × 4 columns = 16 cells; operator cap of 4 overrides max_cells=0.
+            query = f"SELECT id, name, age, created_at FROM {test_db}.{test_table} ORDER BY id"
+            result = await client.call_tool("run_select_query", {"query": query, "max_cells": 0})
+
+            query_result = result.structured_content
+            assert query_result["truncated"] is True
+            assert query_result["row_count"] == 1
+            assert "administrator" in query_result["message"]
+
+    async def test_run_select_query_operator_limit_caps_default(
+        self, monkeypatch, mcp_server, setup_test_database
+    ):
+        """Test that HYDROLIX_MAX_RESULT_CELLS_LIMIT caps results even when caller omits max_cells."""
+        test_db, test_table, _ = setup_test_database
+
+        # Operator sets a hard cap of 4 cells; caller supplies no max_cells at all.
+        monkeypatch.setenv("HYDROLIX_MAX_RESULT_CELLS_LIMIT", "4")
+
+        async with Client(mcp_server) as client:
+            # 4 rows × 4 columns = 16 cells; operator cap of 4 → max_rows = 4//4 = 1
+            query = f"SELECT id, name, age, created_at FROM {test_db}.{test_table} ORDER BY id"
+            result = await client.call_tool("run_select_query", {"query": query})
+
+            query_result = result.structured_content
+            assert query_result["truncated"] is True
+            assert query_result["row_count"] == 1
+            assert query_result["total_row_count"] == 4
+            # Must show operator-cap guidance, NOT "use a larger max_cells value"
+            assert "administrator" in query_result["message"]
+            assert "max_cells value" not in query_result["message"]
+
+    async def test_run_select_query_env_default_max_cells(
+        self, monkeypatch, mcp_server, setup_test_database
+    ):
+        """Test that HYDROLIX_MAX_RESULT_CELLS env var is respected as the default cell budget."""
+        test_db, test_table, _ = setup_test_database
+
+        # Set the default budget to 4 cells; the query returns 4 rows × 4 columns = 16 cells.
+        # With this budget, truncation must trigger even though no max_cells arg is supplied.
+        monkeypatch.setenv("HYDROLIX_MAX_RESULT_CELLS", "4")
+
+        async with Client(mcp_server) as client:
+            query = f"SELECT id, name, age, created_at FROM {test_db}.{test_table} ORDER BY id"
+            result = await client.call_tool("run_select_query", {"query": query})
+
+            query_result = result.structured_content
+            assert query_result["truncated"] is True
+            assert query_result["row_count"] == 1  # 4 cells // 4 columns = 1 row
+            assert query_result["total_row_count"] == 4
+            assert "run_select_query" in query_result["message"]
+            assert "max_cells" in query_result["message"]
+
+
+class TestRunSelectQueryUnit:
+    """``run_select_query`` checks that don't need a live ClickHouse — schema
+    advertisement and the >=100k-row truncation advisory note (mocked)."""
+
+    async def test_run_select_query_max_cells_in_tool_schema(self, mcp_server):
+        """Test that max_cells is visible in the tool schema advertised to MCP clients."""
+        async with Client(mcp_server) as client:
+            tools = await client.list_tools()
+            run_query_tool = next(t for t in tools if t.name == "run_select_query")
+            schema_props = run_query_tool.inputSchema.get("properties", {})
+            assert "max_cells" in schema_props, (
+                "max_cells parameter must appear in the tool schema so LLM clients can use it"
+            )
+
+    async def test_run_select_query_truncation_message_100k_note(self, monkeypatch, mcp_server):
+        """Test that the 100k-row advisory note appears when total_row_count >= 100,000."""
+        from unittest.mock import AsyncMock, patch
+
+        large_result = {
+            "columns": ["a", "b"],
+            "rows": [["x", "y"]] * 100_000,
+        }
+
+        with patch(
+            "mcp_hydrolix.mcp_server.execute_query", new=AsyncMock(return_value=large_result)
+        ):
+            async with Client(mcp_server) as client:
+                # 100,000 rows × 2 columns = 200,000 cells; max_cells=4 → max_rows=2
+                result = await client.call_tool(
+                    "run_select_query",
+                    {"query": "SELECT a, b FROM t", "max_cells": 4},
+                )
+
+        query_result = result.structured_content
+        assert query_result["truncated"] is True
+        assert query_result["total_row_count"] == 100_000
+        assert "total_row_count" in query_result["message"]
+        assert "100,000" in query_result["message"]
 
 
 class TestHydrolixConfigValidation:
@@ -733,84 +750,85 @@ class TestHydrolixConfigValidation:
         assert config.max_result_cells == 12345
 
 
-def test_resolve_cell_limit_negative_raises():
-    with pytest.raises(ToolError, match="max_cells must be 0"):
-        _resolve_cell_limit(-1)
+class TestResolveCellLimit:
+    """Pure unit tests for ``_resolve_cell_limit``."""
+
+    def test_resolve_cell_limit_negative_raises(self):
+        with pytest.raises(ToolError, match="max_cells must be 0"):
+            _resolve_cell_limit(-1)
+
+    def test_resolve_cell_limit_uses_default(self, monkeypatch):
+        monkeypatch.setenv("HYDROLIX_MAX_RESULT_CELLS", "12345")
+        monkeypatch.setenv("HYDROLIX_MAX_RESULT_CELLS_LIMIT", "0")
+        cell_limit, capped = _resolve_cell_limit(None)
+        assert cell_limit == 12345
+        assert capped is False
+
+    def test_resolve_cell_limit_caller_value(self, monkeypatch):
+        monkeypatch.setenv("HYDROLIX_MAX_RESULT_CELLS_LIMIT", "0")
+        cell_limit, capped = _resolve_cell_limit(500)
+        assert cell_limit == 500
+        assert capped is False
+
+    def test_resolve_cell_limit_operator_cap_applied(self, monkeypatch):
+        monkeypatch.setenv("HYDROLIX_MAX_RESULT_CELLS_LIMIT", "1000")
+        cell_limit, capped = _resolve_cell_limit(9999)
+        assert cell_limit == 1000
+        assert capped is True
+
+    def test_resolve_cell_limit_zero_capped_by_operator(self, monkeypatch):
+        # max_cells=0 means "no limit" from caller; operator cap overrides it
+        monkeypatch.setenv("HYDROLIX_MAX_RESULT_CELLS_LIMIT", "1000")
+        cell_limit, capped = _resolve_cell_limit(0)
+        assert cell_limit == 1000
+        assert capped is True
+
+    def test_resolve_cell_limit_operator_cap_not_applied_when_below(self, monkeypatch):
+        monkeypatch.setenv("HYDROLIX_MAX_RESULT_CELLS_LIMIT", "1000")
+        cell_limit, capped = _resolve_cell_limit(500)
+        assert cell_limit == 500
+        assert capped is False
 
 
-def test_resolve_cell_limit_uses_default(monkeypatch):
-    monkeypatch.setenv("HYDROLIX_MAX_RESULT_CELLS", "12345")
-    monkeypatch.setenv("HYDROLIX_MAX_RESULT_CELLS_LIMIT", "0")
-    cell_limit, capped = _resolve_cell_limit(None)
-    assert cell_limit == 12345
-    assert capped is False
+class TestBuildTruncationResponse:
+    """Pure unit tests for ``_build_truncation_response``."""
 
+    def test_build_truncation_response_basic(self):
+        columns = ["a", "b"]
+        rows = [["v1", "v2"]] * 10  # 10 rows, 2 cols = 20 cells; cell_limit=4 -> max_rows=2
+        result = _build_truncation_response(columns, rows, cell_limit=4, capped_by_operator=False)
+        assert result.truncated is True
+        assert result.row_count == 2
+        assert result.total_row_count == 10
+        assert len(result.rows) == 2
+        assert result.columns == columns
+        assert "max_cells" in result.message
 
-def test_resolve_cell_limit_caller_value(monkeypatch):
-    monkeypatch.setenv("HYDROLIX_MAX_RESULT_CELLS_LIMIT", "0")
-    cell_limit, capped = _resolve_cell_limit(500)
-    assert cell_limit == 500
-    assert capped is False
+    def test_build_truncation_response_capped_by_operator(self):
+        columns = ["x"]
+        rows = [["v"]] * 5
+        result = _build_truncation_response(columns, rows, cell_limit=3, capped_by_operator=True)
+        assert "enforced by the server" in result.message
+        assert "HYDROLIX_MAX_RESULT_CELLS_LIMIT" in result.message
 
+    def test_build_truncation_response_not_capped_by_operator(self):
+        columns = ["x"]
+        rows = [["v"]] * 5
+        result = _build_truncation_response(columns, rows, cell_limit=3, capped_by_operator=False)
+        assert "larger max_cells" in result.message
 
-def test_resolve_cell_limit_operator_cap_applied(monkeypatch):
-    monkeypatch.setenv("HYDROLIX_MAX_RESULT_CELLS_LIMIT", "1000")
-    cell_limit, capped = _resolve_cell_limit(9999)
-    assert cell_limit == 1000
-    assert capped is True
+    def test_build_truncation_response_large_result_advisory(self):
+        columns = ["x"]
+        rows = [["v"]] * 100_000
+        result = _build_truncation_response(
+            columns, rows, cell_limit=50_000, capped_by_operator=False
+        )
+        assert "total_row_count reflects rows fetched" in result.message
 
-
-def test_resolve_cell_limit_zero_capped_by_operator(monkeypatch):
-    # max_cells=0 means "no limit" from caller; operator cap overrides it
-    monkeypatch.setenv("HYDROLIX_MAX_RESULT_CELLS_LIMIT", "1000")
-    cell_limit, capped = _resolve_cell_limit(0)
-    assert cell_limit == 1000
-    assert capped is True
-
-
-def test_resolve_cell_limit_operator_cap_not_applied_when_below(monkeypatch):
-    monkeypatch.setenv("HYDROLIX_MAX_RESULT_CELLS_LIMIT", "1000")
-    cell_limit, capped = _resolve_cell_limit(500)
-    assert cell_limit == 500
-    assert capped is False
-
-
-def test_build_truncation_response_basic():
-    columns = ["a", "b"]
-    rows = [["v1", "v2"]] * 10  # 10 rows, 2 cols = 20 cells; cell_limit=4 -> max_rows=2
-    result = _build_truncation_response(columns, rows, cell_limit=4, capped_by_operator=False)
-    assert result.truncated is True
-    assert result.row_count == 2
-    assert result.total_row_count == 10
-    assert len(result.rows) == 2
-    assert result.columns == columns
-    assert "max_cells" in result.message
-
-
-def test_build_truncation_response_capped_by_operator():
-    columns = ["x"]
-    rows = [["v"]] * 5
-    result = _build_truncation_response(columns, rows, cell_limit=3, capped_by_operator=True)
-    assert "enforced by the server" in result.message
-    assert "HYDROLIX_MAX_RESULT_CELLS_LIMIT" in result.message
-
-
-def test_build_truncation_response_not_capped_by_operator():
-    columns = ["x"]
-    rows = [["v"]] * 5
-    result = _build_truncation_response(columns, rows, cell_limit=3, capped_by_operator=False)
-    assert "larger max_cells" in result.message
-
-
-def test_build_truncation_response_large_result_advisory():
-    columns = ["x"]
-    rows = [["v"]] * 100_000
-    result = _build_truncation_response(columns, rows, cell_limit=50_000, capped_by_operator=False)
-    assert "total_row_count reflects rows fetched" in result.message
-
-
-def test_build_truncation_response_no_advisory_below_threshold():
-    columns = ["x"]
-    rows = [["v"]] * 99_999
-    result = _build_truncation_response(columns, rows, cell_limit=50_000, capped_by_operator=False)
-    assert "total_row_count reflects rows fetched" not in result.message
+    def test_build_truncation_response_no_advisory_below_threshold(self):
+        columns = ["x"]
+        rows = [["v"]] * 99_999
+        result = _build_truncation_response(
+            columns, rows, cell_limit=50_000, capped_by_operator=False
+        )
+        assert "total_row_count reflects rows fetched" not in result.message

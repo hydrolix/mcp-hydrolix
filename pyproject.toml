@@ -30,6 +30,8 @@ dev = [
     "pytest-asyncio",
     "pre-commit",
     "mcp-clickhouse==0.1.13",
+    "kubernetes>=30,<32",
+    "httpx>=0.27,<0.29",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -40,6 +42,10 @@ line-length = 100
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+markers = [
+    "integration_clickhouse: tests that require a running ClickHouse/Hydrolix instance",
+    "end_to_end: end-to-end tests that deploy to and exercise a live Hydrolix Kubernetes cluster",
+]
 
 [build-system]
 requires = ["hatchling"]

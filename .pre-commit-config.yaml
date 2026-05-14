@@ -4,17 +4,35 @@ repos:
     hooks:
       - id: end-of-file-fixer
       - id: trailing-whitespace
-        args: [--markdown-linebreak-ext=md]
+        args: [ --markdown-linebreak-ext=md ]
+      - id: mixed-line-ending
+        args: [ --fix=lf ]
       - id: check-yaml
       - id: check-json
       - id: check-toml
+      - id: check-case-conflict
+      - id: check-added-large-files
+        args: [ "--maxkb=4096" ]
+      - id: debug-statements
+      - id: detect-private-key
       - id: no-commit-to-branch
+      - id: check-merge-conflict
+      - id: check-illegal-windows-names
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.12.9
     hooks:
       - id: ruff
         name: ruff lint
-        args: [--fix]
+        args: [ --fix ]
       - id: ruff-format
         name: ruff format
+
+  - repo: local
+    hooks:
+    - id: run-unit-tests
+      name: Run unit tests
+      entry: uv run pytest -m "not integration_clickhouse and not end_to_end"
+      language: python
+      pass_filenames: false
+      stages: [pre-push]
