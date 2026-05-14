@@ -71,9 +71,31 @@ jobs:
         run: |
           docker push us-docker.pkg.dev/hdx-art/t/mcp-hydrolix:${{ steps.get_tag.outputs.tag }}
           docker push us-docker.pkg.dev/hdx-art/t/mcp-hydrolix:latest
+  publish-mcpb:
+    name: Build and attach MCPB bundle to release
+    needs: prove-main
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86  # v5
+      - run: uv python install
+      - name: Build MCPB bundle
+        run: bash mcpb/build.sh
+      - name: Attach MCPB to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/*.mcpb --clobber
+          else
+            gh release create "$TAG" dist/*.mcpb --generate-notes --title "$TAG"
+          fi
   bump-version:
     name: Bump to next patch version
-    needs: [publish, publish-docker]
+    needs: [publish, publish-docker, publish-mcpb]
     runs-on: ubuntu-latest
     permissions:
       id-token: write
