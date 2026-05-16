@@ -8,6 +8,7 @@ Verifies that:
 """
 
 import inspect
+import re
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -163,3 +164,32 @@ class TestQuerySettings:
         settings = kwargs["settings"]
         assert "hdx_query_timerange_required" not in settings
         assert "hdx_query_max_timerange_sec" not in settings
+
+    @pytest.mark.parametrize("transport", ["stdio", "http", "sse"])
+    @patch("mcp_hydrolix.mcp_server.create_hydrolix_client")
+    async def test_admin_comment_includes_version_and_transport(
+        self, mock_create_client, monkeypatch, transport
+    ):
+        """hdx_query_admin_comment must identify the MCP server, its version,
+        and the active transport mode."""
+        from mcp_hydrolix.mcp_server import execute_query
+
+        monkeypatch.setenv("HYDROLIX_MCP_SERVER_TRANSPORT", transport)
+
+        mock_client = AsyncMock()
+        mock_query_result = AsyncMock()
+        mock_query_result.column_names = ["id"]
+        mock_query_result.result_rows = [[1]]
+        mock_client.query.return_value = mock_query_result
+
+        mock_ctx = AsyncMock()
+        mock_ctx.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_create_client.return_value = mock_ctx
+
+        await execute_query("SELECT 1")
+
+        _, kwargs = mock_client.query.call_args
+        comment = kwargs["settings"]["hdx_query_admin_comment"]
+        assert re.fullmatch(r"User: mcp-hydrolix, [^ ]+ \((stdio|http|sse)\)", comment), comment
+        assert comment.endswith(f"({transport})")

@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import importlib.metadata
 import logging
 import time
 from pathlib import Path
@@ -57,6 +58,7 @@ from mcp_hydrolix.utils import coerce_rows, inject_limit
 
 
 MCP_SERVER_NAME = "mcp-hydrolix"
+_MCP_VERSION = importlib.metadata.version(MCP_SERVER_NAME)
 logger = logging.getLogger(MCP_SERVER_NAME)
 
 load_dotenv()
@@ -232,7 +234,10 @@ async def execute_query(
                 "hdx_query_max_attempts": 1,
                 "hdx_query_max_result_rows": 100_000,
                 "hdx_query_max_memory_usage": 2 * 1024 * 1024 * 1024,  # 2GiB
-                "hdx_query_admin_comment": f"User: {MCP_SERVER_NAME}",
+                "hdx_query_admin_comment": (
+                    f"User: {MCP_SERVER_NAME}, {_MCP_VERSION} "
+                    f"({HYDROLIX_CONFIG.mcp_server_transport})"
+                ),
             } | (extra_settings or {})
             res = await client.query(
                 query,
