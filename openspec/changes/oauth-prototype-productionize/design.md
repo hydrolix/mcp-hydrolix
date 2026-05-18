@@ -101,7 +101,7 @@ The factory runs in the worker's main thread before uvicorn has started its even
 
 **Why this is safe**: uvicorn imports the factory before calling `Server.serve()`; the loop is not yet running. `multiprocessing` spawn workers start with no running loop.
 
-**Risk**: If the factory is ever invoked under an active loop (e.g. in-process test harnesses), `asyncio.run` raises `RuntimeError`. The activation code should catch and re-raise this with a message pointing at the test setup. (Non-normative — SHALL is reserved for spec requirements.)
+**Risk**: If the factory is ever invoked under an active loop (e.g. in-process test harnesses), `asyncio.run` raises `RuntimeError`. The activation code should catch and re-raise this with a message pointing at the test setup.
 
 ### Decision: `_maybe_activate_oauth` becomes `_activate_oauth_if_configured` in `webapp.py`
 
@@ -114,7 +114,7 @@ The factory has two ways to fatally abort startup:
 - `OAuthConfigError` from `load_oauth_config()` for partial / malformed `HYDROLIX_OAUTH_*` configuration (operator error).
 - `NotImplementedError` from `canonical_idp_endpoints` for the pre-HDX-11431 stub case — propagates directly, **not** wrapped as `OAuthConfigError`, so operators can distinguish "I set something wrong" from "this code path doesn't exist yet."
 
-Network/discovery failures stay fail-open (the worker logs WARNING and serves with the credential chain only). Spec normatively captures both paths in "Activation gated on operator env vars" and "Fail-open at startup, fail-closed at request time"; this section is rationale.
+Network/discovery failures stay fail-open (the worker logs WARNING and serves with the credential chain only).
 
 **Multi-worker consequence**: a worker raising either fatal exception crashes; uvicorn respawns and the same error repeats. Operators get a clear message via uvicorn's error log and the worker-startup-failure backoff path.
 
@@ -171,7 +171,7 @@ Prototype `main.py` still imports `gunicorn.app.base.BaseApplication` and define
 
 6. **Verification gates** (before opening PR):
    - `uv run pytest tests/auth/` and `uv run pytest` (full suite) — all green.
-   - Grep: no file under `mcp_hydrolix/auth/` outside `idp_endpoints.py` references `HYDROLIX_URL` for IdP derivation. (One-time implementation check, not a runtime invariant.)
+   - Grep: no file under `mcp_hydrolix/auth/` outside `idp_endpoints.py` references `HYDROLIX_URL` for IdP derivation.
    - Docs: `docs/oauth.md` contains the audience example and the annotated security checklist section.
    - Manual (no OAuth vars): hit MCP tool endpoint, confirm byte-identical behavior to current `main`.
    - Manual (against cluster-deployed IdP proxy): valid bearer → 200; junk bearer → 401 + `WWW-Authenticate`; no bearer → SA chain handles.

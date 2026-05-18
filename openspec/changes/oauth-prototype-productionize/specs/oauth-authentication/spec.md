@@ -32,7 +32,7 @@ The byte-identical guarantee above does not apply to partial configuration; the 
 - **WHEN** `HYDROLIX_OAUTH_AUDIENCE` is set
 - **AND** neither `HYDROLIX_OAUTH_ISSUER` nor `HYDROLIX_URL` is set
 - **THEN** the worker SHALL raise `OAuthConfigError` during factory initialization
-- **AND** SHALL NOT serve any request (under multi-worker uvicorn the supervisor port stays bound and workers crash-loop on respawn; no MCP traffic is served while the misconfiguration persists)
+- **AND** SHALL NOT serve any request
 
 #### Scenario: Issuer derivation attempted before HDX-11431
 
@@ -40,7 +40,7 @@ The byte-identical guarantee above does not apply to partial configuration; the 
 - **AND** `HYDROLIX_OAUTH_ISSUER` is unset
 - **AND** HDX-11431 has not yet landed (the derivation stub raises `NotImplementedError`)
 - **THEN** the worker SHALL terminate at factory initialization
-- **AND** the propagated exception SHALL be `NotImplementedError` (NOT wrapped as `OAuthConfigError` — this is not a partial-config case; see the "Activation gated on operator env vars" requirement)
+- **AND** the propagated exception SHALL be `NotImplementedError`, not `OAuthConfigError`
 - **AND** the error message SHALL contain the substring `HDX-11431`
 
 #### Scenario: Issuer derived from cluster URL (post-HDX-11431)
@@ -61,7 +61,7 @@ The byte-identical guarantee above does not apply to partial configuration; the 
 
 - **WHEN** `HYDROLIX_OAUTH_ISSUER` is set but `HYDROLIX_OAUTH_AUDIENCE` is unset
 - **THEN** the worker SHALL raise `OAuthConfigError` during factory initialization
-- **AND** SHALL NOT serve any request (under multi-worker uvicorn the supervisor port stays bound and workers crash-loop on respawn; no MCP traffic is served while the misconfiguration persists)
+- **AND** SHALL NOT serve any request
 
 #### Scenario: HYDROLIX_URL set, audience unset, no other OAuth vars
 
@@ -139,7 +139,7 @@ If OIDC discovery or JWKS preflight fails at startup (network error, non-2xx HTT
 
 ### Requirement: JWT verification rejects mismatched issuer
 
-The OAuth verifier SHALL reject any JWT whose `iss` claim does not exactly match the **resolved issuer URL** — the value held in `OAuthConfig.issuer` after the precedence chain defined in "Activation gated on operator env vars" is applied (explicit `HYDROLIX_OAUTH_ISSUER`, else `canonical_idp_endpoints(HYDROLIX_URL).issuer`). The cluster public URL (`HYDROLIX_URL`, from HDX-11441) and the OAuth issuer URL are distinct concepts and SHALL NOT be conflated: a token presenting `iss=<HYDROLIX_URL>` SHALL be rejected unless the resolved issuer happens to equal that value, which the canonical IdP derivation function SHALL NOT produce (see "Canonical IdP endpoint derivation" requirement).
+The OAuth verifier SHALL reject any JWT whose `iss` claim does not exactly match the **resolved issuer URL** — the value held in `OAuthConfig.issuer` after the precedence chain in "Activation gated on operator env vars". `HYDROLIX_URL` (cluster public URL, from HDX-11441) and the OAuth issuer URL are distinct, and the canonical derivation function SHALL NOT produce an issuer equal to the cluster URL (see "Canonical IdP endpoint derivation").
 
 #### Scenario: Token issued by attacker matches signing key but wrong issuer
 
@@ -195,7 +195,7 @@ When OAuth is active, the server SHALL expose `/.well-known/oauth-protected-reso
 - **WHEN** OAuth is active and an unauthenticated GET request reaches `/.well-known/oauth-protected-resource`
 - **THEN** the response status SHALL be 200
 - **AND** the response body SHALL be JSON containing `resource`, `authorization_servers`, and `bearer_methods_supported` keys
-- **AND** the `authorization_servers` array SHALL contain the resolved issuer URL (the value of `OAuthConfig.issuer` after precedence resolution)
+- **AND** the `authorization_servers` array SHALL contain `OAuthConfig.issuer`
 - **AND** the `resource` field SHALL equal `OAuthConfig.resource_url`
 
 #### Scenario: 401 references metadata URL

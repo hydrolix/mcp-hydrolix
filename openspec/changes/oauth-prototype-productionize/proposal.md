@@ -18,7 +18,7 @@ Shipping this is the prerequisite for the cluster-served auth story: the in-clus
 
 This change preserves the prototype's existing env-var surface unchanged: `HYDROLIX_OAUTH_ISSUER`, `HYDROLIX_OAUTH_AUDIENCE`, `HYDROLIX_OAUTH_JWKS_URI`, `HYDROLIX_OAUTH_ALLOW_INSECURE_JWKS`, `HYDROLIX_OAUTH_REQUIRED_SCOPES`, `HYDROLIX_OAUTH_RESOURCE_URL`.
 
-**Two-track structure** (see design.md): (1) the mcp-hydrolix codebase is as IdP-agnostic as possible — verifier takes issuer + JWKS URI as config and doesn't care which IdP issued the token, with the single named exception of `canonical_idp_endpoints`; (2) the rollout and end-to-end testing story is bound to the cluster-deployed OIDC proxy built under [HDX-11431](https://hydrolix.atlassian.net/browse/HDX-11431). Track 1 lets work proceed in parallel with HDX-11431; track 2 is what the validation gates and operator docs target.
+**Two-track structure** (detail in design.md): code is IdP-agnostic except for `canonical_idp_endpoints`; rollout and validation gates target [HDX-11431](https://hydrolix.atlassian.net/browse/HDX-11431).
 
 ## Capabilities
 
