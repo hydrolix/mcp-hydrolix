@@ -1,0 +1,40 @@
+## Why
+
+The OAuth 2.1 prototype on `il/feature/oauth-support/hdx-11133` covers the intended functional shape — RS256 verification via FastMCP `JWTVerifier`, fail-open at startup, fail-closed at request time, RFC 9728 protected-resource-metadata, in-cluster JWKS backchannel, SA-credential fallback for internal callers — and ships with 8 test files under `tests/auth/`. HDX-11133 was scoped as an investigation; the tests have not been re-verified against current `main` dependencies, the security checklist has not been signed off, and end-to-end validation against the production IdP — a cluster-deployed OIDC proxy being built concurrently by a separate team — has not happened. The verifier is OIDC-agnostic by construction (plain OIDC discovery + JWKS); the work in this change is built around that protocol surface, not against any specific IdP product. It also predates the gunicorn→uvicorn migration (HDX-10675) that has since landed on `main`, where the multi-worker entrypoint is now `uvicorn.run("mcp_hydrolix.webapp:create_app", factory=True, workers=N)`. The prototype's supervisor-side `mcp.auth = provider` mutation does not propagate to spawned workers under the new factory model, so the Gunicorn-era activation path is structurally broken on `main`. Shipping this is the prerequisite for the cluster-served auth story (the in-cluster mcp-hydrolix pod reverse-proxied at `/mcp` through Traefik, with the cluster-deployed IdP proxy issuing bearers).
+
+## What Changes
+
+- Rebase `il/feature/oauth-support/hdx-11133` onto current `main` and resolve `mcp_hydrolix/main.py` conflicts against the uvicorn factory entrypoint.
+- Move OAuth activation from `main.py:_maybe_activate_oauth()` (called once in the supervisor) into the `webapp.py:create_app()` factory (called once per worker), so each spawned uvicorn worker activates OAuth independently against its own `mcp` instance.
+- Replace the prototype's synchronous `asyncio.run(try_activate_oauth(cfg))` at supervisor startup with an in-factory activation path that is safe to call inside an already-running event loop and inside `multiprocessing` spawn workers.
+- Drop the prototype's `gunicorn.app.base.BaseApplication` / `CoreApplication` dead code; it has no analogue on `main`.
+- Activate OAuth iff `HYDROLIX_OAUTH_ISSUER` and `HYDROLIX_OAUTH_AUDIENCE` are both set; when unset, behavior is byte-identical to current `main`.
+- Ship the audience allowlist default as `mcp-hydrolix,config-api`.
+- Add an issuer/URL conflation test: a JWT minted with `iss=<HYDROLIX_URL>` (the cluster public URL, see HDX-11441) MUST be rejected with 401, distinct from a JWT with `iss=<HYDROLIX_OAUTH_ISSUER>` (the OIDC issuer URL of the cluster-deployed IdP proxy).
+- Audit every `logger.*` call site in `oauth.py`, `mcp_providers.py`, `mcp_server.py`, `webapp.py` and assert that no raw JWT, no full claim set, and no header values reach log output. Only `sub`, `aud`, `client_id`, and configuration URLs may be logged at INFO; failure paths log only exception class names.
+- Sign off on the 16-row security checklist from the HDX-11133 plan doc (`oauth-support-hdx-11133.md` section 4) as a completion criterion.
+- Introduce a single, well-defined function `canonical_idp_endpoints(hydrolix_url)` in a new `mcp_hydrolix/auth/idp_endpoints.py` module that maps the cluster's public URL to the canonical issuer URL, OIDC discovery URL, JWKS URI, and IdP network address. This is the **one deliberate exception** to track 1's IdP-agnosticism and is the only place in the codebase that may encode the cluster-URL-to-IdP convention. `load_oauth_config()` uses it to derive the issuer when `HYDROLIX_OAUTH_ISSUER` is unset and `HYDROLIX_URL` is set; explicit `HYDROLIX_OAUTH_ISSUER` always overrides. Body ships as a documented stub until HDX-11431 publishes the convention.
+
+This change does NOT introduce or modify any user-facing OAuth env-var surface beyond what the prototype already defines; the spec captures the prototype's existing variables (`HYDROLIX_OAUTH_ISSUER`, `HYDROLIX_OAUTH_AUDIENCE`, `HYDROLIX_OAUTH_JWKS_URI`, `HYDROLIX_OAUTH_ALLOW_INSECURE_JWKS`, `HYDROLIX_OAUTH_REQUIRED_SCOPES`, `HYDROLIX_OAUTH_RESOURCE_URL`) as the authoritative surface for `main`.
+
+**Two-track structure (see design.md for detail).** Two goals in this change look contradictory but are not: (1) the *product-level implementation* — the mcp-hydrolix codebase itself — is deliberately as IdP-agnostic as possible, so unit and integration coverage runs against mock OIDC endpoints and no Keycloak-specific or proxy-specific code path exists; (2) the *rollout and end-to-end testing story* is bound to the cluster-deployed OIDC proxy being built by the turbine-API team under [HDX-11431](https://hydrolix.atlassian.net/browse/HDX-11431). Track 1 is what lets work proceed in parallel; track 2 is what the validation gates and operator-facing docs target. The **one deliberate exception** to track 1's IdP-agnosticism is `canonical_idp_endpoints(hydrolix_url)` — a single function that encodes the cluster-URL-to-IdP convention. Everywhere else, the OAuth machinery takes an issuer URL and JWKS URI as configuration and verifies tokens without caring which IdP issued them.
+
+## Capabilities
+
+### New Capabilities
+
+- `oauth-authentication`: Bearer-token authentication for the HTTP/SSE MCP transports, activated by `HYDROLIX_OAUTH_ISSUER`+`HYDROLIX_OAUTH_AUDIENCE`. Covers OIDC discovery + JWKS preflight at startup (fail-open with WARNING log), per-request JWT verification with chained SA-credential fallback (fail-closed with 401 + RFC 6750 `WWW-Authenticate`), RFC 9728 protected-resource-metadata endpoint, log redaction guarantees, and the issuer/URL non-conflation invariant.
+
+### Modified Capabilities
+
+None. `openspec/specs/` is empty; no existing capability requirements are being changed.
+
+## Impact
+
+- **Code**: `mcp_hydrolix/auth/oauth.py` (new), `mcp_hydrolix/auth/idp_endpoints.py` (new — `canonical_idp_endpoints(hydrolix_url)`, the single IdP coupling seam), `mcp_hydrolix/auth/mcp_providers.py` (modified — `ChainedAuthBackend`, `HydrolixCredentialChain`), `mcp_hydrolix/main.py` (modified — drop Gunicorn class, drop supervisor-side activation), `mcp_hydrolix/webapp.py` (modified — host OAuth activation in factory), `pyproject.toml` (new dep on FastMCP `JWTVerifier` chain), `uv.lock`.
+- **APIs**: New unauthenticated `/.well-known/oauth-protected-resource` endpoint (RFC 9728) when OAuth is active. All authenticated MCP endpoints gain a 401 + `WWW-Authenticate: Bearer realm=…, resource_metadata=…` response path.
+- **Tests**: 8 prototype test files port over (`tests/auth/test_*.py`), pending re-verification against current `main` dependencies — assume rework rather than clean port. New test asserts per-worker activation works under `uvicorn workers=N`. `test_main_oauth_activation.py` is rewritten against the new `create_app()` activation site. New tests for the issuer/URL non-conflation guard and log redaction are added per the design.
+- **Docs**: `docs/oauth.md` (already on prototype branch) ports over and is updated for the uvicorn entrypoint.
+- **Dependencies**: FastMCP `JWTVerifier` and its transitive crypto/JWT deps land on `main`.
+- **Deployments**: Servers with no OAuth env vars: zero behavioral change. Servers with `HYDROLIX_OAUTH_ISSUER`+`HYDROLIX_OAUTH_AUDIENCE` set: existing internal SA-credential callers continue to work via the chained fallback; new external callers presenting a valid bearer issued by the configured IdP succeed; invalid bearers get 401.
+- **Related work**: HDX-11441 (`HYDROLIX_URL`) has an in-flight spec PR ([#101](https://github.com/hydrolix/mcp-hydrolix/pull/101), open at time of writing); the runtime implementation has not yet started. This change does not depend on either landing first, but the issuer/URL conflation test materially benefits from `HYDROLIX_URL` being a real, distinct env var once the implementation PR ships.
