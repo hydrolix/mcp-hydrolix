@@ -39,6 +39,7 @@ Partial configuration is a fatal startup error: the server SHALL raise `OAuthCon
 - **AND** `HYDROLIX_OAUTH_ISSUER` is unset
 - **AND** HDX-11431 has not yet landed (the derivation stub raises `NotImplementedError`)
 - **THEN** the worker SHALL terminate at factory initialization
+- **AND** the propagated exception SHALL be (or wrap) `NotImplementedError`
 - **AND** the error message SHALL contain the substring `HDX-11431`
 
 #### Scenario: Issuer derived from cluster URL (post-HDX-11431)
@@ -79,7 +80,7 @@ Partial configuration is a fatal startup error: the server SHALL raise `OAuthCon
 
 All knowledge of where the cluster's canonical IdP lives relative to `HYDROLIX_URL` SHALL be encapsulated in a single function that takes the cluster URL and returns an immutable record containing at least the issuer URL, the OIDC discovery URL, the JWKS URI, and the network-reachable address of the IdP. (The implementation location — module `mcp_hydrolix.auth.idp_endpoints` — is fixed by design.md, not by the spec.)
 
-Until [HDX-11431](https://hydrolix.atlassian.net/browse/HDX-11431) publishes the cluster-URL-to-IdP convention, this function SHALL raise `NotImplementedError` with a message referencing HDX-11431. As a consequence, the URL-derivation activation path is unreachable in production until HDX-11431 lands; operators MUST set `HYDROLIX_OAUTH_ISSUER` explicitly during this period.
+Until [HDX-11431](https://hydrolix.atlassian.net/browse/HDX-11431) publishes the cluster-URL-to-IdP convention, this function SHALL raise `NotImplementedError` with a message referencing HDX-11431. As a consequence, the URL-derivation activation path is unreachable in production until HDX-11431 lands; explicit `HYDROLIX_OAUTH_ISSUER` is the only activatable issuer source during the interim period.
 
 When the function eventually returns a result (after HDX-11431 lands and the body is replaced), the returned record SHALL be frozen, SHALL contain the four named fields, and SHALL never return an `issuer` string-equal to its input `hydrolix_url` (preserving the issuer/cluster-URL non-conflation invariant; see "JWT verification rejects mismatched issuer").
 

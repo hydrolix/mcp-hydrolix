@@ -138,7 +138,7 @@ Symbol moved from `mcp_hydrolix/main.py` to `mcp_hydrolix/webapp.py`. The protot
 
 ### Decision: `OAuthConfigError` is fatal in the factory
 
-The factory raises `OAuthConfigError` if `load_oauth_config()` raises (malformed `HYDROLIX_OAUTH_*` vars). Network/discovery failures stay fail-open. This mirrors the prototype's split: config errors are operator errors and the worker MUST refuse to start; transient network failures during preflight MUST NOT prevent serving SA-credential traffic.
+The factory raises `OAuthConfigError` if `load_oauth_config()` raises (malformed `HYDROLIX_OAUTH_*` vars). Network/discovery failures stay fail-open. This mirrors the prototype's split: config errors are operator errors and the worker aborts startup; transient network failures during preflight do not prevent the worker from continuing to serve SA-credential traffic. (The normative version of this contract lives in the spec's "Activation gated on operator env vars" and "Fail-open at startup, fail-closed at request time" requirements; this paragraph is design rationale.)
 
 **Multi-worker consequence**: One worker raising `OAuthConfigError` on import will kill that worker; uvicorn will respawn and the same error will repeat. This is the desired loud-failure mode for misconfiguration. Operators get a clear error message via uvicorn's error log and the supervisor's worker-startup-failure backoff path.
 
@@ -162,7 +162,7 @@ Tested call sites: successful activation, discovery failure, valid bearer accept
 
 ### Decision: Drop Gunicorn dead code as part of this rebase, not in a follow-up
 
-The prototype's `mcp_hydrolix/main.py` still references `gunicorn.app.base.BaseApplication` and the `CoreApplication` wrapper. `main` has none of this and `pyproject.toml` on `main` no longer has a `gunicorn` dep. The rebase MUST drop:
+The prototype's `mcp_hydrolix/main.py` still references `gunicorn.app.base.BaseApplication` and the `CoreApplication` wrapper. `main` has none of this and `pyproject.toml` on `main` no longer has a `gunicorn` dep. The rebase drops the following dead code:
 - The Gunicorn imports and `CoreApplication` class,
 - The OAuth activation call from `main.py`,
 - Any `gunicorn` references in `pyproject.toml` or test mocks.
@@ -190,7 +190,7 @@ Leaving them in would be a merge-shaped landmine — the prototype's `main.py` w
 
 3. **Add the IdP coupling seam**:
    - Create `mcp_hydrolix/auth/idp_endpoints.py` with the `CanonicalIdPEndpoints` dataclass and the `canonical_idp_endpoints(hydrolix_url)` function. The function body raises `NotImplementedError` with a message referencing HDX-11431. No placeholder URLs.
-   - Wire `load_oauth_config()` to attempt this derivation when `HYDROLIX_OAUTH_ISSUER` is unset and `HYDROLIX_URL` is set. The `NotImplementedError` propagates up through factory initialization, terminating the worker with a clear error message — until HDX-11431 lands, operators MUST set `HYDROLIX_OAUTH_ISSUER` explicitly.
+   - Wire `load_oauth_config()` to attempt this derivation when `HYDROLIX_OAUTH_ISSUER` is unset and `HYDROLIX_URL` is set. The `NotImplementedError` propagates up through factory initialization, terminating the worker with a clear error message — until HDX-11431 lands, explicit `HYDROLIX_OAUTH_ISSUER` is the only activatable configuration path.
    - Add `tests/auth/test_idp_endpoints.py` covering: the stub raises `NotImplementedError` and the message contains `HDX-11431`; the eventual-return contract (frozen record with four named string fields, equality on same input, non-conflation invariant) as currently-skipped/xfail tests that flip to passing when HDX-11431 lands and the body is replaced.
 
 4. **Test fixups**:
