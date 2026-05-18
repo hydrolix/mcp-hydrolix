@@ -8,16 +8,16 @@ The server SHALL activate OAuth bearer authentication for the HTTP and SSE trans
 2. Otherwise, if `HYDROLIX_URL` is set to a non-empty value, the issuer is derived from it via the canonical IdP-derivation function (see "Canonical IdP endpoint derivation" requirement below).
 3. Otherwise, the issuer is unresolved and OAuth is not activated.
 
-When OAuth is not activated AND no partial configuration is present (defined below), the server SHALL behave byte-identically to a build without OAuth code: no new endpoints exposed, no `WWW-Authenticate` headers emitted, no OAuth-related log lines emitted, and the existing service-account credential chain SHALL handle all requests. The byte-identical guarantee is independent of `HYDROLIX_URL` state — that variable belongs to HDX-11441 and has uses other than OAuth, so its presence alone is NOT a signal of OAuth intent.
+When OAuth is not activated and no partial configuration is present (defined below), the server SHALL behave byte-identically to a build without OAuth code: no new endpoints, no `WWW-Authenticate` headers, no OAuth log lines, and the existing service-account credential chain handles all requests. `HYDROLIX_URL` alone is not a signal of OAuth intent — it belongs to HDX-11441 and has non-OAuth uses — so its presence does not break the byte-identical guarantee.
 
-**Partial configuration** is any of the following operator-misconfiguration cases:
-- `HYDROLIX_OAUTH_AUDIENCE` is set but neither `HYDROLIX_OAUTH_ISSUER` nor `HYDROLIX_URL` is set (no issuer source available at all).
+**Partial configuration** is any of these operator-misconfiguration cases, and the server SHALL raise `OAuthConfigError` at startup in each:
+- `HYDROLIX_OAUTH_AUDIENCE` is set but neither `HYDROLIX_OAUTH_ISSUER` nor `HYDROLIX_URL` is set.
 - `HYDROLIX_OAUTH_ISSUER` is set but `HYDROLIX_OAUTH_AUDIENCE` is unset.
-- Any of the optional OAuth env vars (`HYDROLIX_OAUTH_JWKS_URI`, `HYDROLIX_OAUTH_ALLOW_INSECURE_JWKS`, `HYDROLIX_OAUTH_REQUIRED_SCOPES`, `HYDROLIX_OAUTH_RESOURCE_URL`) is set without `HYDROLIX_OAUTH_AUDIENCE` and an issuer source.
+- Any optional OAuth var (`HYDROLIX_OAUTH_JWKS_URI`, `HYDROLIX_OAUTH_ALLOW_INSECURE_JWKS`, `HYDROLIX_OAUTH_REQUIRED_SCOPES`, `HYDROLIX_OAUTH_RESOURCE_URL`) is set but `HYDROLIX_OAUTH_AUDIENCE` is unset.
 
-Partial configuration is a fatal startup error: the server SHALL raise `OAuthConfigError`. This case is explicitly NOT covered by the byte-identical guarantee. The intent is to surface misconfiguration loudly rather than silently ignore operator-set OAuth knobs.
+The byte-identical guarantee above does not apply to partial configuration; the intent is to surface misconfiguration loudly rather than silently ignore operator-set OAuth knobs.
 
-**The pre-HDX-11431 stub case is NOT partial configuration.** When `HYDROLIX_OAUTH_AUDIENCE` and `HYDROLIX_URL` are both set, `HYDROLIX_OAUTH_ISSUER` is unset, and `canonical_idp_endpoints` raises `NotImplementedError`, the operator's configuration is valid — the system simply cannot yet derive the issuer because HDX-11431 has not landed. That failure mode propagates `NotImplementedError` directly (NOT wrapped as `OAuthConfigError`); see the "Canonical IdP endpoint derivation" requirement and the "Issuer derivation attempted before HDX-11431" scenario. This distinction lets operators distinguish "I set something wrong" from "this code path doesn't exist yet" in logs.
+**The pre-HDX-11431 stub case is not partial configuration.** When `HYDROLIX_OAUTH_AUDIENCE` and `HYDROLIX_URL` are set, `HYDROLIX_OAUTH_ISSUER` is unset, and `canonical_idp_endpoints` raises `NotImplementedError`, the config is valid — the system just can't derive the issuer until HDX-11431 lands. `NotImplementedError` propagates directly (not wrapped as `OAuthConfigError`), so operators can tell "I set something wrong" from "this code path doesn't exist yet" in logs.
 
 #### Scenario: No issuer and no cluster URL
 
@@ -32,8 +32,7 @@ Partial configuration is a fatal startup error: the server SHALL raise `OAuthCon
 - **WHEN** `HYDROLIX_OAUTH_AUDIENCE` is set
 - **AND** neither `HYDROLIX_OAUTH_ISSUER` nor `HYDROLIX_URL` is set
 - **THEN** the worker SHALL raise `OAuthConfigError` during factory initialization
-- **AND** SHALL terminate before handling any request
-- **AND** under multi-worker uvicorn the supervisor port-binding remains intact, but workers crash-loop on respawn and SHALL NOT successfully serve MCP traffic while the misconfiguration persists
+- **AND** SHALL NOT serve any request (under multi-worker uvicorn the supervisor port stays bound and workers crash-loop on respawn; no MCP traffic is served while the misconfiguration persists)
 
 #### Scenario: Issuer derivation attempted before HDX-11431
 
@@ -62,8 +61,7 @@ Partial configuration is a fatal startup error: the server SHALL raise `OAuthCon
 
 - **WHEN** `HYDROLIX_OAUTH_ISSUER` is set but `HYDROLIX_OAUTH_AUDIENCE` is unset
 - **THEN** the worker SHALL raise `OAuthConfigError` during factory initialization
-- **AND** SHALL terminate before handling any request
-- **AND** under multi-worker uvicorn the supervisor port-binding remains intact, but workers crash-loop on respawn and SHALL NOT successfully serve MCP traffic while the misconfiguration persists
+- **AND** SHALL NOT serve any request (under multi-worker uvicorn the supervisor port stays bound and workers crash-loop on respawn; no MCP traffic is served while the misconfiguration persists)
 
 #### Scenario: HYDROLIX_URL set, audience unset, no other OAuth vars
 
@@ -256,17 +254,17 @@ The `resource` field in the RFC 9728 document SHALL be resolved with the followi
 
 ### Requirement: No JWT credential material in logs
 
-The intent of this requirement is to prevent credential leakage via logs. Across `mcp_hydrolix/auth/oauth.py`, `mcp_hydrolix/auth/mcp_providers.py`, `mcp_hydrolix/mcp_server.py`, and `mcp_hydrolix/webapp.py`, no `logger.*` call SHALL emit any of the following:
+Intent: prevent credential leakage via logs. No `logger.*` call in the auth layer SHALL emit any of the following (any of which would enable token forgery or replay):
 
-- The raw JWT as presented in the `Authorization` header (`header.payload.signature` concatenated form).
-- The signature segment of a JWT, alone or as part of any other value.
-- The base64url-encoded header or payload segments of a JWT (logging these alongside any other public information would let an attacker reconstruct the presented token).
-- The full `Authorization` header value (which contains the raw token).
+- The raw JWT (`header.payload.signature` concatenated form).
+- The signature segment, alone or as part of any other value.
+- The base64url-encoded header or payload segments.
+- The full `Authorization` header value.
 - JWKS private exponents or any other private key material.
 
-**Decoded claim values** (including `sub`, `aud`, `iss`, `iat`, `exp`, `jti`, `scope`, `client_id`, and custom claims) MAY be logged at the auth layer's discretion. Decoded claims are not credentials — they cannot be used to forge a JWT without the IdP's signing key. Operator-set configuration values (resolved issuer URL, audience allowlist, required scopes) MAY also be logged.
+Decoded claim values (`sub`, `aud`, `iss`, `iat`, `exp`, `jti`, `scope`, `client_id`, custom claims) MAY be logged — claims are not credentials and cannot forge a JWT without the IdP's signing key. Operator-set configuration values (resolved issuer URL, audience allowlist, required scopes) MAY also be logged.
 
-Failure paths SHALL log only the exception class name when the exception's message could include raw token bytes (for example, JWT parser errors that quote the malformed input). For exceptions whose messages are known not to include token bytes, the message MAY be logged.
+When an exception message could include raw token bytes (e.g. JWT parser errors that quote the malformed input), failure paths SHALL log only the exception class name. Otherwise the message MAY be logged.
 
 #### Scenario: Successful activation log content
 
