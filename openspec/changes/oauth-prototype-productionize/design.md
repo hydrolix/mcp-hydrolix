@@ -128,7 +128,7 @@ The factory runs in the worker's main thread before uvicorn has started its even
 
 **Why this is safe**: uvicorn imports the factory before calling `Server.serve()`; the loop is not yet running. `multiprocessing` spawn workers start with no running loop.
 
-**Risk**: If the factory is ever invoked under an active loop (e.g. in-process test harnesses), `asyncio.run` raises `RuntimeError`. The activation code SHALL catch and re-raise this with a message pointing at the test setup.
+**Risk**: If the factory is ever invoked under an active loop (e.g. in-process test harnesses), `asyncio.run` raises `RuntimeError`. The activation code should catch and re-raise this with a message pointing at the test setup. (Non-normative — SHALL is reserved for spec requirements.)
 
 ### Decision: `_maybe_activate_oauth` becomes `_activate_oauth_if_configured` in `webapp.py`
 

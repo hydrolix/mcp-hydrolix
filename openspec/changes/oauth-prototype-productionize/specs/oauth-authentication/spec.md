@@ -38,8 +38,8 @@ Partial configuration is a fatal startup error: the server SHALL raise `OAuthCon
 - **WHEN** `HYDROLIX_OAUTH_AUDIENCE` and `HYDROLIX_URL` are both set
 - **AND** `HYDROLIX_OAUTH_ISSUER` is unset
 - **AND** HDX-11431 has not yet landed (the derivation stub raises `NotImplementedError`)
-- **THEN** the worker SHALL terminate at factory initialization with a clear error message referencing HDX-11431
-- **AND** operators SHALL be expected to set `HYDROLIX_OAUTH_ISSUER` explicitly until HDX-11431 publishes the cluster-URL-to-IdP convention
+- **THEN** the worker SHALL terminate at factory initialization
+- **AND** the error message SHALL contain the substring `HDX-11431`
 
 #### Scenario: Issuer derived from cluster URL (post-HDX-11431)
 
@@ -77,7 +77,7 @@ Partial configuration is a fatal startup error: the server SHALL raise `OAuthCon
 
 ### Requirement: Canonical IdP endpoint derivation is a single contained function
 
-All knowledge of where the cluster's canonical IdP lives relative to `HYDROLIX_URL` SHALL be encapsulated in a single function exported from `mcp_hydrolix.auth.idp_endpoints` that takes the cluster URL and returns an immutable record containing at least the issuer URL, the OIDC discovery URL, the JWKS URI, and the network-reachable address of the IdP.
+All knowledge of where the cluster's canonical IdP lives relative to `HYDROLIX_URL` SHALL be encapsulated in a single function that takes the cluster URL and returns an immutable record containing at least the issuer URL, the OIDC discovery URL, the JWKS URI, and the network-reachable address of the IdP. (The implementation location — module `mcp_hydrolix.auth.idp_endpoints` — is fixed by design.md, not by the spec.)
 
 Until [HDX-11431](https://hydrolix.atlassian.net/browse/HDX-11431) publishes the cluster-URL-to-IdP convention, this function SHALL raise `NotImplementedError` with a message referencing HDX-11431. As a consequence, the URL-derivation activation path is unreachable in production until HDX-11431 lands; operators MUST set `HYDROLIX_OAUTH_ISSUER` explicitly during this period.
 
@@ -103,14 +103,14 @@ When the function eventually returns a result (after HDX-11431 lands and the bod
 
 ### Requirement: Activation runs per uvicorn worker
 
-The server SHALL perform OAuth activation inside the `webapp.py:create_app()` factory, not in the supervisor process. Each uvicorn worker SHALL independently run OIDC discovery and JWKS preflight against its own `mcp` instance.
+OAuth activation SHALL happen per-worker at app-construction time, not in the supervisor process. Each uvicorn worker SHALL independently run OIDC discovery and JWKS preflight against its own in-process `mcp` instance. (The implementation site — the `create_app()` factory in `webapp.py` — is fixed by design.md.)
 
 #### Scenario: Multi-worker activation
 
 - **WHEN** the server is started with `MCP_WORKERS=4` and OAuth env vars set
 - **THEN** each of the 4 worker processes SHALL successfully activate OAuth against its own in-process `mcp` object
 - **AND** no worker SHALL serve requests with `mcp.auth` set to the pre-activation credential chain
-- **AND** the supervisor process SHALL NOT call `try_activate_oauth`
+- **AND** the supervisor process SHALL NOT mutate `mcp.auth` before workers spawn
 
 ### Requirement: Fail-open at startup, fail-closed at request time
 
@@ -267,8 +267,9 @@ Failure paths SHALL log only the exception class name when the exception's messa
 
 #### Scenario: Successful activation log content
 
-- **WHEN** OAuth activates successfully at startup
+- **WHEN** OAuth activates successfully at startup (OIDC discovery + JWKS preflight both succeed)
 - **THEN** the INFO log line MAY include the resolved issuer URL, the audience allowlist, and the required scopes
+- **AND** the activation log lines SHALL NOT include the raw JWKS response body, any private key material, or the raw OIDC discovery response body
 
 #### Scenario: Valid bearer accepted log content
 
