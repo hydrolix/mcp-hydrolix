@@ -73,9 +73,9 @@ All knowledge of where the cluster's canonical IdP lives relative to `HYDROLIX_U
 
 #### Scenario: All HYDROLIX_URL-based IdP derivation is contained in idp_endpoints.py
 
-- **WHEN** every source file under `mcp_hydrolix/auth/` is scanned for textual references to the env-var name `HYDROLIX_URL`
-- **THEN** the only file that may reference `HYDROLIX_URL` for the purpose of computing an IdP issuer, discovery URL, JWKS URI, or address SHALL be `mcp_hydrolix/auth/idp_endpoints.py`
-- **AND** the function exported from that module SHALL return a record containing at minimum: issuer URL, OIDC discovery URL, JWKS URI, and IdP network address
+- **WHEN** a pytest test reads every `.py` file under `mcp_hydrolix/auth/` and collects all occurrences of the substring `HYDROLIX_URL`
+- **THEN** every collected occurrence outside `mcp_hydrolix/auth/idp_endpoints.py` SHALL be either (a) a docstring or comment, or (b) a reference that does not compute an IdP issuer, discovery URL, JWKS URI, or address from the value
+- **AND** the function exported from `mcp_hydrolix.auth.idp_endpoints` SHALL return a record containing at minimum: issuer URL, OIDC discovery URL, JWKS URI, and IdP network address
 
 #### Scenario: Derivation result is immutable
 
@@ -209,6 +209,11 @@ The `resource` field in the RFC 9728 document SHALL be resolved with the followi
 - **WHEN** OAuth is active, `HYDROLIX_OAUTH_RESOURCE_URL` is unset, and `HYDROLIX_URL="https://cluster.example.com"` is set
 - **THEN** the `resource` field in the RFC 9728 JSON SHALL equal `"https://cluster.example.com"`
 
+#### Scenario: Resource URL falls back to server bind URL
+
+- **WHEN** OAuth is active, `HYDROLIX_OAUTH_RESOURCE_URL` is unset, and `HYDROLIX_URL` is unset (issuer was resolved via explicit `HYDROLIX_OAUTH_ISSUER`)
+- **THEN** the `resource` field in the RFC 9728 JSON SHALL equal the server's bound base URL (scheme + host + port that the worker is serving on)
+
 #### Scenario: Resource URL set without audience
 
 - **WHEN** `HYDROLIX_OAUTH_RESOURCE_URL` is set
@@ -221,19 +226,29 @@ The verifier SHALL accept an explicit `HYDROLIX_OAUTH_JWKS_URI` override for in-
 
 #### Scenario: Plain HTTP JWKS rejected by default
 
-- **WHEN** `HYDROLIX_OAUTH_JWKS_URI="http://idp.internal/realms/x/protocol/openid-connect/certs"` is set
+- **WHEN** `HYDROLIX_OAUTH_AUDIENCE` and `HYDROLIX_OAUTH_ISSUER` are set to activate OAuth
+- **AND** `HYDROLIX_OAUTH_JWKS_URI="http://idp.internal/realms/x/protocol/openid-connect/certs"` is set
 - **AND** `HYDROLIX_OAUTH_ALLOW_INSECURE_JWKS` is unset
-- **THEN** `load_oauth_config()` SHALL raise `OAuthConfigError` at startup
+- **THEN** `load_oauth_config()` SHALL raise `OAuthConfigError` at startup (the insecure-scheme check fires before any preflight)
 
 #### Scenario: Plain HTTP JWKS allowed when explicitly opted in
 
-- **WHEN** `HYDROLIX_OAUTH_JWKS_URI="http://idp.internal/.../certs"` is set
+- **WHEN** `HYDROLIX_OAUTH_AUDIENCE` and `HYDROLIX_OAUTH_ISSUER` are set to activate OAuth
+- **AND** `HYDROLIX_OAUTH_JWKS_URI="http://idp.internal/.../certs"` is set
 - **AND** `HYDROLIX_OAUTH_ALLOW_INSECURE_JWKS="true"` is set
-- **THEN** the verifier SHALL fetch keys from that URL at startup
+- **THEN** `load_oauth_config()` SHALL accept the configuration and the verifier SHALL fetch keys from that URL at startup
 
 ### Requirement: No raw JWT or claim payload in logs
 
-Across `mcp_hydrolix/auth/oauth.py`, `mcp_hydrolix/auth/mcp_providers.py`, `mcp_hydrolix/mcp_server.py`, and `mcp_hydrolix/webapp.py`, no `logger.*` call SHALL emit a raw JWT, a full claims dict, an `Authorization` header value, or a JWKS private exponent. Identifying values that MAY be logged are: `iss` (URL), `aud` (allowlist values from config), `sub` (subject), `client_id`, configured `required_scopes`, HTTP method, HTTP path, and exception class names. Failure paths SHALL log only the exception class name, never the exception message if that message could include token bytes.
+Across `mcp_hydrolix/auth/oauth.py`, `mcp_hydrolix/auth/mcp_providers.py`, `mcp_hydrolix/mcp_server.py`, and `mcp_hydrolix/webapp.py`, no `logger.*` call SHALL emit a raw JWT, a full claims dict, an `Authorization` header value, or a JWKS private exponent.
+
+Values that MAY be logged are organized in three categories:
+
+1. **Token-derived claims** — the only claim values from a presented JWT that MAY be logged are `sub`, `aud`, and `client_id` (per HDX-11442 acceptance criterion 5). No other claim (`iat`, `exp`, `jti`, `nbf`, custom claims, etc.) SHALL be logged by any auth-layer logger.
+2. **Operator-set configuration values** — the resolved issuer URL (`OAuthConfig.issuer`), the audience allowlist parsed from `HYDROLIX_OAUTH_AUDIENCE`, and the configured `required_scopes` MAY be logged at INFO at startup. These are operator-supplied, not token-derived.
+3. **Standard request-routing fields** — HTTP method, HTTP path, and HTTP status code MAY appear in access logs and auth-layer DEBUG diagnostics; these are not token-derived and their logging is governed by the application's general access-log machinery, not by this requirement.
+
+Failure paths SHALL log only the exception class name, never the exception message if that message could include token bytes.
 
 #### Scenario: Successful activation log content
 
@@ -253,8 +268,8 @@ When `HYDROLIX_OAUTH_AUDIENCE` is parsed, the documented and tested default the 
 
 #### Scenario: docs/oauth.md documents the default audience value
 
-- **WHEN** `docs/oauth.md` on this branch is parsed
-- **THEN** it SHALL contain the literal string `mcp-hydrolix,config-api` as the documented example value for `HYDROLIX_OAUTH_AUDIENCE`
+- **WHEN** a pytest test reads `docs/oauth.md` relative to the repo root
+- **THEN** the file contents SHALL contain the literal string `mcp-hydrolix,config-api` as the documented example value for `HYDROLIX_OAUTH_AUDIENCE`
 
 ### Requirement: Valid bearer authenticates the request end-to-end
 
@@ -279,8 +294,8 @@ If the original plan doc cannot be located, the absence SHALL be documented in `
 
 #### Scenario: Checklist present and annotated
 
-- **WHEN** `docs/oauth.md` on this branch is parsed
-- **THEN** it SHALL contain a section heading matching `Security checklist (HDX-11133 section 4)`
+- **WHEN** a pytest test reads `docs/oauth.md` relative to the repo root
+- **THEN** the file contents SHALL contain a section heading matching `Security checklist (HDX-11133 section 4)`
 - **AND** that section SHALL contain at least 16 row entries OR an explicit documented account inside the section explaining why fewer rows are reproduced
 - **AND** every row SHALL carry either a `Signed off:` annotation followed by a one-line justification OR a `Carved out:` annotation followed by a follow-up ticket identifier matching the pattern `HDX-\d+`
 
