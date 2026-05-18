@@ -1,0 +1,79 @@
+{
+  "manifest_version": "0.4",
+  "name": "mcp-hydrolix",
+  "display_name": "Hydrolix",
+  "version": "${VERSION}",
+  "description": "An MCP server for the Hydrolix analytics database.",
+  "long_description": "Query Hydrolix from Claude using SQL. Provides tools to list databases and tables, inspect schemas, and run SELECT queries.",
+  "author": { "name": "Hydrolix", "url": "https://hydrolix.io" },
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/hydrolix/mcp-hydrolix",
+  "repository": { "type": "git", "url": "https://github.com/hydrolix/mcp-hydrolix" },
+  "icon": "icon.png",
+  "keywords": ["hydrolix", "sql", "clickhouse", "analytics", "observability", "logs"],
+  "server": {
+    "type": "uv",
+    "entry_point": "src/server.py",
+    "mcp_config": {
+      "command": "uv",
+      "args": ["run", "--directory", "${__dirname}", "src/server.py"],
+      "env": {
+        "HYDROLIX_HOST": "${user_config.hydrolix_host}",
+        "HYDROLIX_TOKEN": "${user_config.hydrolix_token}",
+        "HYDROLIX_USER": "${user_config.hydrolix_user}",
+        "HYDROLIX_PASSWORD": "${user_config.hydrolix_password}",
+        "HYDROLIX_DATABASE": "${user_config.hydrolix_database}",
+        "HYDROLIX_MCP_SERVER_TRANSPORT": "stdio"
+      }
+    }
+  },
+  "tools": [
+    { "name": "run_select_query", "description": "Execute a SELECT SQL query on the configured Hydrolix cluster." },
+    { "name": "list_databases",   "description": "List all databases on the Hydrolix cluster." },
+    { "name": "list_tables",      "description": "List all tables in a given database." },
+    { "name": "get_table_info",   "description": "Return schema and metadata for a table." }
+  ],
+  "tools_generated": false,
+  "user_config": {
+    "hydrolix_host": {
+      "type": "string",
+      "title": "Hydrolix Host",
+      "description": "Hostname of your Hydrolix cluster (e.g. mycluster.hydrolix.live).",
+      "required": true
+    },
+    "hydrolix_token": {
+      "type": "string",
+      "title": "Service Account Token",
+      "description": "Service-account token. Preferred over username/password. Leave blank if using username/password.",
+      "sensitive": true,
+      "required": false,
+      "default": ""
+    },
+    "hydrolix_user": {
+      "type": "string",
+      "title": "Username",
+      "description": "Hydrolix username. Used with Password if no Service Account Token is set.",
+      "required": false,
+      "default": ""
+    },
+    "hydrolix_password": {
+      "type": "string",
+      "title": "Password",
+      "description": "Hydrolix password. Used with Username if no Service Account Token is set.",
+      "sensitive": true,
+      "required": false,
+      "default": ""
+    },
+    "hydrolix_database": {
+      "type": "string",
+      "title": "Default Database",
+      "description": "Optional default database. The server uses the cluster default when this is empty.",
+      "required": false,
+      "default": ""
+    }
+  },
+  "compatibility": {
+    "platforms": ["darwin", "win32", "linux"],
+    "runtimes": { "python": ">=3.13" }
+  }
+}

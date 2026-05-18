@@ -181,3 +181,9 @@ cython_debug/
 
 # Claude superpowers plugin
 docs/superpowers/
+
+# MCPB bundle build artifacts
+mcpb/manifest.json
+mcpb/pyproject.toml
+mcpb/icon.png
+dist/*.mcpb
