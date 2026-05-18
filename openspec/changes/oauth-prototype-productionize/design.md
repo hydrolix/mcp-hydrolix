@@ -113,7 +113,7 @@ This function is THE one deliberate exception to track 1's IdP-agnosticism. Ever
 
 `HYDROLIX_OAUTH_JWKS_URI` follows the same pattern: explicit override wins; otherwise the JWKS URI is normally discovered via OIDC, but `canonical_idp_endpoints(...).jwks_uri` MAY be used as the in-cluster backchannel value when the proxy publishes one. The `.address` field is reserved for future use (health checks, observability) and may be unused in the initial implementation.
 
-**Body is a stub until HDX-11431 publishes conventions**: The cluster-URL-to-IdP URL convention is the turbine-API team's deliverable. Until HDX-11431 names the convention (e.g. "the IdP proxy is served at `{HYDROLIX_URL}/oauth`" or at a sibling subdomain), this function ships with a documented placeholder body that returns endpoints derivable in the simplest way consistent with the current best guess, plus a clearly-marked TODO and the test that pins down the eventual contract. Replacing the body when conventions land is a one-function diff.
+**Body raises `NotImplementedError` until HDX-11431 publishes conventions**: The cluster-URL-to-IdP URL convention is the turbine-API team's deliverable. Until HDX-11431 names the convention, this function's body raises `NotImplementedError` with a message referencing HDX-11431. Returning plausible-looking placeholder URLs was considered and rejected: it would let test fixtures and dev environments produce activation flows that look correct but talk to an IdP that won't exist on the convention HDX-11431 eventually publishes, creating misleading green tests. The strict behavior forces operators to set `HYDROLIX_OAUTH_ISSUER` explicitly during the interim, which is honest about the current capability surface. Replacing the body when conventions land is a one-function diff; the unit tests pin the contract (signature, frozen record, four named fields, non-conflation invariant) using the eventual-return scenarios in the spec.
 
 **Why a single function, not a class or module**: A class with multiple methods would invite each callsite to grab one piece of IdP knowledge in isolation, scattering the coupling. A function returning a single immutable record forces every consumer to think of the IdP as one named, located entity, and forces any IdP-shaped change to flow through one signature. Future "the JWKS URI uses a different scheme" or "the IdP moved to a different subdomain" changes update one body and one set of unit tests.
 
@@ -189,9 +189,9 @@ Leaving them in would be a merge-shaped landmine — the prototype's `main.py` w
    - Call it inside `create_app()` before `mcp.http_app(...)`.
 
 3. **Add the IdP coupling seam**:
-   - Create `mcp_hydrolix/auth/idp_endpoints.py` with the `CanonicalIdPEndpoints` dataclass and the `canonical_idp_endpoints(hydrolix_url)` function. Ship a documented placeholder body with a TODO referencing HDX-11431 and the best-guess derivation consistent with current information.
-   - Wire `load_oauth_config()` to use it for issuer derivation when `HYDROLIX_OAUTH_ISSUER` is unset and `HYDROLIX_URL` is set.
-   - Add `tests/auth/test_idp_endpoints.py` covering the return shape (immutable, all four fields populated), input/output stability (same input → equal record), and the placeholder-body behavior so the test fails when HDX-11431 publishes a different convention and the body is updated.
+   - Create `mcp_hydrolix/auth/idp_endpoints.py` with the `CanonicalIdPEndpoints` dataclass and the `canonical_idp_endpoints(hydrolix_url)` function. The function body raises `NotImplementedError` with a message referencing HDX-11431. No placeholder URLs.
+   - Wire `load_oauth_config()` to attempt this derivation when `HYDROLIX_OAUTH_ISSUER` is unset and `HYDROLIX_URL` is set. The `NotImplementedError` propagates up through factory initialization, terminating the worker with a clear error message — until HDX-11431 lands, operators MUST set `HYDROLIX_OAUTH_ISSUER` explicitly.
+   - Add `tests/auth/test_idp_endpoints.py` covering: the stub raises `NotImplementedError` and the message contains `HDX-11431`; the eventual-return contract (frozen record with four named string fields, equality on same input, non-conflation invariant) as currently-skipped/xfail tests that flip to passing when HDX-11431 lands and the body is replaced.
 
 4. **Test fixups**:
    - Rename `tests/auth/test_main_oauth_activation.py` → `tests/auth/test_webapp_oauth_activation.py`; update monkeypatch targets to `mcp_hydrolix.webapp`.
@@ -201,20 +201,24 @@ Leaving them in would be a merge-shaped landmine — the prototype's `main.py` w
    - Add `tests/auth/test_webapp_multiworker.py` (smoke test exercising `create_app()` twice in the same test process to assert idempotence in isolation; full multi-worker is covered by integration tests on the staging cluster).
 
 5. **Docs**:
-   - Port `docs/oauth.md` onto this branch; update the "Out-of-cluster deployment" section to reference `mcp_hydrolix.webapp:create_app` instead of any Gunicorn instructions.
+   - Port `docs/oauth.md` onto this branch.
+   - Update the deployment section to reference `mcp_hydrolix.webapp:create_app` instead of any Gunicorn instructions.
+   - Ensure `docs/oauth.md` documents `HYDROLIX_OAUTH_AUDIENCE="mcp-hydrolix,config-api"` as the example value operators should configure.
+   - Add a `Security checklist (HDX-11133 section 4)` section reproducing the 16-row checklist verbatim. Annotate each row as either `Signed off:` with a one-line justification OR `Carved out:` referencing a follow-up ticket matching `HDX-\d+`. If the original plan doc cannot be located when this PR is prepared, document that fact in the section and treat the missing rows as carve-outs requiring follow-up tickets before OAuth is enabled in production.
    - Do not port `docs/keycloak-mcp-client.json` — it was a HDX-11133 investigation artifact tied to a specific Keycloak setup, not a production reference. The production OIDC client registration document will land in a follow-up once the IdP proxy publishes its registration shape.
 
 6. **Verification gates** (before opening PR):
    - `uv run pytest tests/auth/` — all green.
    - `uv run pytest` (full suite) — all green.
+   - PR-time code-review check: confirm by grep that no file under `mcp_hydrolix/auth/` outside `mcp_hydrolix/auth/idp_endpoints.py` references `HYDROLIX_URL` to compute an IdP issuer/discovery URL/JWKS URI/address. (This is a one-time implementation check rather than a permanent runtime invariant.)
+   - PR-time docs check: confirm `docs/oauth.md` contains the `mcp-hydrolix,config-api` audience example and the `Security checklist (HDX-11133 section 4)` section with row annotations.
    - Manual: start server with no OAuth env vars, hit MCP tool endpoint, confirm byte-identical behavior to current `main`.
    - Manual: start server against the cluster-deployed IdP proxy, present a valid bearer, confirm 200; present junk bearer, confirm 401 + `WWW-Authenticate`; omit bearer, confirm SA chain handles.
-   - Sign off on the 16-row security checklist from the HDX-11133 plan doc.
 
 7. **Rollback**: If post-merge an issue surfaces, the safe rollback is to leave the OAuth env vars unset on every running deployment — the fail-closed activation is a no-op when env vars are absent, so the merged code is byte-identical to pre-merge `main` for those deployments.
 
 ## Open Questions
 
-- **Resolved**: The 16-row security checklist from HDX-11133 plan doc section 4 SHALL be reproduced verbatim in `docs/oauth.md` under a "Security checklist (HDX-11133 section 4)" heading as part of this PR. Each row is annotated as either "Signed off" (with one-line justification) or "Carved out" (with a follow-up ticket reference). If the original plan doc cannot be located when this PR is prepared, the absence is itself documented in that section and the missing rows are treated as carve-outs requiring follow-up tickets before OAuth is enabled in production. See the "Security checklist sign-off is reproduced in-tree" spec requirement.
+- **Resolved**: The 16-row security checklist from HDX-11133 plan doc section 4 is reproduced verbatim in `docs/oauth.md` under a "Security checklist (HDX-11133 section 4)" heading as part of this PR (see migration plan step 5). Verification is a PR-time check, not a permanent runtime invariant, so it lives in the migration plan rather than as a spec requirement.
 - Should the protected-resource-metadata endpoint be served under `/.well-known/oauth-protected-resource` (RFC 9728 default) or scoped to the MCP base path (`/mcp/.well-known/...`)? The prototype serves the unscoped path. Worth confirming with the Traefik routing rules on the staging cluster before merge.
 - Do we want a Prometheus counter for OAuth activation failures and per-request OAuth verification outcomes? Useful for operability but adds scope; recommend deferring to a follow-up unless on-call surfaces a need.

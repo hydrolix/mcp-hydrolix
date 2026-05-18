@@ -33,11 +33,19 @@ Partial configuration is a fatal startup error: the server SHALL raise `OAuthCon
 - **AND** SHALL terminate before handling any request
 - **AND** under multi-worker uvicorn the supervisor port-binding remains intact, but workers crash-loop on respawn and SHALL NOT successfully serve MCP traffic while the misconfiguration persists
 
-#### Scenario: Issuer derived from cluster URL
+#### Scenario: Issuer derivation attempted before HDX-11431
 
 - **WHEN** `HYDROLIX_OAUTH_AUDIENCE` and `HYDROLIX_URL` are both set
 - **AND** `HYDROLIX_OAUTH_ISSUER` is unset
-- **THEN** the server SHALL resolve the issuer via the canonical IdP-derivation function
+- **AND** HDX-11431 has not yet landed (the derivation stub raises `NotImplementedError`)
+- **THEN** the worker SHALL terminate at factory initialization with a clear error message referencing HDX-11431
+- **AND** operators SHALL be expected to set `HYDROLIX_OAUTH_ISSUER` explicitly until HDX-11431 publishes the cluster-URL-to-IdP convention
+
+#### Scenario: Issuer derived from cluster URL (post-HDX-11431)
+
+- **WHEN** HDX-11431 has landed and the derivation function returns a valid record
+- **AND** `HYDROLIX_OAUTH_AUDIENCE` and `HYDROLIX_URL` are both set, with `HYDROLIX_OAUTH_ISSUER` unset
+- **THEN** the server SHALL resolve the issuer via `canonical_idp_endpoints(HYDROLIX_URL).issuer`
 - **AND** OAuth SHALL activate using the derived issuer
 
 #### Scenario: Explicit issuer overrides derivation
@@ -69,24 +77,29 @@ Partial configuration is a fatal startup error: the server SHALL raise `OAuthCon
 
 ### Requirement: Canonical IdP endpoint derivation is a single contained function
 
-All knowledge of where the cluster's canonical IdP lives relative to `HYDROLIX_URL` SHALL be encapsulated in a single function that takes the cluster URL and returns an immutable record containing at least the issuer URL, the OIDC discovery URL, the JWKS URI, and the network-reachable address of the IdP. No other code in `mcp_hydrolix/auth/` SHALL encode the cluster-URL-to-IdP convention; any callsite that needs an IdP endpoint derived from `HYDROLIX_URL` SHALL call this function. The function SHALL NEVER return an `issuer` string-equal to its input `hydrolix_url` (this preserves the issuer/cluster-URL non-conflation invariant; see "JWT verification rejects mismatched issuer").
+All knowledge of where the cluster's canonical IdP lives relative to `HYDROLIX_URL` SHALL be encapsulated in a single function exported from `mcp_hydrolix.auth.idp_endpoints` that takes the cluster URL and returns an immutable record containing at least the issuer URL, the OIDC discovery URL, the JWKS URI, and the network-reachable address of the IdP.
 
-#### Scenario: All HYDROLIX_URL-based IdP derivation is contained in idp_endpoints.py
+Until [HDX-11431](https://hydrolix.atlassian.net/browse/HDX-11431) publishes the cluster-URL-to-IdP convention, this function SHALL raise `NotImplementedError` with a message referencing HDX-11431. As a consequence, the URL-derivation activation path is unreachable in production until HDX-11431 lands; operators MUST set `HYDROLIX_OAUTH_ISSUER` explicitly during this period.
 
-- **WHEN** a pytest test reads every `.py` file under `mcp_hydrolix/auth/` and collects all occurrences of the substring `HYDROLIX_URL`
-- **THEN** every collected occurrence outside `mcp_hydrolix/auth/idp_endpoints.py` SHALL be either (a) a docstring or comment, or (b) a reference that does not compute an IdP issuer, discovery URL, JWKS URI, or address from the value
-- **AND** the function exported from `mcp_hydrolix.auth.idp_endpoints` SHALL return a record containing at minimum: issuer URL, OIDC discovery URL, JWKS URI, and IdP network address
+When the function eventually returns a result (after HDX-11431 lands and the body is replaced), the returned record SHALL be frozen, SHALL contain the four named fields, and SHALL never return an `issuer` string-equal to its input `hydrolix_url` (preserving the issuer/cluster-URL non-conflation invariant; see "JWT verification rejects mismatched issuer").
 
-#### Scenario: Derivation result is immutable
+#### Scenario: Stub raises NotImplementedError until HDX-11431
 
-- **WHEN** the derivation function is called with a `HYDROLIX_URL` value
+- **WHEN** `canonical_idp_endpoints` is called with any value of `hydrolix_url` before HDX-11431 has landed
+- **THEN** the function SHALL raise `NotImplementedError`
+- **AND** the exception message SHALL contain the substring `HDX-11431`
+
+#### Scenario: Eventual return shape is immutable and complete
+
+- **WHEN** HDX-11431 has landed and `canonical_idp_endpoints` is called with a `hydrolix_url` value, returning successfully
 - **THEN** the returned record SHALL be frozen (no mutable fields)
+- **AND** the record SHALL expose `issuer`, `discovery_url`, `jwks_uri`, and `address` as string-typed fields
 - **AND** calling the function twice with the same input SHALL return equal records
 
-#### Scenario: Derived issuer is never equal to the input cluster URL
+#### Scenario: Eventual derived issuer is never equal to the input cluster URL
 
-- **WHEN** the derivation function is called with any non-empty `HYDROLIX_URL` value
-- **THEN** the returned `issuer` SHALL NOT be string-equal to the input `HYDROLIX_URL`
+- **WHEN** HDX-11431 has landed and `canonical_idp_endpoints` is called with any non-empty `hydrolix_url` value, returning successfully
+- **THEN** the returned `issuer` SHALL NOT be string-equal to the input `hydrolix_url`
 
 ### Requirement: Activation runs per uvicorn worker
 
@@ -238,38 +251,37 @@ The verifier SHALL accept an explicit `HYDROLIX_OAUTH_JWKS_URI` override for in-
 - **AND** `HYDROLIX_OAUTH_ALLOW_INSECURE_JWKS="true"` is set
 - **THEN** `load_oauth_config()` SHALL accept the configuration and the verifier SHALL fetch keys from that URL at startup
 
-### Requirement: No raw JWT or claim payload in logs
+### Requirement: No JWT credential material in logs
 
-Across `mcp_hydrolix/auth/oauth.py`, `mcp_hydrolix/auth/mcp_providers.py`, `mcp_hydrolix/mcp_server.py`, and `mcp_hydrolix/webapp.py`, no `logger.*` call SHALL emit a raw JWT, a full claims dict, an `Authorization` header value, or a JWKS private exponent.
+The intent of this requirement is to prevent credential leakage via logs. Across `mcp_hydrolix/auth/oauth.py`, `mcp_hydrolix/auth/mcp_providers.py`, `mcp_hydrolix/mcp_server.py`, and `mcp_hydrolix/webapp.py`, no `logger.*` call SHALL emit any of the following:
 
-Values that MAY be logged are organized in three categories:
+- The raw JWT as presented in the `Authorization` header (`header.payload.signature` concatenated form).
+- The signature segment of a JWT, alone or as part of any other value.
+- The base64url-encoded header or payload segments of a JWT (logging these alongside any other public information would let an attacker reconstruct the presented token).
+- The full `Authorization` header value (which contains the raw token).
+- JWKS private exponents or any other private key material.
 
-1. **Token-derived claims** — the only claim values from a presented JWT that MAY be logged are `sub`, `aud`, and `client_id` (per HDX-11442 acceptance criterion 5). No other claim (`iat`, `exp`, `jti`, `nbf`, custom claims, etc.) SHALL be logged by any auth-layer logger.
-2. **Operator-set configuration values** — the resolved issuer URL (`OAuthConfig.issuer`), the audience allowlist parsed from `HYDROLIX_OAUTH_AUDIENCE`, and the configured `required_scopes` MAY be logged at INFO at startup. These are operator-supplied, not token-derived.
-3. **Standard request-routing fields** — HTTP method, HTTP path, and HTTP status code MAY appear in access logs and auth-layer DEBUG diagnostics; these are not token-derived and their logging is governed by the application's general access-log machinery, not by this requirement.
+**Decoded claim values** (including `sub`, `aud`, `iss`, `iat`, `exp`, `jti`, `scope`, `client_id`, and custom claims) MAY be logged at the auth layer's discretion. Decoded claims are not credentials — they cannot be used to forge a JWT without the IdP's signing key. Operator-set configuration values (resolved issuer URL, audience allowlist, required scopes) MAY also be logged.
 
-Failure paths SHALL log only the exception class name, never the exception message if that message could include token bytes.
+Failure paths SHALL log only the exception class name when the exception's message could include raw token bytes (for example, JWT parser errors that quote the malformed input). For exceptions whose messages are known not to include token bytes, the message MAY be logged.
 
 #### Scenario: Successful activation log content
 
 - **WHEN** OAuth activates successfully at startup
-- **THEN** the INFO log line MAY include `issuer`, `audience`, and `required_scopes`
-- **AND** SHALL NOT include any value derived from a JWT
+- **THEN** the INFO log line MAY include the resolved issuer URL, the audience allowlist, and the required scopes
 
-#### Scenario: SA token rejection log content
+#### Scenario: Valid bearer accepted log content
 
-- **WHEN** the SA credential chain rejects a token
-- **THEN** the DEBUG log line SHALL include only the exception class name
-- **AND** SHALL NOT include the token, any claim value, or the exception message
+- **WHEN** OAuth is active and a valid bearer token is accepted
+- **THEN** any log line emitted by the auth layer MAY include decoded claim values (`sub`, `aud`, `iss`, `client_id`, etc.)
+- **AND** SHALL NOT include the raw `Authorization` header value
+- **AND** SHALL NOT include the JWT's signature segment or its base64url-encoded header/payload segments
 
-### Requirement: Default audience allowlist
+#### Scenario: Invalid bearer rejected log content
 
-When `HYDROLIX_OAUTH_AUDIENCE` is parsed, the documented and tested default the operator is expected to configure SHALL be `mcp-hydrolix,config-api`. The default SHALL be documented in `docs/oauth.md`.
-
-#### Scenario: docs/oauth.md documents the default audience value
-
-- **WHEN** a pytest test reads `docs/oauth.md` relative to the repo root
-- **THEN** the file contents SHALL contain the literal string `mcp-hydrolix,config-api` as the documented example value for `HYDROLIX_OAUTH_AUDIENCE`
+- **WHEN** OAuth is active and a request presents an invalid bearer token that fails verification
+- **THEN** any log line emitted by the auth layer for the rejection SHALL NOT include the raw token, the signature segment, or the encoded header/payload segments
+- **AND** the line MAY include the exception class name and any decoded claim values the verifier successfully parsed before rejection
 
 ### Requirement: Valid bearer authenticates the request end-to-end
 
@@ -282,22 +294,6 @@ When OAuth is active, a request presenting an `Authorization: Bearer <jwt>` head
 - **AND** `iss` equals the resolved issuer URL, `aud` contains a value in the configured allowlist, `exp` is in the future, and required scopes (if any) are present
 - **THEN** the auth chain SHALL accept the request
 - **AND** the MCP tool SHALL be invoked and its response returned with the appropriate HTTP status
-
-### Requirement: Security checklist sign-off is reproduced in-tree
-
-The 16-row security checklist from the HDX-11133 plan doc (`oauth-support-hdx-11133.md`, section 4) SHALL be reproduced verbatim in `docs/oauth.md` under a "Security checklist (HDX-11133 section 4)" heading before this change merges. Each row SHALL be annotated with one of:
-
-- **Signed off** with a one-line justification (a code reference, test path, or rationale).
-- **Carved out** with the issue or ticket tracking the residual work, and a brief reason the carve-out is acceptable for this PR.
-
-If the original plan doc cannot be located, the absence SHALL be documented in `docs/oauth.md` and the missing rows SHALL be treated as carve-outs requiring follow-up tickets before the OAuth feature is enabled in any production environment.
-
-#### Scenario: Checklist present and annotated
-
-- **WHEN** a pytest test reads `docs/oauth.md` relative to the repo root
-- **THEN** the file contents SHALL contain a section heading matching `Security checklist (HDX-11133 section 4)`
-- **AND** that section SHALL contain at least 16 row entries OR an explicit documented account inside the section explaining why fewer rows are reproduced
-- **AND** every row SHALL carry either a `Signed off:` annotation followed by a one-line justification OR a `Carved out:` annotation followed by a follow-up ticket identifier matching the pattern `HDX-\d+`
 
 ### Requirement: SA credential fallback preserved
 
