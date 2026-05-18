@@ -10,12 +10,14 @@ The server SHALL activate OAuth bearer authentication for the HTTP and SSE trans
 
 When OAuth is not activated AND no partial configuration is present (defined below), the server SHALL behave byte-identically to a build without OAuth code: no new endpoints exposed, no `WWW-Authenticate` headers emitted, no OAuth-related log lines emitted, and the existing service-account credential chain SHALL handle all requests. The byte-identical guarantee is independent of `HYDROLIX_URL` state — that variable belongs to HDX-11441 and has uses other than OAuth, so its presence alone is NOT a signal of OAuth intent.
 
-**Partial configuration** is any of the following:
-- `HYDROLIX_OAUTH_AUDIENCE` is set but no issuer is resolvable via the precedence chain above.
+**Partial configuration** is any of the following operator-misconfiguration cases:
+- `HYDROLIX_OAUTH_AUDIENCE` is set but neither `HYDROLIX_OAUTH_ISSUER` nor `HYDROLIX_URL` is set (no issuer source available at all).
 - `HYDROLIX_OAUTH_ISSUER` is set but `HYDROLIX_OAUTH_AUDIENCE` is unset.
-- Any of the optional OAuth env vars (`HYDROLIX_OAUTH_JWKS_URI`, `HYDROLIX_OAUTH_ALLOW_INSECURE_JWKS`, `HYDROLIX_OAUTH_REQUIRED_SCOPES`, `HYDROLIX_OAUTH_RESOURCE_URL`) is set without an activatable config (i.e., without both `HYDROLIX_OAUTH_AUDIENCE` and a resolvable issuer).
+- Any of the optional OAuth env vars (`HYDROLIX_OAUTH_JWKS_URI`, `HYDROLIX_OAUTH_ALLOW_INSECURE_JWKS`, `HYDROLIX_OAUTH_REQUIRED_SCOPES`, `HYDROLIX_OAUTH_RESOURCE_URL`) is set without `HYDROLIX_OAUTH_AUDIENCE` and an issuer source.
 
 Partial configuration is a fatal startup error: the server SHALL raise `OAuthConfigError`. This case is explicitly NOT covered by the byte-identical guarantee. The intent is to surface misconfiguration loudly rather than silently ignore operator-set OAuth knobs.
+
+**The pre-HDX-11431 stub case is NOT partial configuration.** When `HYDROLIX_OAUTH_AUDIENCE` and `HYDROLIX_URL` are both set, `HYDROLIX_OAUTH_ISSUER` is unset, and `canonical_idp_endpoints` raises `NotImplementedError`, the operator's configuration is valid — the system simply cannot yet derive the issuer because HDX-11431 has not landed. That failure mode propagates `NotImplementedError` directly (NOT wrapped as `OAuthConfigError`); see the "Canonical IdP endpoint derivation" requirement and the "Issuer derivation attempted before HDX-11431" scenario. This distinction lets operators distinguish "I set something wrong" from "this code path doesn't exist yet" in logs.
 
 #### Scenario: No issuer and no cluster URL
 
@@ -39,7 +41,7 @@ Partial configuration is a fatal startup error: the server SHALL raise `OAuthCon
 - **AND** `HYDROLIX_OAUTH_ISSUER` is unset
 - **AND** HDX-11431 has not yet landed (the derivation stub raises `NotImplementedError`)
 - **THEN** the worker SHALL terminate at factory initialization
-- **AND** the propagated exception SHALL be (or wrap) `NotImplementedError`
+- **AND** the propagated exception SHALL be `NotImplementedError` (NOT wrapped as `OAuthConfigError` — this is not a partial-config case; see the "Activation gated on operator env vars" requirement)
 - **AND** the error message SHALL contain the substring `HDX-11431`
 
 #### Scenario: Issuer derived from cluster URL (post-HDX-11431)
@@ -236,7 +238,7 @@ The `resource` field in the RFC 9728 document SHALL be resolved with the followi
 
 ### Requirement: JWKS URI override and insecure transport flag
 
-The verifier SHALL accept an explicit `HYDROLIX_OAUTH_JWKS_URI` override for in-cluster deployments where the public discovery URL is not reachable from the pod. By default the verifier SHALL reject any JWKS URI whose scheme is `http`. When `HYDROLIX_OAUTH_ALLOW_INSECURE_JWKS=true` is set, the verifier SHALL accept `http://` JWKS URIs to support cluster-internal backchannel calls.
+`load_oauth_config()` SHALL honor an explicit `HYDROLIX_OAUTH_JWKS_URI` value as the JWKS URI for in-cluster deployments where the public discovery URL is not reachable from the pod. By default, when `HYDROLIX_OAUTH_JWKS_URI` carries an `http://` scheme, `load_oauth_config()` SHALL raise `OAuthConfigError` at startup before any JWKS fetch is attempted. When `HYDROLIX_OAUTH_ALLOW_INSECURE_JWKS=true` is also set, `load_oauth_config()` SHALL accept the `http://` JWKS URI and the runtime verifier SHALL fetch keys from it (supporting cluster-internal backchannel calls).
 
 #### Scenario: Plain HTTP JWKS rejected by default
 
