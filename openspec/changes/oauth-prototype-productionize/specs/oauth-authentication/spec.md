@@ -8,9 +8,14 @@ The server SHALL activate OAuth bearer authentication for the HTTP and SSE trans
 2. Otherwise, if `HYDROLIX_URL` is set to a non-empty value, the issuer is derived from it via the canonical IdP-derivation function (see "Canonical IdP endpoint derivation" requirement below).
 3. Otherwise, the issuer is unresolved and OAuth is not activated.
 
-When OAuth is not activated AND no partial configuration is present (i.e., none of `HYDROLIX_OAUTH_*` env vars are set), the server SHALL behave byte-identically to a build without OAuth code: no new endpoints exposed, no `WWW-Authenticate` headers emitted, no OAuth-related log lines emitted, and the existing service-account credential chain SHALL handle all requests.
+When OAuth is not activated AND no partial configuration is present (defined below), the server SHALL behave byte-identically to a build without OAuth code: no new endpoints exposed, no `WWW-Authenticate` headers emitted, no OAuth-related log lines emitted, and the existing service-account credential chain SHALL handle all requests. The byte-identical guarantee is independent of `HYDROLIX_URL` state — that variable belongs to HDX-11441 and has uses other than OAuth, so its presence alone is NOT a signal of OAuth intent.
 
-Partial configuration — `HYDROLIX_OAUTH_AUDIENCE` set with no resolvable issuer, or `HYDROLIX_OAUTH_ISSUER` set with no `HYDROLIX_OAUTH_AUDIENCE` — is a fatal startup error: the server SHALL raise `OAuthConfigError`. This case is explicitly NOT covered by the byte-identical guarantee.
+**Partial configuration** is any of the following:
+- `HYDROLIX_OAUTH_AUDIENCE` is set but no issuer is resolvable via the precedence chain above.
+- `HYDROLIX_OAUTH_ISSUER` is set but `HYDROLIX_OAUTH_AUDIENCE` is unset.
+- Any of the optional OAuth env vars (`HYDROLIX_OAUTH_JWKS_URI`, `HYDROLIX_OAUTH_ALLOW_INSECURE_JWKS`, `HYDROLIX_OAUTH_REQUIRED_SCOPES`, `HYDROLIX_OAUTH_RESOURCE_URL`) is set without an activatable config (i.e., without both `HYDROLIX_OAUTH_AUDIENCE` and a resolvable issuer).
+
+Partial configuration is a fatal startup error: the server SHALL raise `OAuthConfigError`. This case is explicitly NOT covered by the byte-identical guarantee. The intent is to surface misconfiguration loudly rather than silently ignore operator-set OAuth knobs.
 
 #### Scenario: No issuer and no cluster URL
 
@@ -49,15 +54,28 @@ Partial configuration — `HYDROLIX_OAUTH_AUDIENCE` set with no resolvable issue
 - **AND** SHALL terminate before handling any request
 - **AND** under multi-worker uvicorn the supervisor port-binding remains intact, but workers crash-loop on respawn and SHALL NOT successfully serve MCP traffic while the misconfiguration persists
 
+#### Scenario: HYDROLIX_URL set, audience unset, no other OAuth vars
+
+- **WHEN** `HYDROLIX_URL` is set
+- **AND** no `HYDROLIX_OAUTH_*` env vars are set
+- **THEN** OAuth SHALL NOT activate
+- **AND** the server SHALL behave byte-identically to a build without OAuth code
+
+#### Scenario: Optional OAuth var set without audience
+
+- **WHEN** any of `HYDROLIX_OAUTH_JWKS_URI`, `HYDROLIX_OAUTH_REQUIRED_SCOPES`, `HYDROLIX_OAUTH_ALLOW_INSECURE_JWKS`, or `HYDROLIX_OAUTH_RESOURCE_URL` is set
+- **AND** `HYDROLIX_OAUTH_AUDIENCE` is unset
+- **THEN** the worker SHALL raise `OAuthConfigError` during factory initialization
+
 ### Requirement: Canonical IdP endpoint derivation is a single contained function
 
 All knowledge of where the cluster's canonical IdP lives relative to `HYDROLIX_URL` SHALL be encapsulated in a single function that takes the cluster URL and returns an immutable record containing at least the issuer URL, the OIDC discovery URL, the JWKS URI, and the network-reachable address of the IdP. No other code in `mcp_hydrolix/auth/` SHALL encode the cluster-URL-to-IdP convention; any callsite that needs an IdP endpoint derived from `HYDROLIX_URL` SHALL call this function. The function SHALL NEVER return an `issuer` string-equal to its input `hydrolix_url` (this preserves the issuer/cluster-URL non-conflation invariant; see "JWT verification rejects mismatched issuer").
 
-#### Scenario: Exactly one derivation callsite
+#### Scenario: All HYDROLIX_URL-based IdP derivation is contained in idp_endpoints.py
 
-- **WHEN** a CI test imports every submodule under `mcp_hydrolix.auth` and collects all callsites that read `HYDROLIX_URL` or its parsed form to compute an IdP issuer, discovery URL, JWKS URI, or address
-- **THEN** every such callsite SHALL delegate to a single named function exported from `mcp_hydrolix.auth.idp_endpoints`
-- **AND** that function SHALL return a record containing at minimum: issuer URL, OIDC discovery URL, JWKS URI, and IdP network address
+- **WHEN** every source file under `mcp_hydrolix/auth/` is scanned for textual references to the env-var name `HYDROLIX_URL`
+- **THEN** the only file that may reference `HYDROLIX_URL` for the purpose of computing an IdP issuer, discovery URL, JWKS URI, or address SHALL be `mcp_hydrolix/auth/idp_endpoints.py`
+- **AND** the function exported from that module SHALL return a record containing at minimum: issuer URL, OIDC discovery URL, JWKS URI, and IdP network address
 
 #### Scenario: Derivation result is immutable
 
@@ -156,7 +174,7 @@ When `HYDROLIX_OAUTH_REQUIRED_SCOPES` is set, the verifier SHALL require the JWT
 
 ### Requirement: RFC 9728 protected-resource-metadata endpoint
 
-When OAuth is active, the server SHALL expose `/.well-known/oauth-protected-resource` returning a JSON document conforming to RFC 9728, advertising the resource URL, configured issuer, and supported bearer methods. This endpoint SHALL NOT require authentication.
+When OAuth is active, the server SHALL expose `/.well-known/oauth-protected-resource` returning a JSON document conforming to RFC 9728. This endpoint SHALL NOT require authentication. The JSON SHALL include at minimum the `resource`, `authorization_servers`, and `bearer_methods_supported` keys. The `resource` field SHALL take the value of `OAuthConfig.resource_url` after the precedence chain defined in the "Resource URL configuration" requirement. The `authorization_servers` array SHALL contain the resolved issuer URL (the value of `OAuthConfig.issuer` after precedence resolution).
 
 #### Scenario: Metadata endpoint returns RFC 9728 JSON
 
@@ -164,11 +182,38 @@ When OAuth is active, the server SHALL expose `/.well-known/oauth-protected-reso
 - **THEN** the response status SHALL be 200
 - **AND** the response body SHALL be JSON containing `resource`, `authorization_servers`, and `bearer_methods_supported` keys
 - **AND** the `authorization_servers` array SHALL contain the resolved issuer URL (the value of `OAuthConfig.issuer` after precedence resolution)
+- **AND** the `resource` field SHALL equal `OAuthConfig.resource_url`
 
 #### Scenario: 401 references metadata URL
 
 - **WHEN** a request to an authenticated endpoint is rejected with 401
 - **THEN** the `WWW-Authenticate` header SHALL include a `resource_metadata=<url>` parameter pointing to the protected-resource-metadata URL
+
+### Requirement: Resource URL configuration
+
+The `resource` field in the RFC 9728 document SHALL be resolved with the following precedence:
+
+1. `HYDROLIX_OAUTH_RESOURCE_URL` if set to a non-empty value (explicit operator override).
+2. Otherwise, if `HYDROLIX_URL` is set, the resource URL SHALL default to the cluster public URL (`HYDROLIX_URL`).
+3. Otherwise, the resource URL SHALL default to the server's configured base URL (host and port the worker is bound to).
+
+`HYDROLIX_OAUTH_RESOURCE_URL` SHALL NOT affect any other aspect of authentication: it does not change the `iss` match target, does not change the JWKS URI, and does not change OAuth activation. Setting it without an activatable config triggers the partial-configuration error path (see "Activation gated on operator env vars").
+
+#### Scenario: Explicit resource URL wins
+
+- **WHEN** `HYDROLIX_OAUTH_RESOURCE_URL="https://mcp.example.com/api"` is set alongside an activatable OAuth config
+- **THEN** the `resource` field in the RFC 9728 JSON SHALL equal `"https://mcp.example.com/api"`
+
+#### Scenario: Resource URL defaults to HYDROLIX_URL
+
+- **WHEN** OAuth is active, `HYDROLIX_OAUTH_RESOURCE_URL` is unset, and `HYDROLIX_URL="https://cluster.example.com"` is set
+- **THEN** the `resource` field in the RFC 9728 JSON SHALL equal `"https://cluster.example.com"`
+
+#### Scenario: Resource URL set without audience
+
+- **WHEN** `HYDROLIX_OAUTH_RESOURCE_URL` is set
+- **AND** `HYDROLIX_OAUTH_AUDIENCE` is unset
+- **THEN** the worker SHALL raise `OAuthConfigError` during factory initialization
 
 ### Requirement: JWKS URI override and insecure transport flag
 
@@ -206,10 +251,10 @@ Across `mcp_hydrolix/auth/oauth.py`, `mcp_hydrolix/auth/mcp_providers.py`, `mcp_
 
 When `HYDROLIX_OAUTH_AUDIENCE` is parsed, the documented and tested default the operator is expected to configure SHALL be `mcp-hydrolix,config-api`. The default SHALL be documented in `docs/oauth.md`.
 
-#### Scenario: Documented default
+#### Scenario: docs/oauth.md documents the default audience value
 
-- **WHEN** the operator follows `docs/oauth.md` to register the OIDC client at the cluster-deployed IdP proxy
-- **THEN** the documented `HYDROLIX_OAUTH_AUDIENCE` value SHALL be `mcp-hydrolix,config-api`
+- **WHEN** `docs/oauth.md` on this branch is parsed
+- **THEN** it SHALL contain the literal string `mcp-hydrolix,config-api` as the documented example value for `HYDROLIX_OAUTH_AUDIENCE`
 
 ### Requirement: Valid bearer authenticates the request end-to-end
 
@@ -234,10 +279,10 @@ If the original plan doc cannot be located, the absence SHALL be documented in `
 
 #### Scenario: Checklist present and annotated
 
-- **WHEN** a reviewer opens `docs/oauth.md` on this branch
-- **THEN** a section titled `Security checklist (HDX-11133 section 4)` SHALL be present
-- **AND** that section SHALL contain at least 16 rows OR a documented account of why fewer rows are reproduced
-- **AND** each row SHALL carry either a "Signed off" annotation with one-line justification OR a "Carved out" annotation referencing a follow-up ticket
+- **WHEN** `docs/oauth.md` on this branch is parsed
+- **THEN** it SHALL contain a section heading matching `Security checklist (HDX-11133 section 4)`
+- **AND** that section SHALL contain at least 16 row entries OR an explicit documented account inside the section explaining why fewer rows are reproduced
+- **AND** every row SHALL carry either a `Signed off:` annotation followed by a one-line justification OR a `Carved out:` annotation followed by a follow-up ticket identifier matching the pattern `HDX-\d+`
 
 ### Requirement: SA credential fallback preserved
 
