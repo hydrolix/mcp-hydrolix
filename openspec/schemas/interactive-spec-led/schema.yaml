@@ -1,0 +1,178 @@
+name: interactive-spec-led
+version: 1
+description: Spec-led workflow with optional interactive discovery, no tasks.md - proposal → (discovery) → specs → design → apply
+artifacts:
+  - id: proposal
+    generates: proposal.md
+    description: Initial proposal document outlining the change
+    template: proposal.md
+    instruction: |
+      Create the proposal document that establishes WHY this change is needed.
+
+      Sections:
+      - **Why**: 1-2 sentences on the problem or opportunity. What problem does this solve? Why now?
+      - **What Changes**: Bullet list of changes. Be specific about new capabilities, modifications, or removals. Mark breaking changes with **BREAKING**.
+      - **Capabilities**: Identify which specs will be created or modified:
+        - **New Capabilities**: List capabilities being introduced. Each becomes a new `specs/<name>/spec.md`. Use kebab-case names (e.g., `user-auth`, `data-export`).
+        - **Modified Capabilities**: List existing capabilities whose REQUIREMENTS are changing. Only include if spec-level behavior changes (not just implementation details). Each needs a delta spec file. Check `openspec/specs/` for existing spec names. Leave empty if no requirement changes.
+      - **Impact**: Affected code, APIs, dependencies, or systems.
+
+      IMPORTANT: The Capabilities section is critical. It creates the contract between
+      proposal and specs phases. Research existing specs before filling this in.
+      Each capability listed here will need a corresponding spec file.
+
+      Keep it concise (1-2 pages). Focus on the "why" not the "how" -
+      implementation details belong in design.md.
+
+      This is the foundation - specs and design build on this.
+    requires: []
+
+  - id: discovery
+    generates: discovery.md
+    description: Interactive requirements Q&A resolved with the operator before specs
+    template: discovery.md
+    instruction: |
+      Create discovery.md by holding an INTERACTIVE Q&A with the operator
+      BEFORE writing specs or design. The purpose is to surface and resolve
+      ambiguity while change is still cheap - specs and design are expensive
+      to revise once committed.
+
+      When to include discovery.md (create only if any apply):
+      - Requirements are unclear, contested, or have unstated edge cases
+      - Multiple reasonable interpretations of the proposal exist
+      - The change touches behavior whose "right answer" depends on operator
+        intent (UX choices, migration shape, breaking-vs-compat tradeoffs)
+      - You catch yourself making non-trivial assumptions you can't ground
+        in the proposal or existing code
+
+      Skip discovery.md for small, unambiguous changes where the proposal
+      already pins the answer. Discovery is opt-in - using it for trivia
+      makes it useless for the cases that matter.
+
+      Process:
+      1. Read the proposal carefully. List the specific points where you'd
+         otherwise be guessing.
+      2. Ask the operator your questions interactively, ONE OR A FEW AT A TIME -
+         not as a giant batch. Wait for answers; let answers shape follow-up
+         questions. Use the AskUserQuestion mechanism where available.
+      3. Once questions are resolved, write discovery.md capturing:
+         - Questions Asked (audit trail)
+         - Decisions (question + answer + rationale + which spec/design
+           section the answer constrains)
+         - Deferred / Out of Scope (questions punted to a follow-up change)
+         - Assumptions (things treated as true without explicit confirmation,
+           where being wrong invalidates parts of the spec)
+
+      Discovery is NOT a retrospective notebook. If a question was never
+      actually asked of the operator, it does not belong here - use
+      design.md's "Open Questions" section for unresolved items that
+      surface later.
+
+      Specs and design SHALL reference discovery.md when present, treating
+      its Decisions as binding constraints.
+    requires:
+      - proposal
+
+  - id: specs
+    generates: "specs/**/*.md"
+    description: Detailed specifications for the change
+    template: spec.md
+    instruction: |
+      Create specification files that define WHAT the system should do.
+
+      If discovery.md exists, read it first and treat its Decisions as
+      binding constraints on the specs you write.
+
+      Create one spec file per capability listed in the proposal's Capabilities section.
+      - New capabilities: use the exact kebab-case name from the proposal (specs/<capability>/spec.md).
+      - Modified capabilities: use the existing spec folder name from openspec/specs/<capability>/ when creating the delta spec at specs/<capability>/spec.md.
+
+      Delta operations (use ## headers):
+      - **ADDED Requirements**: New capabilities
+      - **MODIFIED Requirements**: Changed behavior - MUST include full updated content
+      - **REMOVED Requirements**: Deprecated features - MUST include **Reason** and **Migration**
+      - **RENAMED Requirements**: Name changes only - use FROM:/TO: format
+
+      Format requirements:
+      - Each requirement: `### Requirement: <name>` followed by description
+      - Use SHALL/MUST for normative requirements (avoid should/may)
+      - Each scenario: `#### Scenario: <name>` with WHEN/THEN format
+      - **CRITICAL**: Scenarios MUST use exactly 4 hashtags (`####`). Using 3 hashtags or bullets will fail silently.
+      - Every requirement MUST have at least one scenario.
+
+      MODIFIED requirements workflow:
+      1. Locate the existing requirement in openspec/specs/<capability>/spec.md
+      2. Copy the ENTIRE requirement block (from `### Requirement:` through all scenarios)
+      3. Paste under `## MODIFIED Requirements` and edit to reflect new behavior
+      4. Ensure header text matches exactly (whitespace-insensitive)
+
+      Common pitfall: Using MODIFIED with partial content loses detail at archive time.
+      If adding new concerns without changing existing behavior, use ADDED instead.
+
+      Example:
+      ```
+      ## ADDED Requirements
+
+      ### Requirement: User can export data
+      The system SHALL allow users to export their data in CSV format.
+
+      #### Scenario: Successful export
+      - **WHEN** user clicks "Export" button
+      - **THEN** system downloads a CSV file with all user data
+
+      ## REMOVED Requirements
+
+      ### Requirement: Legacy export
+      **Reason**: Replaced by new export system
+      **Migration**: Use new export endpoint at /api/v2/export
+      ```
+
+      Specs should be testable - each scenario is a potential test case.
+    requires:
+      - proposal
+
+  - id: design
+    generates: design.md
+    description: Technical design document with implementation details
+    template: design.md
+    instruction: |
+      Create the design document that explains HOW to implement the change.
+
+      If discovery.md exists, read it first and treat its Decisions as
+      binding constraints on the design choices you make.
+
+      When to include design.md (create only if any apply):
+      - Cross-cutting change (multiple services/modules) or new architectural pattern
+      - New external dependency or significant data model changes
+      - Security, performance, or migration complexity
+      - Ambiguity that benefits from technical decisions before coding
+
+      Sections:
+      - **Context**: Background, current state, constraints, stakeholders
+      - **Goals / Non-Goals**: What this design achieves and explicitly excludes
+      - **Decisions**: Key technical choices with rationale (why X over Y?). Include alternatives considered for each decision.
+      - **Risks / Trade-offs**: Known limitations, things that could go wrong. Format: [Risk] → Mitigation
+      - **Migration Plan**: Steps to deploy, rollback strategy (if applicable)
+      - **Open Questions**: Outstanding decisions or unknowns to resolve
+
+      Focus on architecture and approach, not line-by-line implementation.
+      Reference the proposal for motivation and specs for requirements.
+
+      Good design docs explain the "why" behind technical decisions.
+    requires:
+      - proposal
+
+apply:
+  requires: [specs, design]
+  instruction: |
+    Read the proposal, specs, and design. Infer a task list on the fly from
+    those artifacts and implement directly against the specs' requirements and
+    scenarios (each scenario is a potential test case).
+
+    This workflow intentionally omits tasks.md: modern coding agents (Sonnet,
+    Opus) can derive a reasonable task ordering from specs.md and design.md
+    without a separately maintained checklist, and we'd rather not pay the
+    cost (and review overhead) of keeping that checklist in sync with the specs
+    and the code.
+
+    Pause if you hit blockers or need clarification.
