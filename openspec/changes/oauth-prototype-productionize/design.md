@@ -1,8 +1,8 @@
 ## Context
 
-The OAuth prototype on `il/feature/oauth-support/hdx-11133` is investigation-grade: it covers the functional shape (RS256 verifier, OIDC discovery, JWKS preflight, RFC 9728 metadata, SA-credential fallback) with 8 test files, but hasn't been re-verified against current `main` deps. HDX-11133 was scoped as a spike; production-readiness was out of scope. Prototype `main.py` calls `_maybe_activate_oauth()`, which `asyncio.run`s `try_activate_oauth(cfg)` and mutates `mcp.auth` — once, in the Gunicorn-era supervisor.
+The OAuth prototype on `il/feature/oauth-support/hdx-11133` is investigation-grade: it covers the functional shape (RS256 verifier, OIDC discovery, JWKS preflight, RFC 9728 metadata, SA-credential fallback) with 8 test files, but hasn't been re-verified against current `main` deps. [HDX-11133](https://hydrolix.atlassian.net/browse/HDX-11133) was scoped as a spike; production-readiness was out of scope. Prototype `main.py` calls `_maybe_activate_oauth()`, which `asyncio.run`s `try_activate_oauth(cfg)` and assigns `mcp.auth = provider` — once, in the Gunicorn-era supervisor.
 
-Since then, `main` absorbed HDX-10675 (gunicorn → uvicorn). The new entrypoint:
+Since then, `main` absorbed [HDX-10675](https://hydrolix.atlassian.net/browse/HDX-10675) (gunicorn → uvicorn). The new entrypoint:
 
 ```
 main.py: uvicorn.run("mcp_hydrolix.webapp:create_app", factory=True, workers=N)
@@ -16,8 +16,8 @@ The production IdP is the cluster-deployed OIDC proxy being developed concurrent
 **Stakeholders**: cluster operators running mcp-hydrolix as an OAuth-authenticated pod behind Traefik at `/mcp`; internal o6r-managed pods using the SA-token chain; laptop/stdio users (no OAuth).
 
 **Binding prior work**:
-- HDX-10675 — `webapp.py:create_app` is the activation site.
-- HDX-11441 (`HYDROLIX_URL`) — separates "cluster URL" from "OAuth issuer URL". Spec PR [#101](https://github.com/hydrolix/mcp-hydrolix/pull/101) open; runtime PR not yet open. This change adds the non-conflation guard regardless.
+- [HDX-10675](https://hydrolix.atlassian.net/browse/HDX-10675) — `webapp.py:create_app` is the activation site.
+- [HDX-11441](https://hydrolix.atlassian.net/browse/HDX-11441) (`HYDROLIX_URL`) — separates "cluster URL" from "OAuth issuer URL". Spec PR [#101](https://github.com/hydrolix/mcp-hydrolix/pull/101) open; runtime PR not yet open. This change adds the non-conflation guard regardless.
 - Prototype `oauth.py` public surface (`OAuthConfig`, `load_oauth_config`, `try_activate_oauth`, `OAuthBearerToken`, `OAuthHydrolixAuthProvider`) is the starting point — preserved by default, revised if rebase or review reveals an issue.
 
 ## Two-track structure: IdP-agnostic code, IdP-coupled rollout
@@ -26,9 +26,9 @@ Two goals look contradictory but aren't:
 
 1. **Code is as IdP-agnostic as possible.** The verifier consumes standard OIDC discovery + JWKS; nothing in `oauth.py`, `webapp.py`, the env-var surface, or the test fixtures encodes which OIDC product issues the tokens. The **one deliberate exception** — encapsulated in a single function (see "Single IdP coupling point" below) — is inferring the canonical IdP endpoints from `HYDROLIX_URL`.
 
-2. **Rollout and end-to-end testing are coupled to HDX-11431.** The "exercise against IdP" gate, the operator-facing docs, and the security checklist all target the cluster-deployed proxy — not Keycloak, not a generic OIDC provider, not the prototype's investigation-time fixtures.
+2. **Rollout and end-to-end testing are coupled to [HDX-11431](https://hydrolix.atlassian.net/browse/HDX-11431).** The "exercise against IdP" gate, the operator-facing docs, and the security checklist all target the cluster-deployed proxy — not Keycloak, not a generic OIDC provider, not the prototype's investigation-time fixtures.
 
-Track 1 is what lets this work proceed in parallel with HDX-11431. Track 2 is what delivers a coherent, testable feature when both pieces meet. Read the rest of this doc with the split in mind: code constraints live on track 1 and are IdP-agnostic; validation and rollout constraints live on track 2 and target HDX-11431.
+Track 1 is what lets this work proceed in parallel with [HDX-11431](https://hydrolix.atlassian.net/browse/HDX-11431). Track 2 is what delivers a coherent, testable feature when both pieces meet. Read the rest of this doc with the split in mind: code constraints live on track 1 and are IdP-agnostic; validation and rollout constraints live on track 2 and target [HDX-11431](https://hydrolix.atlassian.net/browse/HDX-11431).
 
 ## Goals / Non-Goals
 
@@ -43,7 +43,7 @@ Track 1 is what lets this work proceed in parallel with HDX-11431. Track 2 is wh
 
 ### Non-Goals
 
-- Implementing `HYDROLIX_URL` itself (HDX-11441, separate change tracked by spec PR [#101](https://github.com/hydrolix/mcp-hydrolix/pull/101)). The non-conflation test treats `HYDROLIX_URL` as a string operators may have set; it does not require the URL-derivation logic from HDX-11441 to be present.
+- Implementing `HYDROLIX_URL` itself ([HDX-11441](https://hydrolix.atlassian.net/browse/HDX-11441), separate change tracked by spec PR [#101](https://github.com/hydrolix/mcp-hydrolix/pull/101)). The non-conflation test treats `HYDROLIX_URL` as a string operators may have set; it does not require the URL-derivation logic from [HDX-11441](https://hydrolix.atlassian.net/browse/HDX-11441) to be present.
 - Refresh-token flow, token introspection, or DPoP. The verifier uses local JWKS verification only.
 - Adding new audience values beyond `mcp-hydrolix,config-api`.
 - Adding `webapp.py` to the prototype branch as part of the rebase merge; `webapp.py` is owned by `main` and OAuth code must adapt to it.
@@ -59,7 +59,7 @@ OAuth activation happens inside the factory, once per worker process. The flow i
 # webapp.py (post-merge)
 def create_app():
     config = get_config()
-    _activate_oauth_if_configured()     # NEW; mutates module-level mcp.auth
+    _activate_oauth_if_configured()     # NEW; sets mcp.auth on the singleton
     app = mcp.http_app(...)
     app = RequestTimeoutMiddleware(app, timeout=config.mcp_timeout)
     return app
@@ -67,9 +67,22 @@ def create_app():
 
 **Why here**: Workers re-import `webapp.py`; the supervisor never imports `mcp_server.mcp` (the lazy-import note in `main.py` is explicit about this). The factory is the only place `mcp` is guaranteed to exist in the worker's address space.
 
-**Not a FastMCP lifespan event**: Lifespan events fire after `http_app` is constructed; mutating `mcp.auth` before construction is simpler when activation fails and we want to keep serving with the credential chain. Lifespan would also couple OAuth preflight to MCP server lifespan unnecessarily.
+**Not a FastMCP lifespan event**: Lifespan events fire after `http_app` is constructed; setting `mcp.auth` before construction is simpler when activation fails and we want to keep serving with the credential chain. Lifespan would also couple OAuth preflight to MCP server lifespan unnecessarily.
 
 **Rejected alternatives**: activate in the supervisor (fails — `mcp.auth` doesn't propagate to spawn workers); per-request lazy activation (first-request latency, worker race window); `subprocess_setup` callback (uvicorn doesn't expose one cleanly, same per-worker I/O cost as the factory path).
+
+### Decision: Configure auth via `mcp.auth = provider`, not the `FastMCP(auth=...)` constructor
+
+FastMCP exposes `auth: AuthProvider | None` as a constructor parameter on `FastMCP(...)`; `http_app(...)` does **not** take an `auth=` parameter. The two viable shapes for our codebase are therefore:
+
+1. Construct `FastMCP(..., auth=provider)` inside `create_app()`.
+2. Construct `FastMCP(...)` once at module scope (as today) and assign `mcp.auth = provider` in the factory before `mcp.http_app(...)`.
+
+We pick (2). `mcp` is a module-level singleton; `mcp_server.py` registers every tool and custom route via `@mcp.tool` / `@mcp.custom_route` decorators bound to that instance at import time. Option (1) would require relocating all tool registrations into the factory (or into a registration function called from the factory) so they bind to the per-worker instance — a structural change well outside this change's scope.
+
+`mcp.auth` is a public, documented attribute on `FastMCP`; the value written there is the same value the constructor's `auth=` would store, and `http_app(...)` reads it at the same point when building the ASGI app. So the assignment is FastMCP's supported post-construction configuration seam for our singleton shape, not a workaround.
+
+**Follow-up worth tracking but not doing here**: if we later want construction-time auth (e.g. to make `mcp` immutable after import, or to support multiple `FastMCP` instances per process), the lift is "move tool registration into a `register_tools(mcp)` function called from `create_app()`." That's a self-contained refactor independent of OAuth.
 
 ### Decision: Single IdP coupling point — `canonical_idp_endpoints(hydrolix_url)`
 
@@ -91,9 +104,9 @@ This is the one place the cluster-URL-to-IdP convention lives. Reviewers can gre
 
 **Config resolution**: `load_oauth_config()` resolves the issuer with precedence `HYDROLIX_OAUTH_ISSUER` (explicit) > `canonical_idp_endpoints(HYDROLIX_URL).issuer` (derived) > unset (no activation). `HYDROLIX_OAUTH_JWKS_URI` follows the same pattern; `.address` is reserved for future health checks / observability and may be unused initially.
 
-**Body raises `NotImplementedError` until HDX-11431**: The URL convention is the turbine-API team's deliverable. Placeholder URLs were considered and rejected — they'd produce activation flows that look correct in tests but talk to an IdP that won't exist on the eventually-published convention. The strict behavior is honest about the current capability surface and forces operators to set `HYDROLIX_OAUTH_ISSUER` explicitly during the interim. Tests pin the eventual contract via the spec's post-HDX-11431 scenarios; replacing the body is a one-function diff.
+**Body raises `NotImplementedError` until [HDX-11431](https://hydrolix.atlassian.net/browse/HDX-11431)**: The URL convention is the turbine-API team's deliverable. Placeholder URLs were considered and rejected — they'd produce activation flows that look correct in tests but talk to an IdP that won't exist on the eventually-published convention. The strict behavior is honest about the current capability surface and forces operators to set `HYDROLIX_OAUTH_ISSUER` explicitly during the interim. Tests pin the eventual contract via the spec's post-[HDX-11431](https://hydrolix.atlassian.net/browse/HDX-11431) scenarios; replacing the body is a one-function diff.
 
-**Why not put it in HDX-11441's module**: HDX-11441 owns `HYDROLIX_URL` parsing and should not know what OAuth is. Keeping the function in `auth/` keeps the dependency direction right.
+**Why not put it in [HDX-11441](https://hydrolix.atlassian.net/browse/HDX-11441)'s module**: [HDX-11441](https://hydrolix.atlassian.net/browse/HDX-11441) owns `HYDROLIX_URL` parsing and should not know what OAuth is. Keeping the function in `auth/` keeps the dependency direction right.
 
 ### Decision: `asyncio.run(try_activate_oauth(cfg))` replaced with `asyncio.run` *inside* the factory (top-level, no running loop)
 
@@ -112,7 +125,7 @@ Symbol moves from `main.py` to `webapp.py`; the prototype's `_maybe_activate_oau
 The factory has two ways to fatally abort startup:
 
 - `OAuthConfigError` from `load_oauth_config()` for partial / malformed `HYDROLIX_OAUTH_*` configuration (operator error).
-- `NotImplementedError` from `canonical_idp_endpoints` for the pre-HDX-11431 stub case — propagates directly, **not** wrapped as `OAuthConfigError`, so operators can distinguish "I set something wrong" from "this code path doesn't exist yet."
+- `NotImplementedError` from `canonical_idp_endpoints` for the pre-[HDX-11431](https://hydrolix.atlassian.net/browse/HDX-11431) stub case — propagates directly, **not** wrapped as `OAuthConfigError`, so operators can distinguish "I set something wrong" from "this code path doesn't exist yet."
 
 Network/discovery failures stay fail-open (the worker logs WARNING and serves with the credential chain only).
 
@@ -120,7 +133,7 @@ Network/discovery failures stay fail-open (the worker logs WARNING and serves wi
 
 ### Decision: Non-conflation is a verifier invariant, not a startup check
 
-The verifier rejects any JWT whose `iss` doesn't exactly match the resolved issuer; that's sufficient to make `iss=<HYDROLIX_URL>` unreachable. We don't add a startup check that `HYDROLIX_OAUTH_ISSUER != HYDROLIX_URL` because (a) HDX-11441's runtime PR hasn't landed, so `HYDROLIX_URL` may be unset, and (b) a startup check would couple this change to HDX-11441's env-var surface for no security benefit.
+The verifier rejects any JWT whose `iss` doesn't exactly match the resolved issuer; that's sufficient to make `iss=<HYDROLIX_URL>` unreachable. We don't add a startup check that `HYDROLIX_OAUTH_ISSUER != HYDROLIX_URL` because (a) [HDX-11441](https://hydrolix.atlassian.net/browse/HDX-11441)'s runtime PR hasn't landed, so `HYDROLIX_URL` may be unset, and (b) a startup check would couple this change to [HDX-11441](https://hydrolix.atlassian.net/browse/HDX-11441)'s env-var surface for no security benefit.
 
 The test (`tests/auth/test_oauth_verifier.py::test_iss_equal_to_hydrolix_url_rejected`) mints a token with `iss` set to a hypothetical cluster URL and asserts 401, independent of real `HYDROLIX_URL` state.
 
@@ -152,8 +165,8 @@ Prototype `main.py` still imports `gunicorn.app.base.BaseApplication` and define
    - Call it inside `create_app()` before `mcp.http_app(...)`.
 
 3. **Add the IdP coupling seam**:
-   - Create `mcp_hydrolix/auth/idp_endpoints.py` with `CanonicalIdPEndpoints` and `canonical_idp_endpoints(hydrolix_url)`. Body raises `NotImplementedError` referencing HDX-11431. No placeholder URLs.
-   - Wire `load_oauth_config()` to attempt derivation when `HYDROLIX_OAUTH_ISSUER` is unset and `HYDROLIX_URL` is set. `NotImplementedError` propagates through factory initialization; the worker terminates with the HDX-11431-referencing message.
+   - Create `mcp_hydrolix/auth/idp_endpoints.py` with `CanonicalIdPEndpoints` and `canonical_idp_endpoints(hydrolix_url)`. Body raises `NotImplementedError` referencing [HDX-11431](https://hydrolix.atlassian.net/browse/HDX-11431). No placeholder URLs.
+   - Wire `load_oauth_config()` to attempt derivation when `HYDROLIX_OAUTH_ISSUER` is unset and `HYDROLIX_URL` is set. `NotImplementedError` propagates through factory initialization; the worker terminates with the [HDX-11431](https://hydrolix.atlassian.net/browse/HDX-11431)-referencing message.
    - Add `tests/auth/test_idp_endpoints.py`: the stub raises `NotImplementedError` with `HDX-11431` in the message; the eventual-return contract (frozen four-field record, equal on same input, non-conflation invariant) as xfail/skipped tests that flip to passing when the body is replaced.
 
 4. **Test fixups**:
@@ -167,7 +180,7 @@ Prototype `main.py` still imports `gunicorn.app.base.BaseApplication` and define
    - Port `docs/oauth.md`; update the deployment section to reference `mcp_hydrolix.webapp:create_app` (drop any Gunicorn instructions).
    - Document `HYDROLIX_OAUTH_AUDIENCE="mcp-hydrolix,config-api"` as the example operators should configure.
    - Add a `Security checklist (HDX-11133 section 4)` section reproducing the 16-row checklist verbatim, each row annotated `Signed off:` (with one-line justification) or `Carved out:` (with a `HDX-\d+` follow-up ticket). If the plan doc can't be located, document that in the section and treat the missing rows as carve-outs requiring follow-up tickets before OAuth is enabled in production.
-   - Do **not** port `docs/keycloak-mcp-client.json`. It's a HDX-11133 investigation artifact tied to a specific Keycloak setup; the production client registration doc lands in a follow-up once the IdP proxy publishes its registration shape.
+   - Do **not** port `docs/keycloak-mcp-client.json`. It's a [HDX-11133](https://hydrolix.atlassian.net/browse/HDX-11133) investigation artifact tied to a specific Keycloak setup; the production client registration doc lands in a follow-up once the IdP proxy publishes its registration shape.
 
 6. **Verification gates** (before opening PR):
    - `uv run pytest tests/auth/` and `uv run pytest` (full suite) — all green.
