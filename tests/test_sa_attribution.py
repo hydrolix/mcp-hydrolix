@@ -99,10 +99,18 @@ class TestSAAttributionMiddleware:
         assert rec.service_account_id == "sa-uuid-123"
         assert rec.tool_name == "run_select_query"
 
-    def test_does_not_log_when_no_access_token(self, monkeypatch, caplog):
+    def test_does_not_log_when_no_access_token_and_no_env_credential(self, monkeypatch, caplog):
+        """No per-request token AND no env-configured default credential
+        (raises ValueError from creds_with) — middleware skips silently."""
         from mcp_hydrolix import sa_attribution
 
         monkeypatch.setattr(sa_attribution, "get_access_token", lambda: None)
+
+        class _NoCredsConfig:
+            def creds_with(self, _request_credential):
+                raise ValueError("no credentials")
+
+        monkeypatch.setattr(sa_attribution, "get_config", lambda: _NoCredsConfig())
 
         mw = sa_attribution.SAAttributionMiddleware()
         with caplog.at_level(logging.INFO, logger="mcp_hydrolix.sa_attribution"):
@@ -110,6 +118,36 @@ class TestSAAttributionMiddleware:
 
         assert result == "downstream-result"
         assert not any(r.name == "mcp_hydrolix.sa_attribution" for r in caplog.records)
+
+    def test_falls_back_to_env_default_credential_for_stdio(self, monkeypatch, caplog):
+        """For stdio transport (Claude Code's default), HYDROLIX_TOKEN becomes
+        the env-configured default credential — it is NOT injected per-request
+        and ``get_access_token()`` returns None. The middleware must fall back
+        to the default credential via ``creds_with(None)`` so attribution still
+        fires for stdio. This is the most common Claude Code setup."""
+        from mcp_hydrolix import sa_attribution
+        from mcp_hydrolix.auth.credentials import ServiceAccountToken
+
+        monkeypatch.setattr(sa_attribution, "get_access_token", lambda: None)
+
+        env_credential = ServiceAccountToken(
+            _make_jwt(_base_claims()), expected_iss="https://test.invalid/config"
+        )
+
+        class _StdioConfig:
+            def creds_with(self, request_credential):
+                return request_credential if request_credential is not None else env_credential
+
+        monkeypatch.setattr(sa_attribution, "get_config", lambda: _StdioConfig())
+
+        mw = sa_attribution.SAAttributionMiddleware()
+        with caplog.at_level(logging.INFO, logger="mcp_hydrolix.sa_attribution"):
+            result = asyncio.run(mw.on_request(_ctx("tools/call", tool_name="list_databases"), _ok))
+
+        assert result == "downstream-result"
+        rec = next(r for r in caplog.records if r.name == "mcp_hydrolix.sa_attribution")
+        assert rec.service_account_id == "sa-uuid-123"
+        assert rec.tool_name == "list_databases"
 
     def test_skips_log_when_credential_is_not_a_service_account_token(self, monkeypatch, caplog):
         """If a future ``AccessToken`` subclass yields a non-SA credential
