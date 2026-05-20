@@ -64,20 +64,26 @@
 
 <!--
   Copy the ENTIRE existing requirement block (header + every scenario) from
-  openspec/specs/<cap>/spec.md, then edit. Header MUST be byte-identical.
+  openspec/specs/<cap>/spec.md, then edit. Header MUST be byte-identical
+  (apply pre-flight verifies this against the existing archived spec).
+  Delete this whole section if no requirements are being modified.
 -->
 
 ### Requirement: <Existing Title Case Name>
+<!-- settle: explore/<slug> -->
 
 <updated requirement statement (RFC 2119 / BCP 14 keywords)>
 
 #### Scenario: <Existing Or New Scenario Name>
+<!-- settle: explore/<slug> -->
 
 - **GIVEN** ...
 - **WHEN** ...
 - **THEN** ...
 
 ## REMOVED Requirements
+
+<!-- Delete this whole section if no requirements are being removed. -->
 
 ### Requirement: <Title Case Name>
 

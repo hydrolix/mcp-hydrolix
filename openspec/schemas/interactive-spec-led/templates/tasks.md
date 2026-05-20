@@ -34,6 +34,12 @@
   finds verify by the literal token `verify:` regardless of separator,
   but the em-dash form is what reviewers expect.
 
+  Task states (valid checkbox forms; opsx:apply maintains them):
+  - `- [ ]` open / not started
+  - `- [x]` complete and verify passed
+  - `- [-]` complete-but-verify-deferred (verify could not run in the
+    apply environment; the limitation is reported at post-execution).
+
   Anti-patterns:
   - Tasks without a verify clause.
   - Prose paragraphs between bullets.
@@ -43,6 +49,8 @@
     form of the heading (use the slug rule, not the raw heading text).
   - Citing `meta/<kind>` with a `<kind>` outside `tests`, `docs`,
     `migration`, `rollout`, `tooling` (apply pre-flight rejects others).
+  - Bundling N scenarios under one test task (apply pre-flight rejects
+    scenarios with no matching verify clause).
 
   Phases are descriptive — use as many or as few as the work needs. The
   layout below is illustrative.

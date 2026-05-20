@@ -53,19 +53,21 @@
 - **Rationale:** <why this answer; alternatives ruled out>
 - **Affects:** <artifact + section, e.g. `specs/<cap>/spec.md → Requirement: <Title Case Name>`>
 
+<!--
 ## No Ambiguity
 
-<!--
-  USE THIS BLOCK INSTEAD OF `## Decisions` (delete the Decisions section
-  above). One short paragraph: why the proposal needed no clarifying
-  questions, plus explicit reference to the operator's confirmation
-  (cite the prompt or message). MUST be operator-confirmed; do NOT
-  self-declare. Example: "Change is a mechanical rename with no
-  behavioral impact; operator confirmed via AskUserQuestion prompt on
-  YYYY-MM-DD."
--->
+USE THIS BLOCK INSTEAD OF `## Decisions` (delete the Decisions section
+above and uncomment THIS block). One short paragraph: why the proposal
+needed no clarifying questions, plus explicit reference to the
+operator's confirmation (cite the prompt or message). MUST be
+operator-confirmed; do NOT self-declare. Example: "Change is a
+mechanical rename with no behavioral impact; operator confirmed via
+AskUserQuestion prompt on YYYY-MM-DD."
 
-<short paragraph citing operator confirmation; delete this whole `## No Ambiguity` section if the `## Decisions` section above is in use>
+Apply pre-flight rejects (a) a No Ambiguity block alongside a live
+Decisions block, and (b) a No Ambiguity block with no operator
+confirmation cited.
+-->
 
 ## Deferred / Out of Scope
 
