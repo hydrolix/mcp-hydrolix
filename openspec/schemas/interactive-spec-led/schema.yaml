@@ -9,9 +9,15 @@ description: Spec-led workflow with mandatory interactive exploration — propos
 #
 # Naming conventions (load-bearing — verify keys on these):
 # - Capabilities: kebab-case (e.g. `connection-config`).
-# - Requirement names: PascalCase, no spaces, no punctuation
-#   (e.g. `UrlParsing`). Citations in tasks.md MUST be byte-identical.
-# - Decision slugs (explore.md, design.md): kebab-case.
+# - Requirement headings: Title Case With Spaces (OpenSpec / RFC 2119
+#   convention), e.g. `### Requirement: Activation Gated On Env Vars`.
+#   Tasks cite requirements by the kebab-case slug derived from the
+#   heading text: lowercase, whitespace → `-`, strip `[^a-z0-9-]`,
+#   collapse consecutive `-`, trim leading/trailing `-`.
+#   So `Activation Gated On Env Vars` ↔ slug `activation-gated-on-env-vars`.
+# - Decision headings (explore.md, design.md): `### Decision: <decision-slug>`
+#   where the slug is kebab-case. Tasks cite design / explore decisions by
+#   the same slug, e.g. `[implements: design/activation-site]`.
 # - Capability section headings in proposal.md: `### New` and `### Modified`
 #   (exactly those, H3).
 #
@@ -103,13 +109,13 @@ artifacts:
         chronological order. Write `*none — see No Ambiguity below*` if the
         escape hatch is used.
       - **Decisions** (default shape; mutually exclusive with No Ambiguity):
-        one `### <decision-slug>` block per resolved question, with
-        Question / Answer / Rationale / Affects. The decision-slug is a
-        short kebab-case identifier — downstream artifacts cite decisions
+        one `### Decision: <decision-slug>` block per resolved question,
+        with Question / Answer / Rationale / Affects. The decision-slug is
+        a short kebab-case identifier — downstream artifacts cite decisions
         by this slug (e.g. `[implements: explore/transport-port-handling]`).
         **Affects** MUST name a real artifact + section the decision binds,
-        using the spec heading verbatim including the space after the colon
-        (e.g. ``specs/auth/spec.md → Requirement: Login``), NOT a placeholder.
+        using the spec heading verbatim (e.g. ``specs/auth/spec.md →
+        Requirement: User Authentication``), NOT a placeholder.
       - **Deferred / Out of Scope**: bullets, "<topic> — <why deferred>". Write
         "*none*" if not applicable.
       - **Assumptions**: bullets, "<assumption> — <what breaks if false>".
@@ -168,11 +174,19 @@ artifacts:
         > (excluding `*none*`). The number of spec files you have created
         > MUST equal that count. If not, stop and reconcile.
 
-      Requirement naming (load-bearing for citations):
-      - Requirement headings: `### Requirement: <PascalCaseName>` — PascalCase,
-        no spaces, no punctuation (e.g. `UrlParsing`, `LoginWithToken`). The
-        heading text is what tasks.md cites byte-for-byte; spaces or
-        punctuation in the name will break citations.
+      Requirement naming (matches OpenSpec / RFC 2119; load-bearing for citations):
+      - Requirement headings: `### Requirement: <Title Case Name>` — words
+        Title-Cased, separated by spaces (e.g. `Activation Gated On Env Vars`,
+        `Url Parsing`). Avoid punctuation other than internal hyphens in
+        compound words (e.g. `Two-Factor Authentication` is fine).
+      - Tasks cite requirements via the kebab-case SLUG of the heading,
+        derived deterministically: lowercase, whitespace → `-`, strip
+        `[^a-z0-9-]`, collapse consecutive `-`, trim leading/trailing `-`.
+        Example: heading `### Requirement: Activation Gated On Env Vars`
+        ↔ citation `[implements: oauth-authentication/activation-gated-on-env-vars]`.
+      - Scenario headings: `#### Scenario: <Title Case Scenario Name>` (same
+        spacing rule). The scenario-slug used in `verify:` clauses and test
+        function names is derived from the heading by the same kebab rule.
 
       Delta operation headers (`##`):
       - **ADDED Requirements** — net-new requirements.
@@ -182,16 +196,21 @@ artifacts:
       - **RENAMED Requirements** — `FROM:` / `TO:` only.
 
       Format (the formatter is strict — these are the silent-failure traps):
-      - `### Requirement: <PascalCaseName>` followed by the requirement
+      - `### Requirement: <Title Case Name>` followed by the requirement
         statement. Use the RFC 2119 / BCP 14 keywords (MUST, SHALL,
         SHOULD, MAY and their negatives) with their RFC 2119 meanings;
         prefer MUST / SHALL for binding requirements.
-      - `#### Scenario: <name>` — EXACTLY 4 hashtags. 3 hashtags or bullet
-        form parses as part of the requirement description and the scenario
-        is lost.
-      - WHEN / THEN bullets: `- **WHEN** <trigger>` / `- **THEN** <observable
-        outcome>`. Multiple WHEN/THEN pairs allowed; AND continuation as
-        `- **AND** ...`.
+      - `#### Scenario: <Title Case Scenario Name>` — EXACTLY 4 hashtags.
+        3 hashtags or bullet form parses as part of the requirement
+        description and the scenario is lost.
+      - GIVEN / WHEN / THEN bullets (Gherkin-style, matching OpenSpec):
+        - `- **GIVEN** <precondition state>` — RECOMMENDED when the
+          scenario depends on prior state; omit only when the scenario has
+          no meaningful precondition.
+        - `- **WHEN** <trigger event>` — the action that fires the scenario.
+        - `- **THEN** <observable outcome>` — the assertion.
+        - `- **AND** <additional clause>` — continues whichever block it
+          follows (GIVEN, WHEN, or THEN).
       - Every requirement MUST have at least one scenario. A requirement
         without a scenario fails verification.
 
@@ -254,9 +273,10 @@ artifacts:
         Bulleted, ≤ 8 bullets. No background recap from the proposal.
       - **Goals / Non-Goals**: bulleted, ≤ 5 bullets each. Non-Goals exist
         to prevent scope creep.
-      - **Decisions**: one `### <decision-slug>` block per key technical
-        choice. The decision-slug is a short kebab-case identifier —
-        tasks.md cites decisions by this slug
+      - **Decisions**: one `### Decision: <decision-slug>` block per key
+        technical choice. The `Decision:` prefix matches OpenSpec
+        convention; the decision-slug after it is a short kebab-case
+        identifier. Tasks.md cites decisions by this slug
         (e.g. `[implements: design/version-probe-port]`). Each block MUST
         include:
         - **Choice**: the decision in one sentence.
@@ -308,14 +328,17 @@ artifacts:
       - Tasks: `- [ ] N.M <imperative verb>: <concise deliverable>`.
       - Each task MUST cite at least one binding source it implements,
         on the same line, using one of these forms:
-        - `[implements: <capability-folder>/<PascalCaseName>]` —
+        - `[implements: <capability-folder>/<requirement-slug>]` —
           `<capability-folder>` is the folder name under `specs/`
-          (e.g. `connection-config`). `<PascalCaseName>` is the EXACT
-          PascalCase text after `### Requirement: ` in that spec.
-        - `[implements: design/<decision-slug>]` — slug after `### ` in
-          design.md Decisions.
-        - `[implements: explore/<decision-slug>]` — slug after `### ` in
-          explore.md Decisions.
+          (e.g. `connection-config`). `<requirement-slug>` is the
+          kebab-case SLUG derived from the requirement heading text:
+          lowercase, whitespace → `-`, strip `[^a-z0-9-]`, collapse
+          consecutive `-`, trim. So heading `### Requirement: Url Parsing`
+          → slug `url-parsing`.
+        - `[implements: design/<decision-slug>]` — slug after `Decision: `
+          in design.md Decisions.
+        - `[implements: explore/<decision-slug>]` — slug after `Decision: `
+          in explore.md Decisions.
         - `[implements: meta/<kind>]` where `<kind>` ∈ `tests`, `docs`,
           `migration`, `rollout`, `tooling`. Use for tasks that don't
           map to a spec requirement or explicit decision (e.g. wire up
@@ -324,10 +347,10 @@ artifacts:
           every `meta/tests` task MUST cite the requirement whose
           scenario it tests (see Test-task rule below).
         Multiple citations comma-separated. Example:
-        `- [ ] 1.1 Parse URL: parse HYDROLIX_URL into host/scheme [implements: connection-config/UrlParsing, design/url-port-precedence] — verify: pytest -q tests/test_url_parsing.py`
+        `- [ ] 1.1 Parse URL: parse HYDROLIX_URL into host/scheme [implements: connection-config/url-parsing, design/url-port-precedence] — verify: pytest -q tests/test_url_parsing.py`
       - Each task MUST end with a `verify:` clause naming the concrete
-        check that proves it done (e.g. `verify: scenario "ParsesValidUrl"
-        passes`, `verify: \`pytest -q tests/test_x.py::TestY\` green`,
+        check that proves it done (e.g. `verify: scenario "Parses Valid Url"
+        passes`, `verify: \`pytest -q tests/test_x.py::test_parses_valid_url\` green`,
         `verify: \`ruff check\` clean`).
       - Order so each task is unblocked by predecessors. Don't gate code
         on rollout tasks; don't gate tests on rollout.
@@ -336,10 +359,10 @@ artifacts:
       For every `#### Scenario:` in your specs, schedule at least one
       tasks.md entry that adds or updates a test corresponding to that
       scenario. Cite it as
-      `[implements: <capability-folder>/<PascalCaseName>, meta/tests]`,
-      where `<PascalCaseName>` is the parent requirement's name (not the
-      scenario name) byte-identical to the spec heading. A scenario
-      without a corresponding test task is a generation defect.
+      `[implements: <capability-folder>/<requirement-slug>, meta/tests]`,
+      where `<requirement-slug>` is the kebab-case slug of the parent
+      requirement's heading (not the scenario name). A scenario without
+      a corresponding test task is a generation defect.
 
       Test naming convention (use this when writing `verify:` clauses
       for test tasks, so they match what /opsx:apply will produce):
@@ -347,8 +370,8 @@ artifacts:
         in the capability name (e.g. capability `connection-config`
         → `tests/test_connection_config.py`).
       - Test function: `test_<scenario-slug>` where the slug is the
-        kebab-case form of the scenario name (e.g. scenario
-        `ParsesValidUrl` → `test_parses_valid_url`).
+        kebab-case form of the scenario heading text (e.g. scenario
+        `Parses Valid Url` → `test_parses_valid_url`).
       - If the repo has an established convention that differs, follow
         the repo but keep the scenario name visible in the test name.
 
@@ -364,7 +387,8 @@ artifacts:
       - Tasks that bundle multiple deliverables. If you'd open more than
         one PR for a task, split it.
       - Tasks with no `[implements: ...]` citation.
-      - Citing a Requirement name that doesn't byte-match the spec heading.
+      - Citing a requirement with a slug that doesn't match the
+        kebab-derived form of the heading (use the slug rule, not the raw heading).
 
       Length: as long as needed; brevity per task, density across the list.
     requires:
@@ -389,6 +413,12 @@ apply:
     3. Task-citation check:
        - For every task in tasks.md, confirm a `[implements: ...]` citation
          is present. If any task lacks one, STOP.
+       - For every `[implements: <cap>/<slug>]` citation, confirm `<cap>`
+         is a real folder under this change's `specs/` and `<slug>` matches
+         the kebab-case slug of some `### Requirement:` heading in
+         `specs/<cap>/spec.md` (apply the slug rule: lowercase,
+         whitespace → `-`, strip `[^a-z0-9-]`, collapse consecutive `-`,
+         trim). If a citation doesn't resolve, STOP.
        - For every `#### Scenario:` in specs, confirm at least one task
          cites both that scenario's requirement and `meta/tests`. If any
          scenario has no test task, STOP.

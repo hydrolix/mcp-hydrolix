@@ -4,10 +4,18 @@
 
   Headers (silent-failure traps; the formatter is strict):
   - `## ADDED | MODIFIED | REMOVED | RENAMED Requirements`
-  - `### Requirement: <PascalCaseName>`   ← PascalCase, no spaces, no
-    punctuation. The heading text is what tasks.md cites byte-for-byte.
-  - `#### Scenario: <name>` — EXACTLY 4 hashtags; 3 hashtags or a bullet
-    parses as part of the requirement description and the scenario is lost.
+  - `### Requirement: <Title Case Name>`  ← words separated by spaces, e.g.
+    "Activation Gated On Env Vars". Tasks cite the kebab-case slug derived
+    from this heading (lowercase, spaces → `-`, strip non-alphanumeric).
+  - `#### Scenario: <Title Case Scenario Name>` — EXACTLY 4 hashtags;
+    3 hashtags or a bullet parses as part of the requirement description
+    and the scenario is lost.
+
+  Scenario bullets (Gherkin-style):
+  - `- **GIVEN** <precondition>` — RECOMMENDED when there's prior state.
+  - `- **WHEN** <trigger>` — the firing event.
+  - `- **THEN** <outcome>` — the assertion.
+  - `- **AND** <additional>` — continues whichever block it follows.
 
   HARD RULE for MODIFIED requirements:
     Header line MUST be byte-identical (whitespace-insensitive) to the
@@ -27,7 +35,8 @@
   - `should` / `may` (use SHALL / MUST).
   - Scenario with WHEN but no THEN (or vice versa).
   - Requirement with zero scenarios.
-  - PascalCase name with spaces, hyphens, or punctuation.
+  - Title-Case-With-Spaces-Wrong-Form (e.g. `kebab-case` or `PascalCase`
+    requirement headings; OpenSpec archive expects Title Case With Spaces).
   - MODIFIED block header that doesn't byte-match the existing spec.
 -->
 
@@ -35,14 +44,15 @@
 
 ## ADDED Requirements
 
-### Requirement: <PascalCaseName>
+### Requirement: <Title Case Name>
 <!-- settle: explore/<slug> -->
 
 <!-- One-sentence requirement statement using RFC 2119 / BCP 14 keywords (prefer MUST / SHALL). -->
 
-#### Scenario: <ShortScenarioName>
+#### Scenario: <Short Scenario Name>
 
-- **WHEN** <trigger condition>
+- **GIVEN** <precondition state, optional>
+- **WHEN** <trigger event>
 - **THEN** <observable outcome>
 - **AND** <additional outcome, optional>
 
@@ -53,23 +63,24 @@
   openspec/specs/<cap>/spec.md, then edit. Header MUST be byte-identical.
 -->
 
-### Requirement: <ExistingPascalCaseName>
+### Requirement: <Existing Title Case Name>
 
 <updated requirement statement (RFC 2119 / BCP 14 keywords)>
 
-#### Scenario: <existing or new scenario name>
+#### Scenario: <Existing Or New Scenario Name>
 
+- **GIVEN** ...
 - **WHEN** ...
 - **THEN** ...
 
 ## REMOVED Requirements
 
-### Requirement: <PascalCaseName>
+### Requirement: <Title Case Name>
 
 - **Reason**: <why removed>
 - **Migration**: <how callers move off it>
 
 ## RENAMED Requirements
 
-- FROM: `<OldPascalCaseName>`
-- TO: `<NewPascalCaseName>`
+- FROM: `<Old Title Case Name>`
+- TO: `<New Title Case Name>`

@@ -39,12 +39,12 @@
   section and use the `## No Ambiguity` block below instead. Never keep both.
 -->
 
-### <decision-slug>
+### Decision: <decision-slug>
 
 - **Question:** <what was asked>
 - **Answer:** <operator's resolution>
 - **Rationale:** <why this answer; alternatives ruled out>
-- **Affects:** <artifact + section, e.g. `specs/<cap>/spec.md → Requirement: <PascalCaseName>`>
+- **Affects:** <artifact + section, e.g. `specs/<cap>/spec.md → Requirement: <Title Case Name>`>
 
 <!-- ============================================================ -->
 <!-- ESCAPE HATCH — use instead of `## Decisions` only when applicable. -->

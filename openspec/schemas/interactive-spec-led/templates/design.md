@@ -29,12 +29,13 @@
 ## Decisions
 
 <!--
-  One `### <decision-slug>` block per key technical choice. **Binding** is
-  what /opsx:apply treats as non-negotiable — be specific. If an explore
-  Decision forced this design choice, name the explore slug in **Why**.
+  One `### Decision: <decision-slug>` block per key technical choice.
+  **Binding** is what /opsx:apply treats as non-negotiable — be specific.
+  If an explore Decision forced this design choice, name the explore slug
+  in **Why**.
 -->
 
-### <decision-slug>
+### Decision: <decision-slug>
 
 - **Choice:** <what was decided, one sentence>
 - **Why:** <rationale, ≤ 3 lines; reference explore/<slug> if applicable>
