@@ -336,3 +336,40 @@ class TestJsonFormatter:
 
         assert "exception" in parsed
         assert "ValueError: Test error" in parsed["exception"]
+
+    def test_surfaces_extra_fields_at_top_level(self, formatter, log_record):
+        """Attributes set via ``logger.info(msg, extra={...})`` should appear
+        as top-level keys in the JSON output so downstream log processors can
+        index on them (e.g., service_account_id for query attribution)."""
+        import json
+
+        log_record.service_account_id = "sa-uuid-123"
+        log_record.jti = "token-uuid-456"
+
+        parsed = json.loads(formatter.format(log_record))
+
+        assert parsed["service_account_id"] == "sa-uuid-123"
+        assert parsed["jti"] == "token-uuid-456"
+
+    def test_does_not_duplicate_standard_logrecord_attributes(self, formatter, log_record):
+        """Standard LogRecord internals (lineno, pathname, etc.) must not leak
+        into the JSON envelope — only fields explicitly passed via ``extra``."""
+        import json
+
+        parsed = json.loads(formatter.format(log_record))
+
+        for leaked in ("lineno", "pathname", "filename", "module", "funcName", "args"):
+            assert leaked not in parsed, f"{leaked!r} leaked into JSON output"
+
+    def test_extras_do_not_overwrite_envelope_fields(self, formatter, log_record):
+        """If a caller accidentally passes ``extra={'level': ...}`` we must not
+        let that overwrite the canonical envelope field."""
+        import json
+
+        log_record.level = "tampered"  # via extra={'level': 'tampered'}
+        log_record.timestamp = "tampered"  # via extra={'timestamp': 'tampered'}
+
+        parsed = json.loads(formatter.format(log_record))
+
+        assert parsed["level"] == "INFO"
+        assert parsed["timestamp"] != "tampered"
