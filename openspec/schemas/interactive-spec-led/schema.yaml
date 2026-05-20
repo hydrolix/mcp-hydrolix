@@ -21,14 +21,6 @@ description: Spec-led workflow with mandatory interactive exploration — propos
 # - Capability section headings in proposal.md: `### New` and `### Modified`
 #   (exactly those, H3).
 #
-# "Delta spec" — a `spec.md` file inside a change folder (i.e.
-# `openspec/changes/<change>/specs/<cap>/spec.md`) whose content consists
-# only of delta-operation blocks (`## ADDED Requirements`,
-# `## MODIFIED Requirements`, `## REMOVED Requirements`) describing the
-# diff vs the archived spec at `openspec/specs/<cap>/spec.md`. NOT the
-# archived spec itself — at archive time the operations are merged into
-# the archived spec.
-#
 # "Binding source" — a target a task can cite via `[implements: ...]`.
 # Exactly four namespaces are valid:
 # - `<capability-folder>/<requirement-slug>` — a requirement in a spec
