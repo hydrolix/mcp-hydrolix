@@ -22,7 +22,10 @@
     existing header in openspec/specs/<cap>/spec.md. Mismatch silently
     loses your edits at archive time. Diff after pasting.
 
-  Style: SHALL / MUST; never should / may. Every requirement has ≥ 1 scenario.
+  Style: use RFC 2119 / BCP 14 keywords (MUST, SHALL, SHOULD, MAY and
+  negatives) with their RFC 2119 meanings. PREFER MUST / SHALL for binding
+  requirements; SHOULD / MAY are valid for recommendations and permissions.
+  Every requirement has ≥ 1 scenario.
 
   This template shows all four delta sections. Delete the sections that
   don't apply to this change rather than commenting them out.
@@ -32,7 +35,8 @@
   implements an explore decision.
 
   Anti-patterns:
-  - `should` / `may` (use SHALL / MUST).
+  - Lowercase `should` / `may` (use uppercase RFC 2119 keywords; only the
+    uppercase forms carry their RFC 2119 meaning).
   - Scenario with WHEN but no THEN (or vice versa).
   - Requirement with zero scenarios.
   - Title-Case-With-Spaces-Wrong-Form (e.g. `kebab-case` or `PascalCase`

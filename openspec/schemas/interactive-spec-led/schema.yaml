@@ -21,6 +21,15 @@ description: Spec-led workflow with mandatory interactive exploration — propos
 # - Capability section headings in proposal.md: `### New` and `### Modified`
 #   (exactly those, H3).
 #
+# "Binding source" — a target a task can cite via `[implements: ...]`.
+# Exactly four namespaces are valid:
+# - `<capability-folder>/<requirement-slug>` — a requirement in a spec
+# - `design/<decision-slug>` — a Decision in design.md
+# - `explore/<decision-slug>` — a Decision in explore.md
+# - `meta/<kind>` — work that has no upstream Decision or Requirement;
+#   `<kind>` ∈ `tests`, `docs`, `migration`, `rollout`, `tooling`.
+# (See the `tasks` artifact instruction for the canonical form.)
+#
 # Cross-artifact invariants (verified at /opsx:verify and at archive):
 # - Every kebab-case name under proposal `### New` ↔ exactly one
 #   `specs/<name>/spec.md` in this change.

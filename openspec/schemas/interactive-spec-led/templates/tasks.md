@@ -19,7 +19,10 @@
 
   Test naming convention (for verify: clauses):
   - File: `tests/test_<capability-folder>.py` with `-` → `_`.
-  - Function: `test_<scenario-slug>` (kebab-case of scenario name).
+  - Function: `test_<scenario_slug>` — the scenario heading text run
+    through the same slug rule, then `-` → `_` (Python identifiers can't
+    contain `-`). So heading `Parses Valid Url` → `parses-valid-url`
+    (kebab slug) → `test_parses_valid_url` (test function).
 
 
   Anti-patterns:
