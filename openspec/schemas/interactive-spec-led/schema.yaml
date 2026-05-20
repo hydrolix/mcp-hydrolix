@@ -426,6 +426,18 @@ apply:
     the implementing agent.
 
     Pre-flight (do all of these before touching code):
+
+    A "binding source" is any target a task can cite via `[implements: ...]`.
+    Four namespaces are valid:
+    - `<capability-folder>/<requirement-slug>` — a Requirement in a spec
+    - `design/<decision-slug>` — a Decision in design.md
+    - `explore/<decision-slug>` — a Decision in explore.md
+    - `meta/<kind>` — work that has no upstream Decision or Requirement;
+      `<kind>` ∈ `tests`, `docs`, `migration`, `rollout`, `tooling`.
+
+    Slug derivation rule (used by several checks below): lowercase, whitespace
+    → `-`, strip `[^a-z0-9-]`, collapse consecutive `-`, trim.
+
     1. Read proposal.md, explore.md, specs/**/spec.md, design.md, tasks.md.
     2. Capability ↔ spec-file check:
        - List spec folders in this change (e.g. `ls specs/`).
@@ -438,25 +450,54 @@ apply:
          ` — verify: ...` recommended for readability; the agent
          identifies the verify clause by the literal token `verify:`).
          If any task lacks either, STOP.
-       - For every `[implements: <cap>/<slug>]` citation against a spec,
+       - For every `[implements: <cap>/<requirement-slug>]` citation,
          confirm `<cap>` is a real folder under this change's `specs/`
-         and `<slug>` matches the kebab-case slug of some
-         `### Requirement:` heading in `specs/<cap>/spec.md` (apply the
-         slug rule: lowercase, whitespace → `-`, strip `[^a-z0-9-]`,
-         collapse consecutive `-`, trim). If a citation doesn't resolve,
-         STOP.
+         and `<requirement-slug>` matches the derived slug of some
+         `### Requirement:` heading in `specs/<cap>/spec.md`. If a citation
+         doesn't resolve, STOP.
+       - For every `[implements: design/<decision-slug>]` citation,
+         confirm `<decision-slug>` matches the derived slug of some
+         `### Decision: <slug>` heading in design.md (i.e. the text after
+         `Decision: ` slugged). If a citation doesn't resolve, STOP.
+       - For every `[implements: explore/<decision-slug>]` citation,
+         confirm `<decision-slug>` matches the derived slug of some
+         `### Decision: <slug>` heading in explore.md. If a citation
+         doesn't resolve, STOP. (If explore uses the `## No Ambiguity`
+         escape hatch, there are no explore Decisions; any
+         `explore/<slug>` citation in tasks must STOP for that reason.)
        - For every `[implements: meta/<kind>]` citation, confirm `<kind>`
          is one of `tests`, `docs`, `migration`, `rollout`, `tooling`.
          If an unknown `<kind>` appears, STOP.
        - For every `#### Scenario:` in specs, confirm at least one task
          cites both that scenario's requirement and `meta/tests`. If any
-         scenario has no test task, STOP.
-    4. Binding-source review:
+         scenario has no test task, STOP. (Scenario-level granularity is
+         enforced separately by step 4 below.)
+    4. Scenario-coverage check (per-scenario, not per-requirement):
+       - For each `#### Scenario:` heading in specs, derive its
+         scenario-slug via the slug rule.
+       - Confirm tasks.md contains at least one task whose `verify:`
+         clause names the test function `test_<scenario_slug_underscored>`
+         (with `-` → `_`). If any scenario has no matching `verify:`,
+         STOP. This catches the case where ONE bundled test task
+         appears to cover multiple scenarios under one requirement.
+    5. MODIFIED-header byte-match check (the single highest-cost silent
+       failure — see specs HARD RULE):
+       - For each `### Requirement:` heading under a `## MODIFIED
+         Requirements` block in any `specs/<cap>/spec.md` in this change,
+         read the corresponding header in `openspec/specs/<cap>/spec.md`
+         (the existing archived spec). Confirm the two heading lines are
+         byte-identical (whitespace-insensitive). If any mismatch, STOP
+         — the modification would silently drop at archive time.
+    6. Binding-source review:
        - Re-read each design Decision's **Binding** line.
        - Re-read each explore Decision and confirm **Affects** is a real
          artifact + section (not a `<…placeholder…>`).
        - Treat both as non-negotiable constraints.
-    5. Escape-hatch confirmation check:
+    7. Escape-hatch integrity check:
+       - explore.md MUST contain exactly ONE of `## Decisions` or
+         `## No Ambiguity`. If both are present (the template ships both
+         stubs and instructs the author to delete one — a naive agent may
+         leave both), STOP.
        - If design.md contains a `## Trivial Change` section, confirm
          explore.md contains either (a) a `## Decisions` entry whose
          **Affects** references `design.md → Trivial Change`, or (b) a
