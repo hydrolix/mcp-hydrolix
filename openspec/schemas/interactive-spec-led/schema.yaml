@@ -21,6 +21,14 @@ description: Spec-led workflow with mandatory interactive exploration — propos
 # - Capability section headings in proposal.md: `### New` and `### Modified`
 #   (exactly those, H3).
 #
+# "Delta spec" — a `spec.md` file inside a change folder (i.e.
+# `openspec/changes/<change>/specs/<cap>/spec.md`) whose content consists
+# only of delta-operation blocks (`## ADDED Requirements`,
+# `## MODIFIED Requirements`, `## REMOVED Requirements`) describing the
+# diff vs the archived spec at `openspec/specs/<cap>/spec.md`. NOT the
+# archived spec itself — at archive time the operations are merged into
+# the archived spec.
+#
 # "Binding source" — a target a task can cite via `[implements: ...]`.
 # Exactly four namespaces are valid:
 # - `<capability-folder>/<requirement-slug>` — a requirement in a spec
@@ -365,8 +373,9 @@ artifacts:
           every `meta/tests` task MUST cite the requirement whose
           scenario it tests (see Test-task rule below).
         Multiple citations comma-separated. Examples:
-        - Non-test task (cites a Requirement + a Decision):
-          `- [ ] 1.1 Parse URL: parse HYDROLIX_URL into host/scheme [implements: connection-config/url-parsing, design/url-port-precedence] — verify: \`pytest -q tests/test_connection_config.py\` green`
+        - Non-test task (cites a Requirement + a Decision; verify is a
+          non-pytest check to keep the pattern distinct from test tasks):
+          `- [ ] 1.1 Parse URL: parse HYDROLIX_URL into host/scheme [implements: connection-config/url-parsing, design/url-port-precedence] — verify: \`ruff check mcp_hydrolix/auth.py\` clean`
         - Test task (one per scenario; cites the parent Requirement;
           verify names the scenario-specific function):
           `- [ ] 2.1 Add test for scenario "Parses Valid Url" [implements: connection-config/url-parsing, meta/tests] — verify: \`pytest -q tests/test_connection_config.py::test_parses_valid_url\` green`
@@ -399,6 +408,14 @@ artifacts:
         `test_<scenario_slug>` function.
       A scenario without a matching test task is a generation defect and
       apply pre-flight will STOP (step 4, scenario-coverage check).
+
+      For every requirement under `## REMOVED Requirements`, schedule a
+      task to delete that requirement's tests, cited as
+      `[implements: <capability-folder>/<requirement-slug>, meta/tests]`,
+      with `verify:` naming the test file or pattern being deleted (e.g.
+      `verify: \`grep -L test_parses_valid_url tests/test_connection_config.py\` empty`).
+      Removed-requirement test cleanup is the operator's responsibility
+      to confirm at apply post-execution.
 
       Test naming convention (use this when writing `verify:` clauses
       for test tasks, so they match what /opsx:apply will produce):
@@ -482,10 +499,12 @@ apply:
        - For every `[implements: meta/<kind>]` citation, confirm `<kind>`
          is one of `tests`, `docs`, `migration`, `rollout`, `tooling`.
          If an unknown `<kind>` appears, STOP.
-       - For every `#### Scenario:` in specs, confirm at least one task
-         cites both that scenario's requirement and `meta/tests`. If any
-         scenario has no test task, STOP. (Scenario-level granularity is
-         enforced separately by step 4 below.)
+       - Warm-up coverage check: for every `#### Scenario:` in specs,
+         confirm at least one task cites that scenario's parent
+         requirement AND `meta/tests`. (This is requirement-level — a
+         single bundled test task can satisfy it. The authoritative
+         per-scenario check is step 4 below.) If any scenario's parent
+         requirement has no test task at all, STOP.
     4. Scenario-coverage check (per-scenario, not per-requirement):
        - For each `#### Scenario:` heading in specs, derive its
          scenario-slug via the slug rule.
@@ -503,25 +522,41 @@ apply:
          byte-identical (whitespace-insensitive). If any mismatch, STOP
          — the modification would silently drop at archive time.
     6. Binding-source review:
-       - Re-read each design Decision's **Binding** line.
-       - Re-read each explore Decision and confirm **Affects** is a real
-         artifact + section (not a `<…placeholder…>`).
-       - Treat both as non-negotiable constraints.
+       - For each design Decision, confirm its **Binding** line is
+         present, non-empty, and contains no placeholder text (e.g.
+         literal `<the constraint this places on…>` text left from the
+         template, or any other `<…>` placeholder fragment). If missing
+         or placeholder, STOP — the design instruction declares Binding
+         as the non-negotiable apply-time constraint, so without one
+         apply has nothing to enforce.
+       - For each explore Decision (when `## Decisions` is in use),
+         confirm its **Affects** line names a real artifact + section
+         (not a `<…placeholder…>`). If missing or placeholder, STOP.
+       - Treat both Binding and Affects as non-negotiable constraints.
     7. Escape-hatch integrity check:
-       - explore.md MUST contain exactly ONE of `## Decisions` or
-         `## No Ambiguity`. If both are present (the template ships both
-         stubs and instructs the author to delete one — a naive agent may
-         leave both), STOP.
-       - If design.md contains a `## Trivial Change` section, confirm
-         explore.md contains either (a) a `## Decisions` entry whose
-         **Affects** references `design.md → Trivial Change`, or (b) a
-         `## No Ambiguity` block whose justification mentions the
-         Trivial Change. If neither, STOP — Trivial Change MUST be
-         operator-confirmed.
-       - If explore.md uses the `## No Ambiguity` escape hatch, confirm
-         the section cites the operator confirmation (prompt, message,
-         or request that established no ambiguity exists). If missing,
-         STOP.
+       - When scanning for `## Decisions`, `## No Ambiguity`, or
+         `## Trivial Change` headings in steps 7a–7c below, treat any
+         heading text inside an HTML comment block (`<!-- … -->`) as
+         ABSENT. Only count live, uncommented markdown headings.
+         (The explore.md template ships `## Decisions` live and
+         `## No Ambiguity` inside an HTML comment; the design.md template
+         ships its Decision blocks live and `## Trivial Change` inside an
+         HTML comment. A naive author using the escape hatch must
+         uncomment the alternative block AND delete the live default
+         block; a naive author using the default does nothing. Both
+         live = STOP.)
+       7a. explore.md MUST contain exactly ONE live, uncommented
+           `## Decisions` or `## No Ambiguity` heading. If both live,
+           STOP.
+       7b. If design.md contains a live `## Trivial Change` section,
+           confirm explore.md contains either (a) a `## Decisions` entry
+           whose **Affects** references `design.md → Trivial Change`, or
+           (b) a `## No Ambiguity` block whose justification mentions the
+           Trivial Change. If neither, STOP.
+       7c. If explore.md uses the `## No Ambiguity` escape hatch (live
+           heading, not commented), confirm the section cites the
+           operator confirmation (prompt, message, or request that
+           established no ambiguity exists). If missing, STOP.
 
     Execution:
     - Walk tasks.md in declared order. Check items off as you complete them.
