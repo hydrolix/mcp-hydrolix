@@ -193,7 +193,15 @@ artifacts:
       - **MODIFIED Requirements** — changed behavior. (See HARD RULE below.)
       - **REMOVED Requirements** — MUST include **Reason** and **Migration**
         lines.
-      - **RENAMED Requirements** — `FROM:` / `TO:` only.
+
+      OpenSpec defines exactly these three delta operations (`ADDED`,
+      `MODIFIED`, `REMOVED`). Other operation names (including `RENAMED`)
+      are silently ignored by `openspec archive` and MUST NOT be used. To
+      rename a requirement, write a `REMOVED Requirements` entry for the
+      old name (with `Migration: callers move to <New Name>`) AND an
+      `ADDED Requirements` entry for the new name. To rename a scenario,
+      use `MODIFIED Requirements` and edit the `#### Scenario:` heading
+      inside the FULL requirement block.
 
       Format (the formatter is strict — these are the silent-failure traps):
       - `### Requirement: <Title Case Name>` followed by the requirement

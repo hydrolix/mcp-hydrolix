@@ -3,7 +3,7 @@
   BCP 14: MUST, SHALL, SHOULD, MAY), testable form.
 
   Headers (silent-failure traps; the formatter is strict):
-  - `## ADDED | MODIFIED | REMOVED | RENAMED Requirements`
+  - `## ADDED | MODIFIED | REMOVED Requirements`
   - `### Requirement: <Title Case Name>`  ← words separated by spaces, e.g.
     "Activation Gated On Env Vars". Tasks cite the kebab-case slug derived
     from this heading (lowercase, spaces → `-`, strip non-alphanumeric).
@@ -80,7 +80,8 @@
 - **Reason**: <why removed>
 - **Migration**: <how callers move off it>
 
-## RENAMED Requirements
-
-- FROM: `<Old Title Case Name>`
-- TO: `<New Title Case Name>`
+<!--
+  To rename a requirement, use `## REMOVED Requirements` (with a
+  `Migration:` line pointing at the new name) PLUS `## ADDED Requirements`
+  for the new name. OpenSpec recognizes only ADDED / MODIFIED / REMOVED.
+-->
