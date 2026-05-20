@@ -27,16 +27,23 @@
 ## Decisions
 
 <!--
-  Default shape. One block per resolved question. The decision-slug after
-  `### ` is what downstream artifacts cite (e.g. `[implements: explore/<slug>]`
-  in tasks; `<!-- settle: explore/<slug> -->` in spec requirements).
+  Pick ONE of two shapes for this section:
 
-  **Affects** MUST name a REAL artifact + section the decision binds
-  (e.g. "specs/auth/spec.md → Requirement: Login"). Do not leave it as a
-  placeholder — apply pre-flight rejects placeholders.
+  (A) DEFAULT — keep `## Decisions` and DELETE the `## No Ambiguity` stub
+      below. One `### Decision: <slug>` block per resolved question.
+      Slug is what downstream artifacts cite (`[implements: explore/<slug>]`
+      in tasks, `<!-- settle: explore/<slug> -->` in spec requirements).
+      **Affects** MUST name a REAL artifact + section the decision binds
+      (e.g. `specs/auth/spec.md → Requirement: User Authentication`).
+      Placeholder text is rejected by apply pre-flight.
 
-  When using the No Ambiguity escape hatch, DELETE this whole `## Decisions`
-  section and use the `## No Ambiguity` block below instead. Never keep both.
+  (B) ESCAPE HATCH — DELETE this whole `## Decisions` section and keep
+      only the `## No Ambiguity` block below. Apply pre-flight requires
+      the No Ambiguity block to cite an operator confirmation (prompt,
+      message, or request that established no ambiguity); self-declared
+      no-ambiguity is rejected.
+
+  Never keep both sections.
 -->
 
 ### Decision: <decision-slug>
@@ -46,19 +53,19 @@
 - **Rationale:** <why this answer; alternatives ruled out>
 - **Affects:** <artifact + section, e.g. `specs/<cap>/spec.md → Requirement: <Title Case Name>`>
 
-<!-- ============================================================ -->
-<!-- ESCAPE HATCH — use instead of `## Decisions` only when applicable. -->
-<!-- ============================================================ -->
-
-<!--
 ## No Ambiguity
 
-<one short paragraph: why the proposal needed no clarifying questions, plus
-explicit reference to the operator's confirmation (cite the prompt or
-message). MUST be operator-confirmed; do NOT self-declare. Example: "Change
-is a mechanical rename with no behavioral impact; operator confirmed via
-AskUserQuestion prompt on YYYY-MM-DD."
+<!--
+  USE THIS BLOCK INSTEAD OF `## Decisions` (delete the Decisions section
+  above). One short paragraph: why the proposal needed no clarifying
+  questions, plus explicit reference to the operator's confirmation
+  (cite the prompt or message). MUST be operator-confirmed; do NOT
+  self-declare. Example: "Change is a mechanical rename with no
+  behavioral impact; operator confirmed via AskUserQuestion prompt on
+  YYYY-MM-DD."
 -->
+
+<short paragraph citing operator confirmation; delete this whole `## No Ambiguity` section if the `## Decisions` section above is in use>
 
 ## Deferred / Out of Scope
 

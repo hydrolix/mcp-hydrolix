@@ -103,9 +103,10 @@ artifacts:
          you would have to guess: ambiguous requirements, contested UX choices,
          migration shape, breaking-vs-compat trade-offs, edge cases the proposal
          is silent on.
-      2. Ask the operator ONE OR A FEW questions at a time. Prefer
-         AskUserQuestion. Let each answer shape the next question. DO NOT
-         batch all questions into a single message.
+      2. Ask the operator ONE OR A FEW questions at a time. Prefer the
+         `AskUserQuestion` tool if available; otherwise ask in the chat /
+         interactive surface. Let each answer shape the next question.
+         DO NOT batch all questions into a single message.
       3. After each answer, record it in explore.md (see template). Then ask
          the next round.
       4. Stop when the proposal can be turned into specs and design without
@@ -368,7 +369,11 @@ artifacts:
       - Each task MUST end with a `verify:` clause naming the concrete
         check that proves it done (e.g. `verify: scenario "Parses Valid Url"
         passes`, `verify: \`pytest -q tests/test_x.py::test_parses_valid_url\` green`,
-        `verify: \`ruff check\` clean`).
+        `verify: \`ruff check\` clean`). Separate the citation
+        block and the `verify:` clause with ` — ` (space, em-dash, space)
+        so both are visually obvious. Apply pre-flight identifies the
+        verify clause by the literal token `verify:` regardless of
+        separator, but the em-dash convention is what reviewers expect.
       - Order so each task is unblocked by predecessors. Don't gate code
         on rollout tasks; don't gate tests on rollout.
 
@@ -427,15 +432,22 @@ apply:
        - Verify each kebab-case name under proposal `### New` and `### Modified`
          (excluding `*none*`) has exactly one matching folder, and vice versa.
        - If any mismatch, STOP and surface to the operator.
-    3. Task-citation check:
-       - For every task in tasks.md, confirm a `[implements: ...]` citation
-         is present. If any task lacks one, STOP.
-       - For every `[implements: <cap>/<slug>]` citation, confirm `<cap>`
-         is a real folder under this change's `specs/` and `<slug>` matches
-         the kebab-case slug of some `### Requirement:` heading in
-         `specs/<cap>/spec.md` (apply the slug rule: lowercase,
-         whitespace → `-`, strip `[^a-z0-9-]`, collapse consecutive `-`,
-         trim). If a citation doesn't resolve, STOP.
+    3. Task-shape check:
+       - For every task in tasks.md, confirm BOTH a `[implements: ...]`
+         citation AND a `verify:` clause are present (separator
+         ` — verify: ...` recommended for readability; the agent
+         identifies the verify clause by the literal token `verify:`).
+         If any task lacks either, STOP.
+       - For every `[implements: <cap>/<slug>]` citation against a spec,
+         confirm `<cap>` is a real folder under this change's `specs/`
+         and `<slug>` matches the kebab-case slug of some
+         `### Requirement:` heading in `specs/<cap>/spec.md` (apply the
+         slug rule: lowercase, whitespace → `-`, strip `[^a-z0-9-]`,
+         collapse consecutive `-`, trim). If a citation doesn't resolve,
+         STOP.
+       - For every `[implements: meta/<kind>]` citation, confirm `<kind>`
+         is one of `tests`, `docs`, `migration`, `rollout`, `tooling`.
+         If an unknown `<kind>` appears, STOP.
        - For every `#### Scenario:` in specs, confirm at least one task
          cites both that scenario's requirement and `meta/tests`. If any
          scenario has no test task, STOP.
@@ -444,6 +456,17 @@ apply:
        - Re-read each explore Decision and confirm **Affects** is a real
          artifact + section (not a `<…placeholder…>`).
        - Treat both as non-negotiable constraints.
+    5. Escape-hatch confirmation check:
+       - If design.md contains a `## Trivial Change` section, confirm
+         explore.md contains either (a) a `## Decisions` entry whose
+         **Affects** references `design.md → Trivial Change`, or (b) a
+         `## No Ambiguity` block whose justification mentions the
+         Trivial Change. If neither, STOP — Trivial Change MUST be
+         operator-confirmed.
+       - If explore.md uses the `## No Ambiguity` escape hatch, confirm
+         the section cites the operator confirmation (prompt, message,
+         or request that established no ambiguity exists). If missing,
+         STOP.
 
     Execution:
     - Walk tasks.md in declared order. Check items off as you complete them.

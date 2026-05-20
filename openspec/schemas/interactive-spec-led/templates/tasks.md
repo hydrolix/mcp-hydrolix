@@ -25,6 +25,11 @@
     (kebab slug) → `test_parses_valid_url` (test function).
 
 
+  Separator convention: put ` — ` (space, em-dash, space) between the
+  `[implements: ...]` block and the `verify:` clause. Apply pre-flight
+  finds verify by the literal token `verify:` regardless of separator,
+  but the em-dash form is what reviewers expect.
+
   Anti-patterns:
   - Tasks without a verify clause.
   - Prose paragraphs between bullets.
@@ -32,6 +37,8 @@
   - Tasks with no `[implements: ...]` citation.
   - Citing a requirement with a slug that doesn't match the kebab-derived
     form of the heading (use the slug rule, not the raw heading text).
+  - Citing `meta/<kind>` with a `<kind>` outside `tests`, `docs`,
+    `migration`, `rollout`, `tooling` (apply pre-flight rejects others).
 
   Phases are descriptive — use as many or as few as the work needs. The
   layout below is illustrative.
