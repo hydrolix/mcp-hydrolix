@@ -38,6 +38,7 @@ from mcp_hydrolix.auth import (
     ServiceAccountToken,
     UsernamePassword,
 )
+from mcp_hydrolix.sa_attribution import SAAttributionMiddleware
 from mcp_hydrolix.mcp_env import HydrolixConfig, get_config
 from mcp_hydrolix.column_analysis import (
     _enrich_column_metadata,
@@ -339,6 +340,11 @@ if HYDROLIX_CONFIG.metrics_enabled:
                 metrics.METRICS.active_requests.dec()
 
     mcp.add_middleware(MetricsMiddleware())
+
+
+# Per-request SA attribution logging (HDX-11151). Unconditional; see
+# mcp_hydrolix.sa_attribution for the temporary-stopgap rationale.
+mcp.add_middleware(SAAttributionMiddleware())
 
 
 async def _query_targets_summary_table(query: str) -> bool:
