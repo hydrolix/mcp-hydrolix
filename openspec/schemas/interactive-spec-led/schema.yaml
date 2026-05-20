@@ -364,8 +364,12 @@ artifacts:
           cite an upstream binding whenever one applies — in particular
           every `meta/tests` task MUST cite the requirement whose
           scenario it tests (see Test-task rule below).
-        Multiple citations comma-separated. Example:
-        `- [ ] 1.1 Parse URL: parse HYDROLIX_URL into host/scheme [implements: connection-config/url-parsing, design/url-port-precedence] — verify: pytest -q tests/test_url_parsing.py`
+        Multiple citations comma-separated. Examples:
+        - Non-test task (cites a Requirement + a Decision):
+          `- [ ] 1.1 Parse URL: parse HYDROLIX_URL into host/scheme [implements: connection-config/url-parsing, design/url-port-precedence] — verify: \`pytest -q tests/test_connection_config.py\` green`
+        - Test task (one per scenario; cites the parent Requirement;
+          verify names the scenario-specific function):
+          `- [ ] 2.1 Add test for scenario "Parses Valid Url" [implements: connection-config/url-parsing, meta/tests] — verify: \`pytest -q tests/test_connection_config.py::test_parses_valid_url\` green`
       - Each task MUST end with a `verify:` clause naming the concrete
         check that proves it done (e.g. `verify: scenario "Parses Valid Url"
         passes`, `verify: \`pytest -q tests/test_x.py::test_parses_valid_url\` green`,
@@ -378,13 +382,23 @@ artifacts:
         on rollout tasks; don't gate tests on rollout.
 
       Test-task rule (REQUIRED, derived from spec scenarios):
-      For every `#### Scenario:` in your specs, schedule at least one
-      tasks.md entry that adds or updates a test corresponding to that
-      scenario. Cite it as
-      `[implements: <capability-folder>/<requirement-slug>, meta/tests]`,
-      where `<requirement-slug>` is the kebab-case slug of the parent
-      requirement's heading (not the scenario name). A scenario without
-      a corresponding test task is a generation defect.
+      For every `#### Scenario:` in your specs, schedule exactly one
+      tasks.md entry that adds or updates the test for that scenario.
+      The task MUST:
+      - Cite the parent REQUIREMENT in its `[implements: ...]` block,
+        not the scenario. The citation form is
+        `[implements: <capability-folder>/<requirement-slug>, meta/tests]`,
+        where `<requirement-slug>` is the kebab-case slug of the parent
+        requirement's heading.
+      - Name the SCENARIO-specific test function in its `verify:` clause,
+        of the form `pytest -q tests/test_<cap_folder>.py::test_<scenario_slug>`
+        (apply the slug rule to the scenario heading, then `-` → `_` so
+        the result is a valid Python identifier).
+      - So a requirement with N scenarios produces N test tasks, all
+        citing the same requirement but each verifying a distinct
+        `test_<scenario_slug>` function.
+      A scenario without a matching test task is a generation defect and
+      apply pre-flight will STOP (step 4, scenario-coverage check).
 
       Test naming convention (use this when writing `verify:` clauses
       for test tasks, so they match what /opsx:apply will produce):

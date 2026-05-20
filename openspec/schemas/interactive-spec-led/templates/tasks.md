@@ -11,18 +11,22 @@
     - `[implements: meta/<kind>]` where <kind> ∈ tests, docs, migration, rollout, tooling
   - `verify: <concrete check>` clause (scenario name, test command, lint, etc.).
 
-  Test-task rule: for every `#### Scenario:` in your specs, schedule at
-  least one task here that adds/updates a test for it, citing
-  `[implements: <capability-folder>/<requirement-slug>, meta/tests]`
-  (requirement-slug = kebab-slug of the parent requirement's heading; NOT
-  the scenario slug).
+  Test-task rule: for every `#### Scenario:` in your specs, schedule
+  EXACTLY ONE task here. Two parts:
+  - `[implements: <capability-folder>/<requirement-slug>, meta/tests]`
+    cites the PARENT requirement (not the scenario).
+  - `verify:` names the SCENARIO-specific test function.
+  A requirement with N scenarios produces N test tasks, each verifying
+  a distinct `test_<scenario_slug>` function. Apply pre-flight rejects
+  scenarios with no matching verify clause.
 
   Test naming convention (for verify: clauses):
-  - File: `tests/test_<capability-folder>.py` with `-` → `_`.
-  - Function: `test_<scenario_slug>` — the scenario heading text run
-    through the same slug rule, then `-` → `_` (Python identifiers can't
-    contain `-`). So heading `Parses Valid Url` → `parses-valid-url`
-    (kebab slug) → `test_parses_valid_url` (test function).
+  - File: `tests/test_<capability_folder>.py` (apply slug rule to the
+    capability folder name, then `-` → `_` for the filename).
+  - Function: `test_<scenario_slug>` — apply slug rule to the scenario
+    heading text, then `-` → `_` (Python identifiers can't contain `-`).
+    So scenario `Parses Valid Url` → `parses-valid-url` (kebab slug) →
+    `test_parses_valid_url` (test function).
 
 
   Separator convention: put ` — ` (space, em-dash, space) between the
@@ -54,7 +58,7 @@
 ## 2. <phase name>
 
 - [ ] 2.1 <task> [implements: explore/<decision-slug>] — verify: <check>
-- [ ] 2.2 Add test for scenario `<Title Case Scenario Name>` [implements: <capability-folder>/<requirement-slug>, meta/tests] — verify: `pytest -q tests/test_<capability_folder>.py::test_<scenario_slug>` green
+- [ ] 2.2 Add test for scenario `<Title Case Scenario Name>` [implements: <capability-folder>/<requirement-slug>, meta/tests] — verify: `pytest -q tests/test_<capability_folder>.py::test_<scenario_slug>` green (function name = slug of the scenario heading; one test task per scenario, all citing the same requirement-slug)
 
 ## 3. <phase name>
 
