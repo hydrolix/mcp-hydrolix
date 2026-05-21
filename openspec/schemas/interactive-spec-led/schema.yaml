@@ -1,178 +1,592 @@
 name: interactive-spec-led
 version: 1
-description: Spec-led workflow with optional interactive discovery, no tasks.md - proposal → (discovery) → specs → design → apply
+description: Spec-led workflow with mandatory interactive exploration — proposal → explore → specs → design → tasks → apply
+
+# Each rule below has a canonical home inside one of the `instruction:`
+# blocks (or `apply.instruction:`). The list here is for human reviewers;
+# the canonical instructions are what a code-generation agent reads at run
+# time. If you change a rule, change it in the canonical instruction first.
+#
+# Naming conventions (load-bearing — verify keys on these):
+# - Capabilities: kebab-case (e.g. `connection-config`).
+# - Requirement headings: Title Case With Spaces (OpenSpec / RFC 2119
+#   convention), e.g. `### Requirement: Activation Gated On Env Vars`.
+#   Tasks cite requirements by the kebab-case slug derived from the
+#   heading text: lowercase, whitespace → `-`, strip `[^a-z0-9-]`,
+#   collapse consecutive `-`, trim leading/trailing `-`.
+#   So `Activation Gated On Env Vars` ↔ slug `activation-gated-on-env-vars`.
+# - Decision headings (explore.md, design.md): `### Decision: <decision-slug>`
+#   where the slug is kebab-case. Tasks cite design / explore decisions by
+#   the same slug, e.g. `[implements: design/activation-site]`.
+# - Capability section headings in proposal.md: `### New` and `### Modified`
+#   (exactly those, H3).
+#
+# "Binding source" — a target a task can cite via `[implements: ...]`.
+# Exactly four namespaces are valid:
+# - `<capability-folder>/<requirement-slug>` — a requirement in a spec
+# - `design/<decision-slug>` — a Decision in design.md
+# - `explore/<decision-slug>` — a Decision in explore.md
+# - `meta/<kind>` — work that has no upstream Decision or Requirement;
+#   `<kind>` ∈ `tests`, `docs`, `migration`, `rollout`, `tooling`.
+# (See the `tasks` artifact instruction for the canonical form.)
+#
+# Cross-artifact invariants (verified at /opsx:verify and at archive):
+# - Every kebab-case name under proposal `### New` ↔ exactly one
+#   `specs/<name>/spec.md` in this change.
+# - Every name under proposal `### Modified` matches an existing
+#   `openspec/specs/<name>/` folder, and a delta spec exists at the same path.
+# - Every task in tasks.md cites at least one binding source via
+#   `[implements: ...]`.
+# - For every `#### Scenario:` in specs, at least one task in tasks.md cites
+#   that scenario's requirement AND `meta/tests`.
+# - explore.md exists with at least the Summary line + one of:
+#   `## Decisions` (default), or `## No Ambiguity` (operator-confirmed hatch).
+
 artifacts:
   - id: proposal
     generates: proposal.md
-    description: Initial proposal document outlining the change
+    description: WHY this change exists and which capabilities it touches
     template: proposal.md
     instruction: |
-      Create the proposal document that establishes WHY this change is needed.
+      Write proposal.md. WHY only — HOW belongs in design.md.
 
-      Sections:
-      - **Why**: 1-2 sentences on the problem or opportunity. What problem does this solve? Why now?
-      - **What Changes**: Bullet list of changes. Be specific about new capabilities, modifications, or removals. Mark breaking changes with **BREAKING**.
-      - **Capabilities**: Identify which specs will be created or modified:
-        - **New Capabilities**: List capabilities being introduced. Each becomes a new `specs/<name>/spec.md`. Use kebab-case names (e.g., `user-auth`, `data-export`).
-        - **Modified Capabilities**: List existing capabilities whose REQUIREMENTS are changing. Only include if spec-level behavior changes (not just implementation details). Each needs a delta spec file. Check `openspec/specs/` for existing spec names. Leave empty if no requirement changes.
-      - **Impact**: Affected code, APIs, dependencies, or systems.
+      Before writing:
+      1. `ls openspec/specs/` to see existing capability names. Reuse the
+         EXACT folder name for Modified capabilities; never invent a near-duplicate.
+      2. Read any spec you might modify so "What Changes" is accurate.
 
-      IMPORTANT: The Capabilities section is critical. It creates the contract between
-      proposal and specs phases. Research existing specs before filling this in.
-      Each capability listed here will need a corresponding spec file.
+      Required sections (in this order):
+      - **Summary** (one italic line at top, ≤ 25 words): the change in a
+        single sentence a reviewer can skim. Not a heading on its own.
+      - **Why** (≤ 60 words, 1-2 sentences): the problem or opportunity, and
+        why now. No background recap; no implementation hints.
+      - **What Changes** (bulleted, ≤ 8 bullets): each bullet is a concrete
+        capability addition / modification / removal. Mark breaking changes
+        with **BREAKING**.
+      - **Capabilities** (the contract with specs — this section is load-bearing).
+        Subsection headers MUST be `### New` and `### Modified` (exactly that
+        text, H3 hashes). Any other form (bold labels, "New Capabilities", etc.)
+        is incorrect and will break the verify step:
+        - Under `### New`: one bullet per new capability,
+          `` `<kebab-case-name>` — <≤ 15 word description> ``.
+          Each becomes exactly one `specs/<name>/spec.md` in this change.
+        - Under `### Modified`: one bullet per existing capability whose
+          REQUIREMENTS change. Use the EXACT folder name from
+          `openspec/specs/`. Implementation-only changes do NOT belong here.
+          Write `*none*` as the sole bullet if no requirements change.
+      - **Impact**: bulleted list of affected code paths, public APIs, external
+        dependencies, data migrations. One line each.
 
-      Keep it concise (1-2 pages). Focus on the "why" not the "how" -
-      implementation details belong in design.md.
+      Invariant the rest of the workflow relies on:
+        proposal Capabilities listing ↔ `specs/<name>/spec.md` files
+        MUST be a 1:1 mapping. If you can't write a spec for a capability,
+        do not list it; if you list it, you must write the spec.
 
-      This is the foundation - specs and design build on this.
+      Do NOT write:
+      - Implementation steps (those belong in tasks.md).
+      - Design rationale or alternatives (those belong in design.md).
+      - Background sections that restate context the reader already has.
+
+      Target length: ≤ 1 page (≈ 300 words).
     requires: []
 
-  - id: discovery
-    generates: discovery.md
-    description: Interactive requirements Q&A resolved with the operator before specs
-    template: discovery.md
+  - id: explore
+    generates: explore.md
+    description: Interactive Q&A with the operator to resolve ambiguity before committing to specs
+    template: explore.md
     instruction: |
-      Create discovery.md by holding an INTERACTIVE Q&A with the operator
-      BEFORE writing specs or design. The purpose is to surface and resolve
-      ambiguity while change is still cheap - specs and design are expensive
-      to revise once committed.
-
-      When to include discovery.md (create only if any apply):
-      - Requirements are unclear, contested, or have unstated edge cases
-      - Multiple reasonable interpretations of the proposal exist
-      - The change touches behavior whose "right answer" depends on operator
-        intent (UX choices, migration shape, breaking-vs-compat tradeoffs)
-      - You catch yourself making non-trivial assumptions you can't ground
-        in the proposal or existing code
-
-      Skip discovery.md for small, unambiguous changes where the proposal
-      already pins the answer. Discovery is opt-in - using it for trivia
-      makes it useless for the cases that matter.
+      Hold an INTERACTIVE Q&A with the operator BEFORE writing specs, design,
+      or tasks. Resolve ambiguity while change is still cheap.
 
       Process:
-      1. Read the proposal carefully. List the specific points where you'd
-         otherwise be guessing.
-      2. Ask the operator your questions interactively, ONE OR A FEW AT A TIME -
-         not as a giant batch. Wait for answers; let answers shape follow-up
-         questions. Use the AskUserQuestion mechanism where available.
-      3. Once questions are resolved, write discovery.md capturing:
-         - Questions Asked (audit trail)
-         - Decisions (question + answer + rationale + which spec/design
-           section the answer constrains)
-         - Deferred / Out of Scope (questions punted to a follow-up change)
-         - Assumptions (things treated as true without explicit confirmation,
-           where being wrong invalidates parts of the spec)
+      1. Read proposal.md. List every point where, without operator input,
+         you would have to guess: ambiguous requirements, contested UX choices,
+         migration shape, breaking-vs-compat trade-offs, edge cases the proposal
+         is silent on.
+      2. Ask the operator ONE OR A FEW questions at a time. Prefer the
+         `AskUserQuestion` tool if available; otherwise ask in the chat /
+         interactive surface. Let each answer shape the next question.
+         DO NOT batch all questions into a single message.
+      3. After each answer, record it in explore.md (see template). Then ask
+         the next round.
+      4. Stop when the proposal can be turned into specs and design without
+         further guessing.
 
-      Discovery is NOT a retrospective notebook. If a question was never
-      actually asked of the operator, it does not belong here - use
-      design.md's "Open Questions" section for unresolved items that
-      surface later.
+      Required sections (always present):
+      - **Summary** (one italic line at top, ≤ 25 words): "Resolved N
+         decisions; M assumptions; K items deferred."
+      - **Questions Asked**: paraphrased audit trail, one bullet each, in
+        chronological order. Write `*none — see No Ambiguity below*` if the
+        escape hatch is used.
+      - **Decisions** (default shape; mutually exclusive with No Ambiguity):
+        one `### Decision: <decision-slug>` block per resolved question,
+        with Question / Answer / Rationale / Affects. The decision-slug is
+        a short kebab-case identifier — downstream artifacts cite decisions
+        by this slug (e.g. `[implements: explore/transport-port-handling]`).
+        **Affects** MUST name a real artifact + section the decision binds,
+        using the spec heading verbatim (e.g. ``specs/auth/spec.md →
+        Requirement: User Authentication``), NOT a placeholder.
+      - **Deferred / Out of Scope**: bullets, "<topic> — <why deferred>". Write
+        "*none*" if not applicable.
+      - **Assumptions**: bullets, "<assumption> — <what breaks if false>".
+        Write "*none*" if not applicable.
 
-      Specs and design SHALL reference discovery.md when present, treating
-      its Decisions as binding constraints.
+      Escape hatch — "No Ambiguity":
+      If you genuinely found nothing to ask after reading the proposal AND
+      the operator confirms there is no ambiguity, REPLACE the `## Decisions`
+      section ONLY with a `## No Ambiguity` section containing one short
+      paragraph justifying why no questions were needed. The other sections
+      (`## Questions Asked`, `## Deferred / Out of Scope`, `## Assumptions`)
+      remain — use `*none*` for any with no content.
+      This MUST be operator-confirmed (cite the prompt or message); do NOT
+      self-declare.
+
+      Hard rules:
+      - explore.md is an audit trail, NOT a retrospective notebook. Questions
+        never actually put to the operator MUST NOT be listed here — use
+        design.md "Open Questions" for items that surface later.
+      - Specs, design, and tasks MUST reference explore.md Decisions as
+        binding constraints wherever they apply. Each downstream artifact's
+        instruction names a concrete citation mechanism:
+          - specs: inline `<!-- settle: explore/<slug> -->` HTML comment
+            on the affected requirement or scenario.
+          - design: cite the slug in the relevant Decision's `Why` line.
+          - tasks: `[implements: explore/<slug>]` in the task's citations.
     requires:
       - proposal
 
   - id: specs
     generates: "specs/**/*.md"
-    description: Detailed specifications for the change
+    description: Per-capability spec files defining WHAT the system shall do
     template: spec.md
     instruction: |
-      Create specification files that define WHAT the system should do.
+      Read proposal.md for the capability list; read explore.md for binding
+      decisions. Explore Decisions constrain the requirements you write.
 
-      If discovery.md exists, read it first and treat its Decisions as
-      binding constraints on the specs you write.
+      Required sections (each spec file):
+      - **Summary** (one italic line ≤ 25 words at top): what this capability
+        covers, so a reviewer can skim the specs/ directory.
+      - Then one or more delta operation blocks (see "Delta operation headers"
+        below).
 
-      Create one spec file per capability listed in the proposal's Capabilities section.
-      - New capabilities: use the exact kebab-case name from the proposal (specs/<capability>/spec.md).
-      - Modified capabilities: use the existing spec folder name from openspec/specs/<capability>/ when creating the delta spec at specs/<capability>/spec.md.
+      Capability ↔ file invariant (the contract proposal sets):
+      - For every bullet under proposal.md `### New`, create exactly one
+        `specs/<capability>/spec.md` with an `## ADDED Requirements` block.
+        Use the EXACT kebab-case name from the proposal.
+      - For every bullet under proposal.md `### Modified`, write a delta
+        spec at `specs/<existing-capability>/spec.md` (same folder name as
+        `openspec/specs/<existing-capability>/`). Never invent a near-duplicate.
+      - Conversely: do NOT create a spec for any capability not listed in
+        the proposal. If you discover one is needed, update proposal.md first.
 
-      Delta operations (use ## headers):
-      - **ADDED Requirements**: New capabilities
-      - **MODIFIED Requirements**: Changed behavior - MUST include full updated content
-      - **REMOVED Requirements**: Deprecated features - MUST include **Reason** and **Migration**
-      - **RENAMED Requirements**: Name changes only - use FROM:/TO: format
+      Before declaring specs done, self-check:
+        > Count the bullets under proposal `### New` and `### Modified`
+        > (excluding `*none*`). The number of spec files you have created
+        > MUST equal that count. If not, stop and reconcile.
 
-      Format requirements:
-      - Each requirement: `### Requirement: <name>` followed by description
-      - Use SHALL/MUST for normative requirements (avoid should/may)
-      - Each scenario: `#### Scenario: <name>` with WHEN/THEN format
-      - **CRITICAL**: Scenarios MUST use exactly 4 hashtags (`####`). Using 3 hashtags or bullets will fail silently.
-      - Every requirement MUST have at least one scenario.
+      Requirement naming (matches OpenSpec / RFC 2119; load-bearing for citations):
+      - Requirement headings: `### Requirement: <Title Case Name>` — words
+        Title-Cased, separated by spaces (e.g. `Activation Gated On Env Vars`,
+        `Url Parsing`). Avoid punctuation other than internal hyphens in
+        compound words (e.g. `Two-Factor Authentication` is fine).
+      - Tasks cite requirements via the kebab-case SLUG of the heading,
+        derived deterministically: lowercase, whitespace → `-`, strip
+        `[^a-z0-9-]`, collapse consecutive `-`, trim leading/trailing `-`.
+        Example: heading `### Requirement: Activation Gated On Env Vars`
+        ↔ citation `[implements: oauth-authentication/activation-gated-on-env-vars]`.
+      - Scenario headings: `#### Scenario: <Title Case Scenario Name>` (same
+        spacing rule). The scenario-slug used in `verify:` clauses and test
+        function names is derived from the heading by the same kebab rule.
 
-      MODIFIED requirements workflow:
-      1. Locate the existing requirement in openspec/specs/<capability>/spec.md
-      2. Copy the ENTIRE requirement block (from `### Requirement:` through all scenarios)
-      3. Paste under `## MODIFIED Requirements` and edit to reflect new behavior
-      4. Ensure header text matches exactly (whitespace-insensitive)
+      Delta operation headers (`##`):
+      - **ADDED Requirements** — net-new requirements.
+      - **MODIFIED Requirements** — changed behavior. (See HARD RULE below.)
+      - **REMOVED Requirements** — MUST include **Reason** and **Migration**
+        lines.
 
-      Common pitfall: Using MODIFIED with partial content loses detail at archive time.
-      If adding new concerns without changing existing behavior, use ADDED instead.
+      OpenSpec defines exactly these three delta operations (`ADDED`,
+      `MODIFIED`, `REMOVED`). Other operation names (including `RENAMED`)
+      are silently ignored by `openspec archive` and MUST NOT be used. To
+      rename a requirement, write a `REMOVED Requirements` entry for the
+      old name (with `Migration: callers move to <New Name>`) AND an
+      `ADDED Requirements` entry for the new name. To rename a scenario,
+      use `MODIFIED Requirements` and edit the `#### Scenario:` heading
+      inside the FULL requirement block.
 
-      Example:
-      ```
-      ## ADDED Requirements
+      Format (the formatter is strict — these are the silent-failure traps):
+      - `### Requirement: <Title Case Name>` followed by the requirement
+        statement. Use the RFC 2119 / BCP 14 keywords (MUST, SHALL,
+        SHOULD, MAY and their negatives) with their RFC 2119 meanings;
+        prefer MUST / SHALL for binding requirements.
+      - `#### Scenario: <Title Case Scenario Name>` — EXACTLY 4 hashtags.
+        3 hashtags or bullet form parses as part of the requirement
+        description and the scenario is lost.
+      - GIVEN / WHEN / THEN bullets (Gherkin-style, matching OpenSpec):
+        - `- **GIVEN** <precondition state>` — RECOMMENDED when the
+          scenario depends on prior state; omit only when the scenario has
+          no meaningful precondition.
+        - `- **WHEN** <trigger event>` — the action that fires the scenario.
+        - `- **THEN** <observable outcome>` — the assertion.
+        - `- **AND** <additional clause>` — continues whichever block it
+          follows (GIVEN, WHEN, or THEN).
+      - Every requirement MUST have at least one scenario. A requirement
+        without a scenario fails verification.
 
-      ### Requirement: User can export data
-      The system SHALL allow users to export their data in CSV format.
+      Tracing explore Decisions:
+      - When a requirement or scenario implements an explore Decision, add
+        an HTML comment on its own line immediately under the heading:
+        `<!-- settle: explore/<slug> -->`. Multiple comments allowed when
+        multiple decisions converge. This marker is what /opsx:verify uses
+        to confirm explore→spec traceability.
 
-      #### Scenario: Successful export
-      - **WHEN** user clicks "Export" button
-      - **THEN** system downloads a CSV file with all user data
+      Modified-requirement workflow:
+      1. Open `openspec/specs/<capability>/spec.md`.
+      2. Copy the ENTIRE existing `### Requirement: <name>` block including
+         all `#### Scenario:` children.
+      3. Paste under `## MODIFIED Requirements` in your delta spec. Edit
+         the body and / or scenarios to reflect the new behavior.
 
-      ## REMOVED Requirements
+      HARD RULE (this is the single highest-cost silent failure in OpenSpec):
+        The header line `### Requirement: <Name>` in your MODIFIED block
+        MUST be byte-identical (whitespace-insensitive) to the existing
+        header in `openspec/specs/<capability>/spec.md`. A mismatch fails
+        the modification at archive and silently loses your edits. After
+        pasting, diff your header against the source.
 
-      ### Requirement: Legacy export
-      **Reason**: Replaced by new export system
-      **Migration**: Use new export endpoint at /api/v2/export
-      ```
-
-      Specs should be testable - each scenario is a potential test case.
+      Style:
+      - Terse, requirement-style (RFC 2119 / BCP 14 keywords), testable. Each scenario should be implementable
+        as a single test. If a scenario takes more than ~5 WHEN/THEN lines,
+        split it.
     requires:
       - proposal
+      - explore
 
   - id: design
     generates: design.md
-    description: Technical design document with implementation details
+    description: Technical design — HOW to implement, with rationale binding apply-time choices
     template: design.md
     instruction: |
-      Create the design document that explains HOW to implement the change.
+      Read proposal.md for scope; read explore.md for binding decisions.
+      Explore Decisions constrain your design. Where an explore
+      Decision dictates a design choice, restate it in the relevant design
+      Decision block AND reference the explore slug in that block's **Why**
+      line (e.g. "Why: per explore/transport-port-handling, we must …").
 
-      If discovery.md exists, read it first and treat its Decisions as
-      binding constraints on the design choices you make.
+      design.md is REQUIRED (the file always exists). Sections are individually
+      optional — omit any section that has nothing to say rather than padding.
+      Target length: ≤ 2 pages (≈ 600 words) for non-trivial changes.
 
-      When to include design.md (create only if any apply):
-      - Cross-cutting change (multiple services/modules) or new architectural pattern
-      - New external dependency or significant data model changes
-      - Security, performance, or migration complexity
-      - Ambiguity that benefits from technical decisions before coding
+      When to write a substantive design.md (if NONE of these apply, see the
+      "Trivial Change" escape hatch below):
+      - Cross-cutting (multiple modules / services).
+      - New external dependency or new architectural pattern.
+      - Non-trivial data-model change.
+      - Security, performance, or migration complexity.
+      - Spec leaves implementation choices that need fixing before code.
 
       Sections:
-      - **Context**: Background, current state, constraints, stakeholders
-      - **Goals / Non-Goals**: What this design achieves and explicitly excludes
-      - **Decisions**: Key technical choices with rationale (why X over Y?). Include alternatives considered for each decision.
-      - **Risks / Trade-offs**: Known limitations, things that could go wrong. Format: [Risk] → Mitigation
-      - **Migration Plan**: Steps to deploy, rollback strategy (if applicable)
-      - **Open Questions**: Outstanding decisions or unknowns to resolve
+      - **Summary** (one italic line ≤ 25 words at top): the design's
+        through-line.
+      - **Context**: current state + the constraints the design has to honor.
+        Bulleted, ≤ 8 bullets. No background recap from the proposal.
+      - **Goals / Non-Goals**: bulleted, ≤ 5 bullets each. Non-Goals exist
+        to prevent scope creep.
+      - **Decisions**: one `### Decision: <decision-slug>` block per key
+        technical choice. The `Decision:` prefix matches OpenSpec
+        convention; the decision-slug after it is a short kebab-case
+        identifier. Tasks.md cites decisions by this slug
+        (e.g. `[implements: design/version-probe-port]`). Each block MUST
+        include:
+        - **Choice**: the decision in one sentence.
+        - **Why**: rationale, ≤ 3 lines. Reference any explore decision
+          that forced this choice.
+        - **Alternatives**: each rejected alternative on one line with the
+          reason it was rejected.
+        - **Binding**: the constraint this decision places on
+          implementation code (e.g. "All callers MUST go through
+          `ConnectionFactory.create()`"). This is what /opsx:apply will treat
+          as non-negotiable.
+      - **Risks / Trade-offs**: `[Risk] → Mitigation` lines, one per risk.
+      - **Migration Plan**: bulleted steps for deploy + rollback (omit if N/A).
+      - **Open Questions**: items still unresolved (NOT questions answered by
+        explore.md; those belong there).
 
-      Focus on architecture and approach, not line-by-line implementation.
-      Reference the proposal for motivation and specs for requirements.
+      Trivial Change escape hatch:
+      If no design-level decisions apply (e.g. mechanical rename, doc-only
+      change), replace Decisions / Risks / Migration with a single
+      `## Trivial Change` section containing a one-paragraph justification.
+      This MUST be operator-confirmed (recorded in explore.md as a Decision
+      or referenced from the No Ambiguity block); do NOT self-declare.
 
-      Good design docs explain the "why" behind technical decisions.
+      Do NOT write:
+      - Line-by-line implementation (that belongs in tasks.md / the code).
+      - Restated requirements (those belong in specs).
+      - Long "background" sections.
     requires:
       - proposal
+      - explore
+
+  - id: tasks
+    generates: tasks.md
+    description: Ordered, traceable, verifiable checklist that drives /opsx:apply
+    template: tasks.md
+    instruction: |
+      Decompose specs + design into an ordered, dependency-aware checklist.
+      tasks.md is the apply runbook — clarity and traceability matter more
+      than narrative.
+
+      Read explore.md first; its Decisions are binding constraints that
+      tasks may cite directly via `[implements: explore/<slug>]`.
+
+      Required:
+      - **Summary** line at top (italic, ≤ 25 words): total task count
+        and the rough shape ("3 phases, 11 tasks").
+      - Group tasks into phases: `## 1. <phase>`, `## 2. <phase>`, etc.
+        Phase names are descriptive — use whatever phases the work has.
+      - Tasks: `- [ ] N.M <imperative verb>: <concise deliverable>`.
+      - Each task MUST cite at least one binding source it implements,
+        on the same line, using one of these forms:
+        - `[implements: <capability-folder>/<requirement-slug>]` —
+          `<capability-folder>` is the folder name under `specs/`
+          (e.g. `connection-config`). `<requirement-slug>` is the
+          kebab-case SLUG derived from the requirement heading text:
+          lowercase, whitespace → `-`, strip `[^a-z0-9-]`, collapse
+          consecutive `-`, trim. So heading `### Requirement: Url Parsing`
+          → slug `url-parsing`.
+        - `[implements: design/<decision-slug>]` — slug after `Decision: `
+          in design.md Decisions.
+        - `[implements: explore/<decision-slug>]` — slug after `Decision: `
+          in explore.md Decisions.
+        - `[implements: meta/<kind>]` where `<kind>` ∈ `tests`, `docs`,
+          `migration`, `rollout`, `tooling`. Use for tasks that don't
+          map to a spec requirement or explicit decision (e.g. wire up
+          CI, write release notes). Each `meta/<kind>` task MUST also
+          cite an upstream binding whenever one applies — in particular
+          every `meta/tests` task MUST cite the requirement whose
+          scenario it tests (see Test-task rule below).
+        Multiple citations comma-separated. Examples:
+        - Non-test task (cites a Requirement + a Decision; verify is a
+          non-pytest check to keep the pattern distinct from test tasks):
+          `- [ ] 1.1 Parse URL: parse HYDROLIX_URL into host/scheme [implements: connection-config/url-parsing, design/url-port-precedence] — verify: \`ruff check mcp_hydrolix/auth.py\` clean`
+        - Test task (one per scenario; cites the parent Requirement;
+          verify names the scenario-specific function):
+          `- [ ] 2.1 Add test for scenario "Parses Valid Url" [implements: connection-config/url-parsing, meta/tests] — verify: \`pytest -q tests/test_connection_config.py::test_parses_valid_url\` green`
+      - Each task MUST end with a `verify:` clause naming the concrete
+        check that proves it done (e.g. `verify: scenario "Parses Valid Url"
+        passes`, `verify: \`pytest -q tests/test_x.py::test_parses_valid_url\` green`,
+        `verify: \`ruff check\` clean`). Separate the citation
+        block and the `verify:` clause with ` — ` (space, em-dash, space)
+        so both are visually obvious. Apply pre-flight identifies the
+        verify clause by the literal token `verify:` regardless of
+        separator, but the em-dash convention is what reviewers expect.
+      - Order so each task is unblocked by predecessors. Don't gate code
+        on rollout tasks; don't gate tests on rollout.
+
+      Test-task rule (REQUIRED, derived from spec scenarios):
+      For every `#### Scenario:` in your specs, schedule exactly one
+      tasks.md entry that adds or updates the test for that scenario.
+      The task MUST:
+      - Cite the parent REQUIREMENT in its `[implements: ...]` block,
+        not the scenario. The citation form is
+        `[implements: <capability-folder>/<requirement-slug>, meta/tests]`,
+        where `<requirement-slug>` is the kebab-case slug of the parent
+        requirement's heading.
+      - Name the SCENARIO-specific test function in its `verify:` clause,
+        of the form `pytest -q tests/test_<cap_folder>.py::test_<scenario_slug>`
+        (apply the slug rule to the scenario heading, then `-` → `_` so
+        the result is a valid Python identifier).
+      - So a requirement with N scenarios produces N test tasks, all
+        citing the same requirement but each verifying a distinct
+        `test_<scenario_slug>` function.
+      A scenario without a matching test task is a generation defect and
+      apply pre-flight will STOP (step 4, scenario-coverage check).
+
+      For every requirement under `## REMOVED Requirements`, schedule a
+      task to delete that requirement's tests, cited as
+      `[implements: <capability-folder>/<requirement-slug>, meta/tests]`,
+      with `verify:` naming the test file or pattern being deleted (e.g.
+      `verify: \`grep -L test_parses_valid_url tests/test_connection_config.py\` empty`).
+      Removed-requirement test cleanup is the operator's responsibility
+      to confirm at apply post-execution.
+
+      Test naming convention (use this when writing `verify:` clauses
+      for test tasks, so they match what /opsx:apply will produce):
+      - Test file: `tests/test_<capability-folder>.py` with `-` → `_`
+        in the capability name (e.g. capability `connection-config`
+        → `tests/test_connection_config.py`).
+      - Test function: `test_<scenario-slug>` where the slug is the
+        kebab-case form of the scenario heading text (e.g. scenario
+        `Parses Valid Url` → `test_parses_valid_url`).
+      - If the repo has an established convention that differs, follow
+        the repo but keep the scenario name visible in the test name.
+
+      Coverage rule:
+      Tasks SHOULD also cover migration, docs, rollout where applicable
+      (cite via the `meta/<kind>` forms above).
+
+      Anti-patterns to avoid:
+      - "Set up project" without a verify clause — those are code-smell
+        catch-alls.
+      - Prose paragraphs between bullets. If you need to explain order, put
+        it on the task line.
+      - Tasks that bundle multiple deliverables. If you'd open more than
+        one PR for a task, split it.
+      - Tasks with no `[implements: ...]` citation.
+      - Citing a requirement with a slug that doesn't match the
+        kebab-derived form of the heading (use the slug rule, not the raw heading).
+
+      Length: as long as needed; brevity per task, density across the list.
+    requires:
+      - proposal
+      - explore
+      - specs
+      - design
 
 apply:
-  requires: [specs, design]
+  requires: [proposal, explore, specs, design, tasks]
   instruction: |
-    Read the proposal, specs, and design. Infer a task list on the fly from
-    those artifacts and implement directly against the specs' requirements and
-    scenarios (each scenario is a potential test case).
+    /opsx:apply runbook. Treat this as the contract between the workflow and
+    the implementing agent.
 
-    This workflow intentionally omits tasks.md: modern coding agents (Sonnet,
-    Opus) can derive a reasonable task ordering from specs.md and design.md
-    without a separately maintained checklist, and we'd rather not pay the
-    cost (and review overhead) of keeping that checklist in sync with the specs
-    and the code.
+    Pre-flight (do all of these before touching code):
 
-    Pause if you hit blockers or need clarification.
+    A "binding source" is any target a task can cite via `[implements: ...]`.
+    Four namespaces are valid:
+    - `<capability-folder>/<requirement-slug>` — a Requirement in a spec
+    - `design/<decision-slug>` — a Decision in design.md
+    - `explore/<decision-slug>` — a Decision in explore.md
+    - `meta/<kind>` — work that has no upstream Decision or Requirement;
+      `<kind>` ∈ `tests`, `docs`, `migration`, `rollout`, `tooling`.
+
+    Slug derivation rule (used by several checks below): lowercase, whitespace
+    → `-`, strip `[^a-z0-9-]`, collapse consecutive `-`, trim.
+
+    1. Read proposal.md, explore.md, specs/**/spec.md, design.md, tasks.md.
+    2. Capability ↔ spec-file check:
+       - List spec folders in this change (e.g. `ls specs/`).
+       - Verify each kebab-case name under proposal `### New` and `### Modified`
+         (excluding `*none*`) has exactly one matching folder, and vice versa.
+       - If any mismatch, STOP and surface to the operator.
+    3. Task-shape check:
+       - For every task in tasks.md, confirm BOTH a `[implements: ...]`
+         citation AND a `verify:` clause are present (separator
+         ` — verify: ...` recommended for readability; the agent
+         identifies the verify clause by the literal token `verify:`).
+         If any task lacks either, STOP.
+       - For every `[implements: <cap>/<requirement-slug>]` citation,
+         confirm `<cap>` is a real folder under this change's `specs/`
+         and `<requirement-slug>` matches the derived slug of some
+         `### Requirement:` heading in `specs/<cap>/spec.md`. If a citation
+         doesn't resolve, STOP.
+       - For every `[implements: design/<decision-slug>]` citation,
+         confirm `<decision-slug>` matches the derived slug of some
+         `### Decision: <slug>` heading in design.md (i.e. the text after
+         `Decision: ` slugged). If a citation doesn't resolve, STOP.
+       - For every `[implements: explore/<decision-slug>]` citation,
+         confirm `<decision-slug>` matches the derived slug of some
+         `### Decision: <slug>` heading in explore.md. If a citation
+         doesn't resolve, STOP. (If explore uses the `## No Ambiguity`
+         escape hatch, there are no explore Decisions; any
+         `explore/<slug>` citation in tasks must STOP for that reason.)
+       - For every `[implements: meta/<kind>]` citation, confirm `<kind>`
+         is one of `tests`, `docs`, `migration`, `rollout`, `tooling`.
+         If an unknown `<kind>` appears, STOP.
+       - Warm-up coverage check: for every `#### Scenario:` in specs,
+         confirm at least one task cites that scenario's parent
+         requirement AND `meta/tests`. (This is requirement-level — a
+         single bundled test task can satisfy it. The authoritative
+         per-scenario check is step 4 below.) If any scenario's parent
+         requirement has no test task at all, STOP.
+    4. Scenario-coverage check (per-scenario, not per-requirement):
+       - For each `#### Scenario:` heading in specs, derive its
+         scenario-slug via the slug rule.
+       - Confirm tasks.md contains at least one task whose `verify:`
+         clause names the test function `test_<scenario_slug_underscored>`
+         (with `-` → `_`). If any scenario has no matching `verify:`,
+         STOP. This catches the case where ONE bundled test task
+         appears to cover multiple scenarios under one requirement.
+    5. MODIFIED-header byte-match check (the single highest-cost silent
+       failure — see specs HARD RULE):
+       - For each `### Requirement:` heading under a `## MODIFIED
+         Requirements` block in any `specs/<cap>/spec.md` in this change,
+         read the corresponding header in `openspec/specs/<cap>/spec.md`
+         (the existing archived spec). Confirm the two heading lines are
+         byte-identical (whitespace-insensitive). If any mismatch, STOP
+         — the modification would silently drop at archive time.
+    6. Binding-source review:
+       - For each design Decision, confirm its **Binding** line is
+         present, non-empty, and contains no placeholder text (e.g.
+         literal `<the constraint this places on…>` text left from the
+         template, or any other `<…>` placeholder fragment). If missing
+         or placeholder, STOP — the design instruction declares Binding
+         as the non-negotiable apply-time constraint, so without one
+         apply has nothing to enforce.
+       - For each explore Decision (when `## Decisions` is in use),
+         confirm its **Affects** line names a real artifact + section
+         (not a `<…placeholder…>`). If missing or placeholder, STOP.
+       - Treat both Binding and Affects as non-negotiable constraints.
+    7. Escape-hatch integrity check:
+       - When scanning for `## Decisions`, `## No Ambiguity`, or
+         `## Trivial Change` headings in steps 7a–7c below, treat any
+         heading text inside an HTML comment block (`<!-- … -->`) as
+         ABSENT. Only count live, uncommented markdown headings.
+         (The explore.md template ships `## Decisions` live and
+         `## No Ambiguity` inside an HTML comment; the design.md template
+         ships its Decision blocks live and `## Trivial Change` inside an
+         HTML comment. A naive author using the escape hatch must
+         uncomment the alternative block AND delete the live default
+         block; a naive author using the default does nothing. Both
+         live = STOP.)
+       7a. explore.md MUST contain exactly ONE live, uncommented
+           `## Decisions` or `## No Ambiguity` heading. If both live,
+           STOP.
+       7b. If design.md contains a live `## Trivial Change` section,
+           confirm explore.md contains either (a) a `## Decisions` entry
+           whose **Affects** references `design.md → Trivial Change`, or
+           (b) a `## No Ambiguity` block whose justification mentions the
+           Trivial Change. If neither, STOP.
+       7c. If explore.md uses the `## No Ambiguity` escape hatch (live
+           heading, not commented), confirm the section cites the
+           operator confirmation (prompt, message, or request that
+           established no ambiguity exists). If missing, STOP.
+
+    Execution:
+    - Walk tasks.md in declared order. Check items off as you complete them.
+    - For each task, after implementing, run the task's `verify:` check and
+      record the result. If verify fails, fix before moving on.
+    - For each spec scenario tied to a completed task, generate or update a
+      test that matches the scenario's WHEN / THEN. Specs' scenarios are
+      the source of truth for behavioral coverage.
+    - Test naming convention: place tests in `tests/test_<capability-folder>.py`
+      (substitute `-` → `_` in the capability name) and name test functions
+      `test_<scenario-slug>` (kebab-case from the `#### Scenario:` line,
+      `-` → `_`). If the repo has an established convention that differs,
+      follow the repo but keep the scenario name visible in the test name.
+
+    Pause-and-ask conditions:
+    - A binding constraint (explore Decision or design Decision → Binding)
+      forces a choice the artifacts didn't anticipate.
+    - A spec scenario is internally contradictory or contradicts another.
+    - A task's `verify:` check cannot be performed in this environment.
+      In that case: record the limitation inline next to the task (do not
+      silently skip), implement to the best of your ability, and surface
+      the deferred verification to the operator at post-execution.
+
+    Post-execution (after the last task is checked off):
+    1. Run `/opsx:verify` (or the equivalent verify command for this
+       repository's workflow) and surface the result to the operator.
+    2. Report any tasks whose `verify:` clause was deferred (these
+       tasks should be marked `- [-] ...` in tasks.md, not `- [x]`,
+       so the operator can see at a glance which checks were skipped).
+    3. Do not archive the change yourself — leave that to the operator.
+
+    The implementing agent is "done" when all tasks are checked off
+    (`[x]` or `[-]`) and `/opsx:verify` has been run and reported.
+    Anything after that is operator action.
+
+    Do NOT:
+    - Skip tasks because they "seem optional".
+    - Refactor outside the cited requirements / decisions of the task you're
+      currently on.
+    - Re-litigate decisions captured in explore.md — surface the conflict
+      and pause instead.
