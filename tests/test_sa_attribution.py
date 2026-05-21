@@ -149,6 +149,35 @@ class TestSAAttributionMiddleware:
         assert rec.service_account_id == "sa-uuid-123"
         assert rec.tool_name == "list_databases"
 
+    def test_skips_log_when_env_default_credential_is_username_password(self, monkeypatch, caplog):
+        """If the server is started with HYDROLIX_USER/HYDROLIX_PASSWORD (no
+        SA token), the env-default credential is a UsernamePassword. The
+        middleware must skip cleanly via the isinstance guard — no log line,
+        no DEBUG "logging failed" line, and call_next must still be invoked
+        so the tool handler proceeds normally."""
+        from mcp_hydrolix import sa_attribution
+
+        monkeypatch.setattr(sa_attribution, "get_access_token", lambda: None)
+
+        env_credential = UsernamePassword(username="bob", password="hunter2")
+
+        class _UserPassConfig:
+            def creds_with(self, request_credential):
+                return request_credential if request_credential is not None else env_credential
+
+        monkeypatch.setattr(sa_attribution, "get_config", lambda: _UserPassConfig())
+
+        mw = sa_attribution.SAAttributionMiddleware()
+        with caplog.at_level(logging.DEBUG, logger="mcp_hydrolix.sa_attribution"):
+            result = asyncio.run(mw.on_request(_ctx("tools/call", tool_name="list_databases"), _ok))
+
+        # call_next ran (request was not broken)
+        assert result == "downstream-result"
+        # Skip cleanly: no INFO (no SA to attribute) AND no DEBUG (no spurious
+        # "logging failed" — UsernamePassword is a supported credential type).
+        records = [r for r in caplog.records if r.name == "mcp_hydrolix.sa_attribution"]
+        assert records == []
+
     def test_skips_log_when_credential_is_not_a_service_account_token(self, monkeypatch, caplog):
         """If a future ``AccessToken`` subclass yields a non-SA credential
         (e.g. UsernamePassword), the middleware must skip rather than crash on
