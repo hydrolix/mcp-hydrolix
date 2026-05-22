@@ -1,8 +1,97 @@
+<!--
+  spec.md — WHAT the system shall do, in requirement-style (RFC 2119 /
+  BCP 14: MUST, SHALL, SHOULD, MAY), testable form.
+
+  Headers (silent-failure traps; the formatter is strict):
+  - `## ADDED | MODIFIED | REMOVED Requirements`
+  - `### Requirement: <Title Case Name>`  ← words separated by spaces, e.g.
+    "Activation Gated On Env Vars". Tasks cite the kebab-case slug derived
+    from this heading (lowercase, spaces → `-`, strip non-alphanumeric).
+  - `#### Scenario: <Title Case Scenario Name>` — EXACTLY 4 hashtags;
+    3 hashtags or a bullet parses as part of the requirement description
+    and the scenario is lost.
+
+  Scenario bullets (Gherkin-style):
+  - `- **GIVEN** <precondition>` — RECOMMENDED when there's prior state.
+  - `- **WHEN** <trigger>` — the firing event.
+  - `- **THEN** <outcome>` — the assertion.
+  - `- **AND** <additional>` — continues whichever block it follows.
+
+  HARD RULE for MODIFIED requirements:
+    Header line MUST be byte-identical (whitespace-insensitive) to the
+    existing header in openspec/specs/<cap>/spec.md. Mismatch silently
+    loses your edits at archive time. Diff after pasting.
+
+  Style: use RFC 2119 / BCP 14 keywords (MUST, SHALL, SHOULD, MAY and
+  negatives) with their RFC 2119 meanings. PREFER MUST / SHALL for binding
+  requirements; SHOULD / MAY are valid for recommendations and permissions.
+  Every requirement has ≥ 1 scenario.
+
+  This template shows all four delta sections. Delete the sections that
+  don't apply to this change rather than commenting them out.
+
+  Tracing explore Decisions: add `<!-- settle: explore/<slug> -->` on its
+  own line immediately under any requirement or scenario heading that
+  implements an explore decision.
+
+  Anti-patterns:
+  - Lowercase `should` / `may` (use uppercase RFC 2119 keywords; only the
+    uppercase forms carry their RFC 2119 meaning).
+  - Scenario with WHEN but no THEN (or vice versa).
+  - Requirement with zero scenarios.
+  - Title-Case-With-Spaces-Wrong-Form (e.g. `kebab-case` or `PascalCase`
+    requirement headings; OpenSpec archive expects Title Case With Spaces).
+  - MODIFIED block header that doesn't byte-match the existing spec.
+-->
+
+*<one-line summary, ≤ 25 words: what this capability covers>*
+
 ## ADDED Requirements
 
-### Requirement: <!-- requirement name -->
-<!-- requirement text -->
+### Requirement: <Title Case Name>
+<!-- settle: explore/<slug> -->
 
-#### Scenario: <!-- scenario name -->
-- **WHEN** <!-- condition -->
-- **THEN** <!-- expected outcome -->
+<!-- One-sentence requirement statement using RFC 2119 / BCP 14 keywords (prefer MUST / SHALL). -->
+
+#### Scenario: <Short Scenario Name>
+
+- **GIVEN** <precondition state, optional>
+- **WHEN** <trigger event>
+- **THEN** <observable outcome>
+- **AND** <additional outcome, optional>
+
+## MODIFIED Requirements
+
+<!--
+  Copy the ENTIRE existing requirement block (header + every scenario) from
+  openspec/specs/<cap>/spec.md, then edit. Header MUST be byte-identical
+  (apply pre-flight verifies this against the existing archived spec).
+  Delete this whole section if no requirements are being modified.
+-->
+
+### Requirement: <Existing Title Case Name>
+<!-- settle: explore/<slug> -->
+
+<updated requirement statement (RFC 2119 / BCP 14 keywords)>
+
+#### Scenario: <Existing Or New Scenario Name>
+<!-- settle: explore/<slug> -->
+
+- **GIVEN** ...
+- **WHEN** ...
+- **THEN** ...
+
+## REMOVED Requirements
+
+<!-- Delete this whole section if no requirements are being removed. -->
+
+### Requirement: <Title Case Name>
+
+- **Reason**: <why removed>
+- **Migration**: <how callers move off it>
+
+<!--
+  To rename a requirement, use `## REMOVED Requirements` (with a
+  `Migration:` line pointing at the new name) PLUS `## ADDED Requirements`
+  for the new name. OpenSpec recognizes only ADDED / MODIFIED / REMOVED.
+-->
