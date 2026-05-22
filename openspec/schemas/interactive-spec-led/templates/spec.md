@@ -17,17 +17,19 @@
   - `- **THEN** <outcome>` — the assertion.
   - `- **AND** <additional>` — continues whichever block it follows.
 
-  HARD RULE for MODIFIED requirements:
+  HARD RULE for MODIFIED and REMOVED requirements:
     Header line MUST be byte-identical (whitespace-insensitive) to the
-    existing header in openspec/specs/<cap>/spec.md. Mismatch silently
-    loses your edits at archive time. Diff after pasting.
+    existing header in openspec/specs/<cap>/spec.md. Mismatch fails the
+    operation at archive time — MODIFIED silently loses your edits;
+    REMOVED silently leaves the requirement in place — no error is
+    surfaced. Diff after pasting.
 
   Style: use RFC 2119 / BCP 14 keywords (MUST, SHALL, SHOULD, MAY and
   negatives) with their RFC 2119 meanings. PREFER MUST / SHALL for binding
   requirements; SHOULD / MAY are valid for recommendations and permissions.
   Every requirement has ≥ 1 scenario.
 
-  This template shows all four delta sections. Delete the sections that
+  This template shows all three delta sections. Delete the sections that
   don't apply to this change rather than commenting them out.
 
   Tracing explore Decisions: add `<!-- settle: explore/<slug> -->` on its
@@ -41,7 +43,7 @@
   - Requirement with zero scenarios.
   - Title-Case-With-Spaces-Wrong-Form (e.g. `kebab-case` or `PascalCase`
     requirement headings; OpenSpec archive expects Title Case With Spaces).
-  - MODIFIED block header that doesn't byte-match the existing spec.
+  - MODIFIED or REMOVED block header that doesn't byte-match the existing spec.
 -->
 
 *<one-line summary, ≤ 25 words: what this capability covers>*

@@ -17,13 +17,13 @@
     cites the PARENT requirement (not the scenario).
   - `verify:` names the SCENARIO-specific test function.
   A requirement with N scenarios produces N test tasks, each verifying
-  a distinct `test_<scenario_slug>` function. Apply pre-flight rejects
+  a distinct `test_<scenario-slug>` function. Apply pre-flight rejects
   scenarios with no matching verify clause.
 
   Test naming convention (for verify: clauses):
-  - File: `tests/test_<capability_folder>.py` (apply slug rule to the
+  - File: `tests/test_<capability-folder>.py` (apply slug rule to the
     capability folder name, then `-` → `_` for the filename).
-  - Function: `test_<scenario_slug>` — apply slug rule to the scenario
+  - Function: `test_<scenario-slug>` — apply slug rule to the scenario
     heading text, then `-` → `_` (Python identifiers can't contain `-`).
     So scenario `Parses Valid Url` → `parses-valid-url` (kebab slug) →
     `test_parses_valid_url` (test function).
@@ -66,7 +66,7 @@
 ## 2. <phase name>
 
 - [ ] 2.1 <task> [implements: explore/<decision-slug>] — verify: <check>
-- [ ] 2.2 Add test for scenario `<Title Case Scenario Name>` [implements: <capability-folder>/<requirement-slug>, meta/tests] — verify: `pytest -q tests/test_<capability_folder>.py::test_<scenario_slug>` green (function name = slug of the scenario heading; one test task per scenario, all citing the same requirement-slug)
+- [ ] 2.2 Add test for scenario `<Title Case Scenario Name>` [implements: <capability-folder>/<requirement-slug>, meta/tests] — verify: `pytest -q tests/test_<capability-folder>.py::test_<scenario-slug>` green (function name = slug of the scenario heading; one test task per scenario, all citing the same requirement-slug)
 
 ## 3. <phase name>
 
