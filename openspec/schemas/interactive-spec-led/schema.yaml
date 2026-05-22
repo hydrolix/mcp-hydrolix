@@ -405,7 +405,7 @@ artifacts:
       task to delete that requirement's tests, cited as
       `[implements: <capability-folder>/<requirement-slug>, meta/tests]`,
       with `verify:` naming the test file or pattern being deleted (e.g.
-      `verify: \`grep -L test_parses_valid_url tests/test_connection_config.py\` empty`).
+      `verify: \`grep -l test_parses_valid_url tests/test_connection_config.py\` empty`).
       Removed-requirement test cleanup is the operator's responsibility
       to confirm at apply post-execution.
 
