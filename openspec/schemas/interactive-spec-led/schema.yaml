@@ -202,7 +202,7 @@ artifacts:
       - **ADDED Requirements** — net-new requirements.
       - **MODIFIED Requirements** — changed behavior. (See HARD RULE below.)
       - **REMOVED Requirements** — MUST include **Reason** and **Migration**
-        lines.
+        lines. (See HARD RULE below — same header-match risk as MODIFIED.)
 
       OpenSpec defines exactly these three delta operations (`ADDED`,
       `MODIFIED`, `REMOVED`). Other operation names (including `RENAMED`)
@@ -247,11 +247,12 @@ artifacts:
          the body and / or scenarios to reflect the new behavior.
 
       HARD RULE (this is the single highest-cost silent failure in OpenSpec):
-        The header line `### Requirement: <Name>` in your MODIFIED block
-        MUST be byte-identical (whitespace-insensitive) to the existing
-        header in `openspec/specs/<capability>/spec.md`. A mismatch fails
-        the modification at archive and silently loses your edits. After
-        pasting, diff your header against the source.
+        The header line `### Requirement: <Name>` in your MODIFIED or REMOVED
+        block MUST be byte-identical (whitespace-insensitive) to the existing
+        header in `openspec/specs/<capability>/spec.md`. A mismatch fails the
+        operation at archive — MODIFIED silently loses your edits; REMOVED
+        silently leaves the requirement in place — and no error is surfaced.
+        After pasting, diff your header against the source.
 
       Style:
       - Terse, requirement-style (RFC 2119 / BCP 14 keywords), testable. Each scenario should be implementable
@@ -392,12 +393,12 @@ artifacts:
         where `<requirement-slug>` is the kebab-case slug of the parent
         requirement's heading.
       - Name the SCENARIO-specific test function in its `verify:` clause,
-        of the form `pytest -q tests/test_<cap_folder>.py::test_<scenario_slug>`
+        of the form `pytest -q tests/test_<capability-folder>.py::test_<scenario-slug>`
         (apply the slug rule to the scenario heading, then `-` → `_` so
         the result is a valid Python identifier).
       - So a requirement with N scenarios produces N test tasks, all
         citing the same requirement but each verifying a distinct
-        `test_<scenario_slug>` function.
+        `test_<scenario-slug>` function.
       A scenario without a matching test task is a generation defect and
       apply pre-flight will STOP (step 4, scenario-coverage check).
 
@@ -501,18 +502,21 @@ apply:
        - For each `#### Scenario:` heading in specs, derive its
          scenario-slug via the slug rule.
        - Confirm tasks.md contains at least one task whose `verify:`
-         clause names the test function `test_<scenario_slug_underscored>`
-         (with `-` → `_`). If any scenario has no matching `verify:`,
-         STOP. This catches the case where ONE bundled test task
-         appears to cover multiple scenarios under one requirement.
-    5. MODIFIED-header byte-match check (the single highest-cost silent
-       failure — see specs HARD RULE):
+         clause names the test function `test_<scenario-slug>`
+         (with `-` → `_` so it's a valid Python identifier). If any
+         scenario has no matching `verify:`, STOP. This catches the
+         case where ONE bundled test task appears to cover multiple
+         scenarios under one requirement.
+    5. MODIFIED/REMOVED-header byte-match check (the single highest-cost
+       silent failure — see specs HARD RULE):
        - For each `### Requirement:` heading under a `## MODIFIED
-         Requirements` block in any `specs/<cap>/spec.md` in this change,
-         read the corresponding header in `openspec/specs/<cap>/spec.md`
-         (the existing archived spec). Confirm the two heading lines are
-         byte-identical (whitespace-insensitive). If any mismatch, STOP
-         — the modification would silently drop at archive time.
+         Requirements` OR `## REMOVED Requirements` block in any
+         `specs/<cap>/spec.md` in this change, read the corresponding
+         header in `openspec/specs/<cap>/spec.md` (the existing archived
+         spec). Confirm the two heading lines are byte-identical
+         (whitespace-insensitive). If any mismatch, STOP — the operation
+         would silently drop at archive (MODIFIED loses your edits;
+         REMOVED leaves the requirement in place).
     6. Binding-source review:
        - For each design Decision, confirm its **Binding** line is
          present, non-empty, and contains no placeholder text (e.g.
