@@ -32,6 +32,9 @@
 - **Alternatives:** Probe the FastMCP server at runtime — couples to internals.
 - **Binding:** Transport field MUST source from `HYDROLIX_CONFIG.mcp_server_transport`.
 
-## Open Questions
+### Decision: scope-limited-to-execute-query
 
-- Should `execute_cmd` (`mcp_server.py:255`) also set the comment? Proposal scopes to `execute_query`; defer to apply-time.
+- **Choice:** Apply `hdx_query_admin_comment` only in `execute_query`; leave `execute_cmd` (`mcp_server.py:255`) unchanged.
+- **Why:** Usage attribution is only needed for SQL query traffic. `execute_cmd` runs catalog operations (e.g. `SHOW DATABASES` at `mcp_server.py:401`), which are not the queries we want to attribute.
+- **Alternatives:** Cover `execute_cmd` for symmetry — rejected; dilutes the per-user signal with catalog noise.
+- **Binding:** `execute_cmd` MUST NOT set `hdx_query_admin_comment`. Future attribution of catalog traffic, if needed, requires a separate change.
