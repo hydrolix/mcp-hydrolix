@@ -6,7 +6,7 @@
 ### Requirement: Query Comment Composition
 <!-- settle: explore/comment-format -->
 
-The server MUST set `hdx_query_admin_comment` on every query to `User=<name>; version=<version>; transport=<transport>`, in that order, joined by `; `.
+The server MUST set `hdx_query_admin_comment` on every query to `User=mcp-hydrolix; version=<version>; transport=<transport>`, in that order, joined by `; `.
 
 #### Scenario: Renders Composed Comment
 
