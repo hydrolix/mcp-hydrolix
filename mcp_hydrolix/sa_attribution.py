@@ -13,9 +13,10 @@ the JWT (``iss``, ``aud``, ``sub``, ``iat``, ``exp``, ``jti``) nor the
 from the MCP side. It would land here too if turbine grows a ``created_by``
 field and bakes it into the JWT claim set.
 
-OpenSpec landed in the repo (#102) after this middleware was implemented; the
-design here is captured in the PR description rather than as an OpenSpec
-proposal/spec. Future features should use the OpenSpec workflow.
+This middleware predates the OpenSpec workflow now in the repo (introduced
+in #102, refined in #104 and #106). Its design lives in the PR description
+rather than as an OpenSpec proposal/spec. Future features should use that
+workflow.
 """
 
 from __future__ import annotations
@@ -23,17 +24,16 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from fastmcp.server.dependencies import get_access_token
 from fastmcp.server.middleware import Middleware, MiddlewareContext
 
-from mcp_hydrolix.auth import AccessToken, ServiceAccountToken
+from mcp_hydrolix.auth import ServiceAccountToken, get_request_credential
 from mcp_hydrolix.mcp_env import get_config
 
 
 logger = logging.getLogger(__name__)
 
 
-class SAAttributionMiddleware(Middleware):
+class ServiceAccountAttributionMiddleware(Middleware):
     """Log one structured line per authenticated MCP request.
 
     The log line carries ``service_account_id`` (and ``tool_name`` for
@@ -48,25 +48,21 @@ class SAAttributionMiddleware(Middleware):
     """
 
     async def on_request(self, context: MiddlewareContext, call_next) -> Any:
+        # Resolve the effective credential (per-request bearer first, env
+        # default fallback). ``creds_with`` raises ValueError when neither is
+        # available; in that case there's nothing to attribute, so skip
+        # logging entirely.
         try:
-            request_token = get_access_token()
-            credential = None
-            if isinstance(request_token, AccessToken):
-                credential = request_token.as_credential()
-            else:
-                # No per-request auth context (stdio, or HTTP without a bearer).
-                # Fall back to the env-configured default credential.
-                try:
-                    credential = get_config().creds_with(None)
-                except ValueError:
-                    # No default credential configured either — nothing to log.
-                    pass
+            credential = get_config().creds_with(get_request_credential())
+        except ValueError:
+            return await call_next(context)
 
-            # ``credential`` may be ``HydrolixCredential`` (abstract); only the
-            # SA subtype carries ``service_account_id``. Guard rather than rely
-            # on the broad except below so a non-SA credential (e.g.
-            # UsernamePassword) skips cleanly without a misleading "logging
-            # failed" debug line.
+        # Best-effort logging. ``credential`` may be ``HydrolixCredential``
+        # (abstract); only the SA subtype carries ``service_account_id``, so
+        # non-SA credentials (e.g. UsernamePassword) skip cleanly via the
+        # isinstance guard. The broad ``except`` is a safety net so an
+        # unexpected logging-path failure can't turn into a request error.
+        try:
             if isinstance(credential, ServiceAccountToken):
                 fields: dict[str, Any] = {
                     "service_account_id": credential.service_account_id,
@@ -77,8 +73,6 @@ class SAAttributionMiddleware(Middleware):
                         fields["tool_name"] = tool_name
                 logger.info("mcp_request", extra=fields)
         except Exception:
-            # Attribution is best-effort; never let a malformed token or other
-            # logging-path failure turn into a request error.
             logger.debug("SA attribution logging failed", exc_info=True)
 
         return await call_next(context)

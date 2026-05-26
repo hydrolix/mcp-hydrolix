@@ -23,22 +23,20 @@ from clickhouse_connect.driver.binding import format_query_value
 from dotenv import load_dotenv
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
-from fastmcp.server.dependencies import get_access_token
 from fastmcp.server.middleware import Middleware, MiddlewareContext
-from jwt import DecodeError
 from mcp.types import ToolAnnotations
 from starlette.requests import Request
 from starlette.responses import PlainTextResponse, Response
 
 from mcp_hydrolix import metrics
 from mcp_hydrolix.auth import (
-    AccessToken,
     HydrolixCredential,
     HydrolixCredentialChain,
     ServiceAccountToken,
     UsernamePassword,
+    get_request_credential,
 )
-from mcp_hydrolix.sa_attribution import SAAttributionMiddleware
+from mcp_hydrolix.sa_attribution import ServiceAccountAttributionMiddleware
 from mcp_hydrolix.mcp_env import HydrolixConfig, get_config
 from mcp_hydrolix.column_analysis import (
     _enrich_column_metadata,
@@ -68,20 +66,6 @@ mcp = FastMCP(
     name=MCP_SERVER_NAME,
     auth=HydrolixCredentialChain(None),
 )
-
-
-def get_request_credential() -> Optional[HydrolixCredential]:
-    if (token := get_access_token()) is not None:
-        if isinstance(token, AccessToken):
-            try:
-                return token.as_credential()
-            except DecodeError:
-                raise ValueError("The provided access token is invalid.")
-        else:
-            raise ValueError(
-                "Found non-hydrolix access token on request -- this should be impossible!"
-            )
-    return None
 
 
 async def create_hydrolix_client(pool_mgr, request_credential: Optional[HydrolixCredential]):
@@ -344,7 +328,7 @@ if HYDROLIX_CONFIG.metrics_enabled:
 
 # Per-request SA attribution logging (HDX-11151). Unconditional; see
 # mcp_hydrolix.sa_attribution for the temporary-stopgap rationale.
-mcp.add_middleware(SAAttributionMiddleware())
+mcp.add_middleware(ServiceAccountAttributionMiddleware())
 
 
 async def _query_targets_summary_table(query: str) -> bool:

@@ -17,9 +17,7 @@ from types import SimpleNamespace
 import jwt
 
 from mcp_hydrolix.auth import (
-    AccessToken,
-    HydrolixCredential,
-    HydrolixCredentialChain,
+    ServiceAccountToken,
     UsernamePassword,
 )
 
@@ -42,17 +40,29 @@ def _base_claims(**overrides):
     return claims
 
 
-def _sa_access_token(claims: dict | None = None):
-    token = _make_jwt(claims or _base_claims())
-    return HydrolixCredentialChain.ServiceAccountAccess(
-        token=token,
-        client_id=HydrolixCredentialChain.ServiceAccountAccess.FAKE_CLIENT_ID,
-        scopes=[HydrolixCredentialChain.ServiceAccountAccess.FAKE_SCOPE],
-        expires_at=None,
-        resource=None,
-        claims={},
-        expected_issuer="https://test.invalid/config",
+def _sa_credential(claims: dict | None = None) -> ServiceAccountToken:
+    """Build a real ServiceAccountToken for tests. The JWT decoder skips
+    signature verification, so the key/algo used by ``_make_jwt`` is fine."""
+    return ServiceAccountToken(
+        _make_jwt(claims or _base_claims()),
+        expected_iss="https://test.invalid/config",
     )
+
+
+class _PassthroughConfig:
+    """Stand-in for HydrolixConfig.creds_with: returns the per-request
+    credential when present, else the env-supplied default (if any), else
+    raises ValueError (matching the real ``creds_with`` contract)."""
+
+    def __init__(self, env_default=None):
+        self._env_default = env_default
+
+    def creds_with(self, request_credential):
+        if request_credential is not None:
+            return request_credential
+        if self._env_default is not None:
+            return self._env_default
+        raise ValueError("no credentials")
 
 
 def _ctx(method: str, tool_name: str | None = None):
@@ -68,15 +78,16 @@ async def _ok(_ctx) -> str:
     return "downstream-result"
 
 
-class TestSAAttributionMiddleware:
+class TestServiceAccountAttributionMiddleware:
     """Per-request attribution logging."""
 
     def test_logs_service_account_id_for_authenticated_request(self, monkeypatch, caplog):
         from mcp_hydrolix import sa_attribution
 
-        monkeypatch.setattr(sa_attribution, "get_access_token", lambda: _sa_access_token())
+        monkeypatch.setattr(sa_attribution, "get_request_credential", _sa_credential)
+        monkeypatch.setattr(sa_attribution, "get_config", _PassthroughConfig)
 
-        mw = sa_attribution.SAAttributionMiddleware()
+        mw = sa_attribution.ServiceAccountAttributionMiddleware()
         with caplog.at_level(logging.INFO, logger="mcp_hydrolix.sa_attribution"):
             result = asyncio.run(mw.on_request(_ctx("tools/list"), _ok))
 
@@ -89,9 +100,10 @@ class TestSAAttributionMiddleware:
     def test_includes_tool_name_for_tool_calls(self, monkeypatch, caplog):
         from mcp_hydrolix import sa_attribution
 
-        monkeypatch.setattr(sa_attribution, "get_access_token", lambda: _sa_access_token())
+        monkeypatch.setattr(sa_attribution, "get_request_credential", _sa_credential)
+        monkeypatch.setattr(sa_attribution, "get_config", _PassthroughConfig)
 
-        mw = sa_attribution.SAAttributionMiddleware()
+        mw = sa_attribution.ServiceAccountAttributionMiddleware()
         with caplog.at_level(logging.INFO, logger="mcp_hydrolix.sa_attribution"):
             asyncio.run(mw.on_request(_ctx("tools/call", tool_name="run_select_query"), _ok))
 
@@ -99,20 +111,17 @@ class TestSAAttributionMiddleware:
         assert rec.service_account_id == "sa-uuid-123"
         assert rec.tool_name == "run_select_query"
 
-    def test_does_not_log_when_no_access_token_and_no_env_credential(self, monkeypatch, caplog):
-        """No per-request token AND no env-configured default credential
-        (raises ValueError from creds_with) — middleware skips silently."""
+    def test_does_not_log_when_no_request_credential_and_no_env_credential(
+        self, monkeypatch, caplog
+    ):
+        """No per-request credential AND no env-configured default credential
+        (``creds_with(None)`` raises ValueError) — middleware skips silently."""
         from mcp_hydrolix import sa_attribution
 
-        monkeypatch.setattr(sa_attribution, "get_access_token", lambda: None)
+        monkeypatch.setattr(sa_attribution, "get_request_credential", lambda: None)
+        monkeypatch.setattr(sa_attribution, "get_config", lambda: _PassthroughConfig())
 
-        class _NoCredsConfig:
-            def creds_with(self, _request_credential):
-                raise ValueError("no credentials")
-
-        monkeypatch.setattr(sa_attribution, "get_config", lambda: _NoCredsConfig())
-
-        mw = sa_attribution.SAAttributionMiddleware()
+        mw = sa_attribution.ServiceAccountAttributionMiddleware()
         with caplog.at_level(logging.INFO, logger="mcp_hydrolix.sa_attribution"):
             result = asyncio.run(mw.on_request(_ctx("tools/list"), _ok))
 
@@ -121,26 +130,19 @@ class TestSAAttributionMiddleware:
 
     def test_falls_back_to_env_default_credential_for_stdio(self, monkeypatch, caplog):
         """For stdio transport (Claude Code's default), HYDROLIX_TOKEN becomes
-        the env-configured default credential — it is NOT injected per-request
-        and ``get_access_token()`` returns None. The middleware must fall back
-        to the default credential via ``creds_with(None)`` so attribution still
-        fires for stdio. This is the most common Claude Code setup."""
+        the env-configured default credential — there is NO per-request auth
+        context, so ``get_request_credential()`` returns None. The middleware
+        must fall back to the default credential via ``creds_with(None)`` so
+        attribution still fires for stdio. This is the most common Claude
+        Code setup."""
         from mcp_hydrolix import sa_attribution
-        from mcp_hydrolix.auth.credentials import ServiceAccountToken
 
-        monkeypatch.setattr(sa_attribution, "get_access_token", lambda: None)
-
-        env_credential = ServiceAccountToken(
-            _make_jwt(_base_claims()), expected_iss="https://test.invalid/config"
+        monkeypatch.setattr(sa_attribution, "get_request_credential", lambda: None)
+        monkeypatch.setattr(
+            sa_attribution, "get_config", lambda: _PassthroughConfig(env_default=_sa_credential())
         )
 
-        class _StdioConfig:
-            def creds_with(self, request_credential):
-                return request_credential if request_credential is not None else env_credential
-
-        monkeypatch.setattr(sa_attribution, "get_config", lambda: _StdioConfig())
-
-        mw = sa_attribution.SAAttributionMiddleware()
+        mw = sa_attribution.ServiceAccountAttributionMiddleware()
         with caplog.at_level(logging.INFO, logger="mcp_hydrolix.sa_attribution"):
             result = asyncio.run(mw.on_request(_ctx("tools/call", tool_name="list_databases"), _ok))
 
@@ -157,17 +159,13 @@ class TestSAAttributionMiddleware:
         so the tool handler proceeds normally."""
         from mcp_hydrolix import sa_attribution
 
-        monkeypatch.setattr(sa_attribution, "get_access_token", lambda: None)
-
         env_credential = UsernamePassword(username="bob", password="hunter2")
+        monkeypatch.setattr(sa_attribution, "get_request_credential", lambda: None)
+        monkeypatch.setattr(
+            sa_attribution, "get_config", lambda: _PassthroughConfig(env_default=env_credential)
+        )
 
-        class _UserPassConfig:
-            def creds_with(self, request_credential):
-                return request_credential if request_credential is not None else env_credential
-
-        monkeypatch.setattr(sa_attribution, "get_config", lambda: _UserPassConfig())
-
-        mw = sa_attribution.SAAttributionMiddleware()
+        mw = sa_attribution.ServiceAccountAttributionMiddleware()
         with caplog.at_level(logging.DEBUG, logger="mcp_hydrolix.sa_attribution"):
             result = asyncio.run(mw.on_request(_ctx("tools/call", tool_name="list_databases"), _ok))
 
@@ -178,28 +176,20 @@ class TestSAAttributionMiddleware:
         records = [r for r in caplog.records if r.name == "mcp_hydrolix.sa_attribution"]
         assert records == []
 
-    def test_skips_log_when_credential_is_not_a_service_account_token(self, monkeypatch, caplog):
-        """If a future ``AccessToken`` subclass yields a non-SA credential
-        (e.g. UsernamePassword), the middleware must skip rather than crash on
-        the missing ``service_account_id`` attribute. The broad except would
-        also catch this, but the explicit guard makes the intent clear."""
+    def test_skips_log_when_request_credential_is_not_a_service_account_token(
+        self, monkeypatch, caplog
+    ):
+        """If a non-SA credential is somehow on the request (e.g. a future
+        AccessToken subtype yielding UsernamePassword), the middleware must
+        skip cleanly via the isinstance guard — no crash on the missing
+        ``service_account_id`` attribute."""
         from mcp_hydrolix import sa_attribution
 
-        class _NonSAAccess(AccessToken):
-            def as_credential(self) -> HydrolixCredential:
-                return UsernamePassword(username="u", password="p")
+        non_sa_credential = UsernamePassword(username="u", password="p")
+        monkeypatch.setattr(sa_attribution, "get_request_credential", lambda: non_sa_credential)
+        monkeypatch.setattr(sa_attribution, "get_config", _PassthroughConfig)
 
-        non_sa_token = _NonSAAccess(
-            token="opaque",
-            client_id="fake-client",
-            scopes=["fake-scope"],
-            expires_at=None,
-            resource=None,
-            claims={},
-        )
-        monkeypatch.setattr(sa_attribution, "get_access_token", lambda: non_sa_token)
-
-        mw = sa_attribution.SAAttributionMiddleware()
+        mw = sa_attribution.ServiceAccountAttributionMiddleware()
         with caplog.at_level(logging.DEBUG, logger="mcp_hydrolix.sa_attribution"):
             result = asyncio.run(mw.on_request(_ctx("tools/list"), _ok))
 
@@ -209,30 +199,25 @@ class TestSAAttributionMiddleware:
         records = [r for r in caplog.records if r.name == "mcp_hydrolix.sa_attribution"]
         assert records == []
 
-    def test_logging_failure_does_not_break_the_request(self, monkeypatch, caplog):
-        """A malformed JWT must not turn into a 500 — log path failures swallow,
-        the request continues. This is a stopgap log; correctness of the request
-        is more important than perfect attribution."""
+    def test_invalid_request_token_does_not_break_the_request(self, monkeypatch, caplog):
+        """If ``get_request_credential`` raises ValueError (e.g. malformed
+        per-request JWT), middleware must skip the log line cleanly and still
+        call call_next so the request proceeds. ``creds_with`` is the layer
+        that raises in the merged code path, but the same outcome must hold
+        when get_request_credential itself raises."""
         from mcp_hydrolix import sa_attribution
 
-        # Build a "token" that will blow up at decode time inside as_credential().
-        bad = HydrolixCredentialChain.ServiceAccountAccess(
-            token="not-a-jwt",
-            client_id=HydrolixCredentialChain.ServiceAccountAccess.FAKE_CLIENT_ID,
-            scopes=[HydrolixCredentialChain.ServiceAccountAccess.FAKE_SCOPE],
-            expires_at=None,
-            resource=None,
-            claims={},
-            expected_issuer=None,
-        )
-        monkeypatch.setattr(sa_attribution, "get_access_token", lambda: bad)
+        def _raises():
+            raise ValueError("The provided access token is invalid.")
 
-        mw = sa_attribution.SAAttributionMiddleware()
+        monkeypatch.setattr(sa_attribution, "get_request_credential", _raises)
+        monkeypatch.setattr(sa_attribution, "get_config", _PassthroughConfig)
+
+        mw = sa_attribution.ServiceAccountAttributionMiddleware()
         with caplog.at_level(logging.INFO, logger="mcp_hydrolix.sa_attribution"):
             result = asyncio.run(mw.on_request(_ctx("tools/list"), _ok))
 
         assert result == "downstream-result"
-        # The attribution line should be absent, but downstream still ran.
         attribution_lines = [
             r
             for r in caplog.records
@@ -241,7 +226,7 @@ class TestSAAttributionMiddleware:
         assert attribution_lines == []
 
 
-class TestSAAttributionMiddlewareJsonOutput:
+class TestServiceAccountAttributionMiddlewareJsonOutput:
     """End-to-end: extras should round-trip through JsonFormatter as top-level
     JSON fields, matching the ticket's 'structured log output' requirement."""
 
@@ -251,7 +236,8 @@ class TestSAAttributionMiddlewareJsonOutput:
         from mcp_hydrolix import sa_attribution
         from mcp_hydrolix.log import JsonFormatter
 
-        monkeypatch.setattr(sa_attribution, "get_access_token", lambda: _sa_access_token())
+        monkeypatch.setattr(sa_attribution, "get_request_credential", _sa_credential)
+        monkeypatch.setattr(sa_attribution, "get_config", _PassthroughConfig)
 
         stream = io.StringIO()
         handler = logging.StreamHandler(stream)
@@ -261,7 +247,7 @@ class TestSAAttributionMiddlewareJsonOutput:
         try:
             logger.addHandler(handler)
             logger.setLevel(logging.INFO)
-            mw = sa_attribution.SAAttributionMiddleware()
+            mw = sa_attribution.ServiceAccountAttributionMiddleware()
             asyncio.run(mw.on_request(_ctx("tools/call", tool_name="list_databases"), _ok))
         finally:
             logger.removeHandler(handler)
