@@ -1,6 +1,5 @@
 *Server name, version, and transport stamped on every Hydrolix query via `hdx_query_admin_comment`.*
 
-**Tracking:** HDX-11481
 
 ## ADDED Requirements
 
