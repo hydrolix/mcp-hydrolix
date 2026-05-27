@@ -8,9 +8,9 @@
 
 ## 2. Per-Worker Activation — `webapp.py`
 
-- [ ] 2.1 Add `_activate_oauth_if_configured()` function to `mcp_hydrolix/webapp.py`: reads `OAuthConfig`, runs `asyncio.run(try_activate_oauth(cfg))`, calls `chain.get_middleware(oauth_provider=resolved_provider)`, assigns the result to `mcp.auth` [implements: oauth-auth-chain-and-activation/activation-runs-per-uvicorn-worker, design/activation-site-is-webapp-py-create_app, design/asyncio-run-inside-the-factory, design/configure-auth-via-mcp-auth-assignment-not-fastmcp-constructor] — verify: `ruff check mcp_hydrolix/webapp.py` clean
+- [ ] 2.1 Add `_activate_oauth_if_configured()` function to `mcp_hydrolix/webapp.py`: reads `OAuthConfig`, runs `asyncio.run(try_activate_oauth(cfg))`, calls `chain.get_middleware(oauth_provider=resolved_provider)`, assigns the result to `mcp.auth` [implements: oauth-auth-chain-and-activation/activation-runs-per-uvicorn-worker, design/activation-site-is-webapp-py-create-app, design/asyncio-run-inside-the-factory, design/configure-auth-via-mcp-auth-assignment-not-fastmcp-constructor] — verify: `ruff check mcp_hydrolix/webapp.py` clean
 
-- [ ] 2.2 Call `_activate_oauth_if_configured()` inside `create_app()` before `mcp.http_app(...)` [implements: design/activation-site-is-webapp-py-create_app] — verify: `grep -n '_activate_oauth_if_configured' mcp_hydrolix/webapp.py` appears before `mcp.http_app`
+- [ ] 2.2 Call `_activate_oauth_if_configured()` inside `create_app()` before `mcp.http_app(...)` [implements: design/activation-site-is-webapp-py-create-app] — verify: `grep -n '_activate_oauth_if_configured' mcp_hydrolix/webapp.py` appears before `mcp.http_app`
 
 - [ ] 2.3 Catch `RuntimeError` from `asyncio.run` inside `_activate_oauth_if_configured()` and re-raise with a message naming the test setup as the likely cause [implements: design/asyncio-run-inside-the-factory] — verify: `ruff check mcp_hydrolix/webapp.py` clean
 
@@ -38,7 +38,7 @@
 
 ## 4. Documentation and Rollout
 
-- [ ] 4.1 Update `docs/oauth.md` activation section: document `webapp.py:create_app()` as the per-worker activation site; document that `mcp.auth` is assigned before `http_app(...)` and that the chain is flat [implements: meta/docs, design/activation-site-is-webapp-py-create_app] — verify: `grep 'create_app' docs/oauth.md` returns at least one line
+- [ ] 4.1 Update `docs/oauth.md` activation section: document `webapp.py:create_app()` as the per-worker activation site; document that `mcp.auth` is assigned before `http_app(...)` and that the chain is flat [implements: meta/docs, design/activation-site-is-webapp-py-create-app] — verify: `grep 'create_app' docs/oauth.md` returns at least one line
 
 - [ ] 4.2 Document `HydrolixCredentialChain.get_middleware()` composition in code comments: describe the flat-chain contract and the `oauth_provider=` parameter semantics in `mcp_hydrolix/auth/mcp_providers.py` [implements: meta/docs, oauth-auth-chain-and-activation/sa-credential-fallback-preserved] — verify: `ruff check mcp_hydrolix/auth/mcp_providers.py` clean
 

@@ -4,10 +4,6 @@
 
 *none — see No Ambiguity below*
 
-<!--
-## Decisions
--->
-
 ## No Ambiguity
 
 The parent decomposition task (the fan-out orchestrator prompt on 2026-05-27) provided complete, authoritative answers for every dimension of this sub-spec: the exact requirements to include (R03, R13, and the request-time half of R04), the positive framing for R03, the three design decisions to carry forward (activation site, `asyncio.run` inside the factory, `mcp.auth` assignment seam), the two decisions to drop (`_maybe_activate_oauth` rename and gunicorn dead-code), the composition order (OAuth verifier first, SA chain second), and the implementation surface (`mcp_providers.py`, `webapp.py`). No operator clarification was needed beyond that specification. Operator confirmed via the orchestrator prompt.

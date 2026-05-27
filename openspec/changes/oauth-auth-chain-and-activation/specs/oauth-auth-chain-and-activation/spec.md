@@ -19,13 +19,13 @@ Workers re-import `webapp.py` under uvicorn's spawn-based multiprocessing, so th
 
 When OAuth is active, the worker SHALL install `mcp.auth` as a single flat `ChainedAuthBackend` whose ordered backend list is exactly `[OAuthHydrolixAuthProvider, BearerAuthBackend(service_account), GetParamAuthBackend(service_account, TOKEN_PARAM)]`. The chain SHALL NOT be nested — there SHALL NOT be an outer `ChainedAuthBackend` wrapping an inner `ChainedAuthBackend`. When OAuth is not active, `mcp.auth` SHALL be the existing two-element chain `[BearerAuthBackend(service_account), GetParamAuthBackend(service_account, TOKEN_PARAM)]`.
 
-#### Scenario: Chain Has Three Backends When Oauth Is Active
+#### Scenario: Chain Has Three Backends When OAuth Is Active
 
 - **WHEN** OAuth is active and the worker has finished factory initialization
 - **THEN** `mcp.auth` SHALL be a `ChainedAuthBackend` instance
 - **AND** its `backends` list SHALL have exactly three elements in the order `[OAuthHydrolixAuthProvider, BearerAuthBackend, GetParamAuthBackend]`
 
-#### Scenario: Chain Has Two Backends When Oauth Is Inactive
+#### Scenario: Chain Has Two Backends When OAuth Is Inactive
 
 - **WHEN** OAuth is not active and the worker has finished factory initialization
 - **THEN** `mcp.auth` SHALL be a `ChainedAuthBackend` with exactly two elements `[BearerAuthBackend, GetParamAuthBackend]` (the pre-OAuth shape preserved)
@@ -69,7 +69,7 @@ When OAuth is active, requests that present no `Authorization: Bearer` header SH
 - **THEN** `OAuthHydrolixAuthProvider` SHALL claim the bearer and raise 401
 - **AND** the SA chain SHALL NOT be consulted as a fallback for that request
 
-#### Scenario: Sa Bearer Jwt Is Authenticated By Bearer Auth Backend When Oauth Is Active
+#### Scenario: SA Bearer JWT Is Authenticated By Bearer Auth Backend When OAuth Is Active
 
 - **WHEN** OAuth is active and a request arrives with `Authorization: Bearer <sa-jwt>` where the SA JWT's `iss` ends in `/config` (the canonical service-account issuer suffix) and the SA JWT's signature verifies against the service-account public key
 - **THEN** `OAuthHydrolixAuthProvider` SHALL return `None` (defer; see oauth-jwt-verifier's "OAuth Verifier Claims Bearers By Iss Match")

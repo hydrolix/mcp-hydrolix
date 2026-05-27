@@ -6,12 +6,11 @@ The MCP server needs a single, consistent auth chain that enforces OAuth bearer 
 
 ## What Changes
 
-- Extend `HydrolixCredentialChain.get_middleware()` with an optional `oauth_provider=None` parameter. When non-None, the `ChainedAuthBackend` it constructs has `OAuthHydrolixAuthProvider` prepended as the first element, yielding a flat three-element chain: `[OAuthHydrolixAuthProvider, BearerAuthBackend(sa), GetParamAuthBackend(sa, TOKEN_PARAM)]`. When None, the existing two-element chain is returned unchanged.
-- Call `_activate_oauth_if_configured()` inside `webapp.py:create_app()` before `mcp.http_app(...)`, passing the resolved provider (or `None`) to `get_middleware()` and assigning the result to `mcp.auth`.
-- `OAuthHydrolixAuthProvider` (from `oauth-jwt-verifier`) claims a bearer iff its `iss` matches the OAuth issuer; it defers (returns `None`) otherwise. This makes flat composition safe: an SA bearer JWT (with `/config`-suffixed `iss`) is deferred by the OAuth provider and picked up by `BearerAuthBackend`.
-- An invalid bearer token whose `iss` matches the OAuth issuer results in HTTP 401 with `WWW-Authenticate: Bearer` and the RFC 9728 `resource_metadata=` header from the OAuth provider. The SA chain is never tried for that request.
-- Requests with no `Authorization` header fall through to the SA chain unchanged.
-- Per-worker activation is idempotent: each uvicorn worker activates independently against its own `mcp` singleton.
+- When OAuth is active, each worker's `mcp.auth` becomes a flat three-element chain: OAuth verifier first, SA bearer and get-param backends second and third.
+- When OAuth is inactive, the existing two-element SA chain is preserved unchanged.
+- An invalid bearer token claimed by the OAuth verifier results in immediate HTTP 401; the SA chain is never consulted as a fallback for that token.
+- Requests with no `Authorization` header fall through to the SA chain.
+- Per-worker activation is idempotent; each worker activates independently.
 
 ## Capabilities
 
@@ -25,8 +24,7 @@ The MCP server needs a single, consistent auth chain that enforces OAuth bearer 
 
 ## Impact
 
-- `mcp_hydrolix/auth/mcp_providers.py`: extend `HydrolixCredentialChain.get_middleware()` with `oauth_provider=None`; no changes to `ChainedAuthBackend` class semantics.
-- `mcp_hydrolix/webapp.py`: add `_activate_oauth_if_configured()` call inside `create_app()` before `mcp.http_app(...)`.
-- No new external dependencies; composes types from the `oauth-jwt-verifier` sub-spec (`OAuthBearerToken`, `OAuthHydrolixAuthProvider`).
-- No public API changes; the `mcp.auth` seam is an internal FastMCP attribute.
-- No data migrations.
+- `mcp_hydrolix/auth/mcp_providers.py`: extend `HydrolixCredentialChain.get_middleware()`
+- `mcp_hydrolix/webapp.py`: add per-worker OAuth activation call inside `create_app()`
+- No new external dependencies; composes types from `oauth-jwt-verifier`
+- No public API changes; no data migrations
