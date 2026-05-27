@@ -6,7 +6,7 @@ Log aggregation pipelines in Kubernetes clusters are not secret stores. Any raw 
 
 ## What Changes
 
-- Add a new `oauth-log-redaction` capability specifying what the auth layer MAY and SHALL NOT log for three call paths: successful activation, valid bearer accepted, and invalid bearer rejected.
+- Extend the `oauth-authentication` capability with log-redaction requirements specifying what the auth layer MAY and SHALL NOT log for three call paths: successful activation, valid bearer accepted, and invalid bearer rejected.
 - The log-redaction guarantee is a CI-enforced invariant covering 6 call paths, not a code-review convention.
 - Auth-layer error paths that could expose raw token bytes emit only the exception class name.
 
@@ -14,11 +14,11 @@ Log aggregation pipelines in Kubernetes clusters are not secret stores. Any raw 
 
 ### New
 
-- `oauth-log-redaction` — guarantee no JWT credential material appears in any auth-layer log record
+*none*
 
 ### Modified
 
-*none*
+- `oauth-authentication` — adds the log-redaction invariant: no JWT credential material may appear in any auth-layer log record
 
 ## Impact
 
