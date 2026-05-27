@@ -1,12 +1,25 @@
 *Extend `HydrolixCredentialChain.get_middleware()` with an optional OAuth provider parameter, yielding a flat three-element `ChainedAuthBackend` when OAuth is active, installed per worker inside `webapp.py:create_app()`.*
 
+## Goals / Non-Goals
+
+**Goals**:
+- Compose `OAuthHydrolixAuthProvider` into a flat `ChainedAuthBackend` alongside the existing SA credential chain.
+- Install the resulting chain via `mcp.auth` assignment inside `create_app()`.
+- Preserve the two-element SA credential chain unchanged when OAuth is inactive.
+
+**Non-Goals**:
+- OIDC discovery and JWKS preflight (owned by `oauth-config-and-preflight`).
+- JWT claim validation logic (owned by `oauth-jwt-verifier`).
+- Log redaction of OAuth material (owned by `oauth-log-redaction`).
+- RFC 9728 resource metadata endpoint (owned by `oauth-resource-metadata`).
+
 ## Context
 
 - Each uvicorn worker re-imports `webapp.py` via `multiprocessing` spawn; the `mcp` singleton lives only in the worker's address space — the supervisor cannot propagate `mcp.auth` across the spawn boundary.
 - [HDX-10675](https://hydrolix.atlassian.net/browse/HDX-10675) established `webapp.py:create_app()` as the per-worker factory.
 - `mcp` is a module-level singleton; tools are registered via `@mcp.tool` at import time — it cannot be reconstructed per worker without relocating all registrations.
 - `ChainedAuthBackend` in `mcp_hydrolix/auth/mcp_providers.py`: first non-None result wins; a raised exception propagates. This change adds a composition path; it does not modify the class.
-- `OAuthHydrolixAuthProvider` (from `oauth-jwt-verifier`) defers (`None`) when the bearer's `iss` doesn't match the OAuth issuer — making flat composition safe.
+- `OAuthHydrolixAuthProvider` (from `oauth-jwt-verifier`) defers (`None`) when the bearer's `iss` doesn't match the OAuth issuer — making flat composition safe with the SA credential chain.
 - FastMCP exposes `mcp.auth` as a post-construction assignment seam read by `http_app(...)`.
 
 ## Decisions
@@ -42,5 +55,5 @@
 ## Risks / Trade-offs
 
 - **`asyncio.run` fragile under refactor** → Test that asserts `RuntimeError` when `create_app()` is invoked under an active loop.
-- **Workers diverge if preflight fails** → Fail-open per `oauth-config-and-preflight`: workers that succeed serve with OAuth; others serve SA-only with a WARNING log.
-- **SA chain not consulted for OAuth-claimed bearer** → Intended. Tests MUST cover: invalid OAuth-claimed bearer → 401; SA bearer (different `iss`) → SA path; no-bearer → SA path.
+- **Workers diverge if preflight fails** → Fail-open per `oauth-config-and-preflight`: workers that succeed serve with OAuth; others serve SA credential chain only with a WARNING log.
+- **SA credential chain not consulted for OAuth-claimed bearer** → Intended. Tests MUST cover: invalid OAuth-claimed bearer → 401; SA bearer (different `iss`) → SA credential chain; no-bearer → SA credential chain.

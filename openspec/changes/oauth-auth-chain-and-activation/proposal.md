@@ -1,15 +1,25 @@
-*Extend `HydrolixCredentialChain.get_middleware()` to accept an optional `OAuthHydrolixAuthProvider` and prepend it to the existing `ChainedAuthBackend`, then install the resulting chain per uvicorn worker inside `webapp.py:create_app()`.*
+*When OAuth is active, each MCP worker validates bearer tokens via the OAuth verifier first, falling back to the existing SA credential chain for non-bearer requests; chain composition and per-worker activation are wired in this change.*
+
+## Family Context
+
+One of 5 sub-specs decomposing OAuth bearer authentication for [HDX-11442](https://hydrolix.atlassian.net/browse/HDX-11442). All five target the shared capability `oauth-authentication`. Dependency order:
+
+- `oauth-config-and-preflight` — root of the dep graph.
+- `oauth-resource-metadata` — depends on `oauth-config-and-preflight`.
+- `oauth-jwt-verifier` — depends on `oauth-config-and-preflight`; this change consumes its `OAuthHydrolixAuthProvider`.
+- `oauth-auth-chain-and-activation` (this change) — depends on `oauth-jwt-verifier`.
+- `oauth-log-redaction` — orthogonal.
 
 ## Why
 
-The MCP server needs a single, consistent auth chain that enforces OAuth bearer validation when OAuth is active while preserving the existing service-account credential path. `ChainedAuthBackend` already exists in `mcp_hydrolix/auth/mcp_providers.py`; this change adds the OAuth-active composition path — three elements flat — without modifying the class's semantics. The `mcp` singleton must receive this chain inside `webapp.py:create_app()` so each spawned uvicorn worker owns its own activated instance.
+The MCP server needs a single, consistent auth chain that enforces OAuth bearer validation when OAuth is active while preserving the existing SA credential chain. `ChainedAuthBackend` already exists in `mcp_hydrolix/auth/mcp_providers.py`; this change adds the OAuth-active composition path — three elements flat — without modifying the class's semantics. The `mcp` singleton must receive this chain inside `webapp.py:create_app()` so each spawned uvicorn worker owns its own activated instance.
 
 ## What Changes
 
 - When OAuth is active, each worker's `mcp.auth` becomes a flat three-element chain: OAuth verifier first, SA bearer and get-param backends second and third.
-- When OAuth is inactive, the existing two-element SA chain is preserved unchanged.
-- An invalid bearer token claimed by the OAuth verifier results in immediate HTTP 401; the SA chain is never consulted as a fallback for that token.
-- Requests with no `Authorization` header fall through to the SA chain.
+- When OAuth is inactive, the existing two-element SA credential chain is preserved unchanged.
+- An invalid bearer token claimed by the OAuth verifier results in immediate HTTP 401; the SA credential chain is never consulted as a fallback for that token.
+- Requests with no `Authorization` header fall through to the SA credential chain.
 - Per-worker activation is idempotent; each worker activates independently.
 
 ## Capabilities
@@ -20,7 +30,7 @@ The MCP server needs a single, consistent auth chain that enforces OAuth bearer 
 
 ### Modified
 
-- `oauth-authentication` — flat three-element auth chain `[OAuth, BearerSA, GetParamSA]` when OAuth is active, two-element SA chain when inactive; per-worker activation in `webapp.py:create_app()`; request-time fail-closed behavior for OAuth-claimed bearers; SA credential fallback preservation
+- `oauth-authentication` — flat three-element auth chain `[OAuth, BearerSA, GetParamSA]` when OAuth is active, two-element SA credential chain when inactive; per-worker activation in `webapp.py:create_app()`; request-time fail-closed behavior for OAuth-claimed bearers; SA credential fallback preservation
 
 ## Impact
 
