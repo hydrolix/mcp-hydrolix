@@ -68,3 +68,28 @@ mechanical rename, doc-only, dependency bump with no API surface change.
 MUST be operator-confirmed during explore (cite the explore Decision or
 No Ambiguity block).
 -->
+
+<!--
+BEFORE FINALIZING — run every check.
+
+Syntactic (grep / wc):
+- [ ] No code fences (```) in any Decision block (shell snippets belong
+      in tasks.md `verify:` clauses, not here)
+- [ ] No `^from .* import` lines (exact import statements belong in tasks
+      or implementation, not design)
+- [ ] `wc -w < design.md` ≤ 600
+- [ ] Every `### Decision: <slug>` block has all four lines: Choice, Why,
+      Alternatives, Binding
+- [ ] Every `explore/<slug>` referenced in a Why line exists as a
+      `### Decision: <slug>` in `explore.md`
+
+Re-classification (re-read each Decision and ask):
+- [ ] For each Decision Choice line: "is this an architecture-level
+      choice, or a line-level implementation detail?" If the latter
+      (enumerated placeholder vocabulary, exact code, specific class
+      names beyond the one chokepoint), generalize the prose — the
+      specifics belong in tasks.md.
+- [ ] For each Binding line: "is this a constraint future code must
+      honor, or just a restatement of the Choice?" If the latter,
+      sharpen to a testable constraint or delete the line.
+-->

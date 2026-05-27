@@ -80,3 +80,28 @@ confirmation cited.
 <!-- Bullets, "<assumption> — <what breaks if false>". Write "*none*" if not applicable. -->
 
 - <assumption> — <what breaks if false>
+
+<!--
+BEFORE FINALIZING — run every check.
+
+Syntactic (grep):
+- [ ] Every `### Decision: <slug>` block has all four lines: Question,
+      Answer, Rationale, Affects
+- [ ] No `Affects:` line contains placeholder text (e.g. `<artifact +
+      section>`, `<Title Case Name>`); every Affects names a real file
+      + section
+- [ ] Exactly one of `## Decisions` or `## No Ambiguity` is present
+      (never both)
+- [ ] If `## No Ambiguity` is used, it cites a specific operator prompt
+      or message that established no ambiguity
+
+Re-classification (re-read each Decision and ask):
+- [ ] For each Question bullet under `## Questions Asked`: "was this
+      ACTUALLY put to the operator in the session transcript?" If not,
+      delete it — explore.md is an audit trail, not a notebook of
+      questions the model thought about. Items that surfaced later go
+      in design.md Open Questions instead.
+- [ ] For each Decision Answer: "is this what the operator actually
+      decided, or what I inferred they would have decided?" If the
+      latter, demote to design.md as an Assumption or Open Question.
+-->

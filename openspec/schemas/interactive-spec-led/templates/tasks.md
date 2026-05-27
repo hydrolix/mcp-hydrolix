@@ -71,3 +71,30 @@
 ## 3. <phase name>
 
 - [ ] 3.1 <docs / migration / rollout task> [implements: meta/<kind>] — verify: <check>
+
+<!--
+BEFORE FINALIZING — run every check.
+
+Syntactic (grep):
+- [ ] Every task line contains `[implements: ` AND `verify:`
+- [ ] Every `[implements: <cap>/<req-slug>]` requirement-slug equals the
+      kebab-derived form of an actual `### Requirement:` heading in
+      `specs/<cap>/spec.md` (lowercase, spaces → `-`, strip `[^a-z0-9-]`)
+- [ ] Every `[implements: design/<slug>]` matches a `### Decision: <slug>`
+      in `design.md`
+- [ ] Every `[implements: explore/<slug>]` matches a `### Decision: <slug>`
+      in `explore.md`
+- [ ] Every `[implements: meta/<kind>]` uses a `<kind>` ∈ {tests, docs,
+      migration, rollout, tooling}
+- [ ] For every `#### Scenario:` in this change's specs, there is
+      EXACTLY ONE task here whose `verify:` clause names the
+      scenario-specific test function (`test_<scenario-slug>`)
+- [ ] Test function names in `verify:` clauses equal the scenario
+      heading run through the slug rule, then `-` → `_`
+
+Re-classification (re-read each task and ask):
+- [ ] "Does this task bundle multiple deliverables?" If yes, split it.
+- [ ] "Is `verify:` a concrete, runnable check (test name, command,
+      grep), or hand-wavy ('verify it works')?" Sharpen vague verifies
+      into something a reviewer can mechanically execute.
+-->

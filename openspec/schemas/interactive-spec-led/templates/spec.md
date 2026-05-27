@@ -97,3 +97,36 @@
   `Migration:` line pointing at the new name) PLUS `## ADDED Requirements`
   for the new name. OpenSpec recognizes only ADDED / MODIFIED / REMOVED.
 -->
+
+<!--
+BEFORE FINALIZING — run every check.
+
+Syntactic (grep):
+- [ ] `grep -nE '\b(should|may)\b' specs/<cap>/spec.md` returns nothing
+      (lowercase RFC 2119 keywords don't carry their RFC meaning; use
+      MUST/SHALL/SHOULD/MAY uppercase)
+- [ ] `grep -nE '^### Scenario:' specs/<cap>/spec.md` returns nothing
+      (3 hashtags silently parses as requirement body — scenarios MUST
+      use exactly 4 hashtags)
+- [ ] Every `### Requirement:` block contains at least one
+      `#### Scenario:` heading
+- [ ] Every `#### Scenario:` block contains both **WHEN** and **THEN**
+- [ ] Requirement headings are Title Case With Spaces (no kebab-case,
+      no PascalCase)
+- [ ] Every `<!-- settle: explore/<slug> -->` comment points to a
+      `### Decision: <slug>` that exists in `explore.md`
+
+For MODIFIED / REMOVED sections (skip if absent):
+- [ ] Each `### Requirement:` header is byte-identical (whitespace-
+      insensitive) to the existing header in
+      `openspec/specs/<cap>/spec.md` — diff after pasting; a mismatch
+      silently loses your edits at archive time
+
+Re-classification (re-read each Requirement and ask):
+- [ ] "Does this state WHAT the system shall do, or WHY we want it?"
+      Rationale and motivation belong in design.md, not in
+      requirement prose.
+- [ ] "Is this requirement testable as written?" If not — if a tester
+      couldn't write a pass/fail assertion from the prose alone —
+      sharpen the wording until they can.
+-->
