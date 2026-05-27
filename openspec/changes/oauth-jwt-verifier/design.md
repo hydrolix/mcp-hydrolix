@@ -4,7 +4,7 @@
 
 - `OAuthConfig` (from `oauth-config-and-preflight`) delivers `issuer`, `audience`, and `required_scopes` as already-validated values.
 - SA bearer tokens are JWTs (`iss = HYDROLIX_URL/config`) sharing the `Authorization: Bearer` header; `canonical_idp_endpoints` ([HDX-11441](https://hydrolix.atlassian.net/browse/HDX-11441)) guarantees `OAuthConfig.issuer != HYDROLIX_URL`.
-- `OAuthBearerToken` is returned for authenticated requests; `oauth-auth-chain-and-activation` composes it with the SA chain.
+- This sub-spec produces an `OAuthHydrolixAuthProvider` instance that returns an `OAuthBearerToken` on success or `None` on deferral. Downstream the chain-activation sub-spec consumes this provider, but understanding this spec doesn't require reading that one.
 
 ## Goals / Non-Goals
 
@@ -54,6 +54,6 @@
 - Clock skew: document a `leeway` parameter (e.g. 30 s) for `exp`/`nbf`.
 - JWKS key rotation: out of scope; worker restart required to pick up rotated keys.
 
-## Open Questions
+## Assumptions
 
-- Does FastMCP's `JWTVerifier` expose a `leeway` parameter, or must clock-skew tolerance be in the wrapping layer?
+- **Clock-skew leeway**: We assume FastMCP's `JWTVerifier` does not expose a `leeway` parameter. If it does, we will wire `HYDROLIX_OAUTH_LEEWAY_SEC` (default 30 s) to it as a follow-up task.

@@ -1,8 +1,18 @@
-*Add a JWT claim verifier for OAuth bearer tokens: iss-based routing for chain composability, issuer, audience, required-scopes, and end-to-end bearer acceptance.*
+*Bearer tokens issued by the configured OAuth provider are now validated for issuer, audience, required scopes, and signature before MCP tool dispatch; tokens from other issuers are passed through to the SA credential chain unchanged.*
 
 ## Why
 
 Cluster operators need a way to gate MCP tool access on OIDC-issued bearer tokens. The core verifier — iss-based routing, issuer match, audience allowlist, required scopes, and signature check — is the independently reviewable piece that downstream composition (`oauth-auth-chain-and-activation`) mounts into the request path. Separating it from configuration parsing (`oauth-config-and-preflight`) and chain assembly makes each piece auditable in isolation.
+
+## Family Context
+
+One of 5 sub-specs decomposing OAuth bearer authentication for [HDX-11442](https://hydrolix.atlassian.net/browse/HDX-11442). All five target the shared capability `oauth-authentication`. Dependency order:
+
+- `oauth-config-and-preflight` — root of the dep graph; this change consumes `OAuthConfig.issuer`, `audience`, and `required_scopes` from it.
+- `oauth-resource-metadata` — depends on `oauth-config-and-preflight`.
+- `oauth-jwt-verifier` (this change) — depends on `oauth-config-and-preflight`.
+- `oauth-auth-chain-and-activation` — depends on this change (composes `OAuthHydrolixAuthProvider` with the SA chain).
+- `oauth-log-redaction` — orthogonal.
 
 ## What Changes
 
