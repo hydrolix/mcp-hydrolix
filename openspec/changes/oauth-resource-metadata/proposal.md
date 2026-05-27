@@ -16,11 +16,11 @@ MCP clients that implement OAuth discovery need a standards-compliant `/.well-kn
 
 ### New
 
-- `oauth-resource-metadata` — RFC 9728 metadata endpoint and resource URL precedence chain
+*none*
 
 ### Modified
 
-*none*
+- `oauth-authentication` — adds the RFC 9728 protected-resource-metadata endpoint and the three-tier resource URL precedence chain (`HYDROLIX_OAUTH_RESOURCE_URL` → `HYDROLIX_URL` → server bind URL)
 
 ## Impact
 
