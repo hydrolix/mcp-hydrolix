@@ -6,13 +6,22 @@
 ### Requirement: Query Comment Composition
 <!-- settle: explore/comment-format -->
 
-The server MUST set `hdx_query_admin_comment` on every query to `User=mcp-hydrolix; version=<version>; transport=<transport>`, in that order, joined by `; `.
+The server MUST set `hdx_query_admin_comment` on every SQL query executed via `execute_query` to `User=mcp-hydrolix; version=<version>; transport=<transport>`, in that order, joined by `; `.
 
 #### Scenario: Renders Composed Comment
 
 - **GIVEN** server name `mcp-hydrolix`, version `0.3.2`, transport `stdio`
 - **WHEN** the server executes a query
 - **THEN** the `hdx_query_admin_comment` setting equals `User=mcp-hydrolix; version=0.3.2; transport=stdio`
+
+### Requirement: Catalog Command Exclusion
+
+The server MUST NOT set `hdx_query_admin_comment` on requests issued via `execute_cmd`. Catalog/admin commands are out of scope for usage attribution; covering them would dilute the per-user signal with catalog noise.
+
+#### Scenario: execute_cmd Omits Admin Comment
+
+- **WHEN** the server invokes `execute_cmd` (e.g. for `SHOW DATABASES`)
+- **THEN** the request settings MUST NOT contain a `hdx_query_admin_comment` key
 
 ### Requirement: Version Resolution
 <!-- settle: explore/version-fallback -->

@@ -1,4 +1,4 @@
-*2 phases, 6 tasks (2 impl, 4 tests).*
+*2 phases, 7 tasks (2 impl, 5 tests).*
 
 **Tracking:** HDX-11481
 
@@ -13,3 +13,4 @@
 - [ ] 2.2 Add test for scenario `Version Metadata Available` in `tests/test_query_settings.py` [implements: query-admin-comment/version-resolution, meta/tests] — verify: `pytest -q tests/test_query_settings.py::test_version_metadata_available` green
 - [ ] 2.3 Add test for scenario `Version Metadata Unavailable` in `tests/test_query_settings.py` [implements: query-admin-comment/version-resolution, meta/tests] — verify: `pytest -q tests/test_query_settings.py::test_version_metadata_unavailable` green
 - [ ] 2.4 Add test for scenario `Transport Reflects Config` in `tests/test_query_settings.py` [implements: query-admin-comment/transport-resolution, meta/tests] — verify: `pytest -q tests/test_query_settings.py::test_transport_reflects_config` green
+- [ ] 2.5 Add test for scenario `execute_cmd Omits Admin Comment` in `tests/test_query_settings.py` [implements: query-admin-comment/catalog-command-exclusion, design/scope-limited-to-execute-query, meta/tests] — verify: `pytest -q tests/test_query_settings.py::test_execute_cmd_omits_admin_comment` green
