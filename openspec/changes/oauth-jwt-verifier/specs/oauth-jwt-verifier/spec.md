@@ -31,6 +31,7 @@ Three return modes:
 #### Scenario: Bearer With Service Account Issuer Is Deferred
 
 - **GIVEN** OAuth is active and a request presents a JWT whose `iss` ends in `/config` (the canonical service-account issuer suffix)
+- **WHEN** `OAuthHydrolixAuthProvider` evaluates the bearer
 - **THEN** the OAuth verifier SHALL return `None` without raising
 - **AND** SHALL emit no log line for the deferral
 - **AND** the next backend in the chain SHALL receive the request
@@ -38,10 +39,11 @@ Three return modes:
 #### Scenario: Malformed Bearer Is Deferred
 
 - **GIVEN** OAuth is active and a request presents an `Authorization: Bearer …` value that is not a JWT (fewer than 3 base64url-separated parts, base64 decode fails, or no `iss` claim parsable)
+- **WHEN** `OAuthHydrolixAuthProvider` evaluates the bearer
 - **THEN** the OAuth verifier SHALL return `None` without raising
 - **AND** the next backend in the chain SHALL receive the request
 
-### Requirement: Jwt Verification Rejects Mismatched Issuer
+### Requirement: JWT Verification Rejects Mismatched Issuer
 
 When the OAuth verifier has claimed a bearer (its `iss` matches the resolved OAuth issuer — see "OAuth Verifier Claims Bearers By Iss Match"), the verifier enforces a **non-conflation invariant**: the resolved OAuth issuer URL SHALL NEVER equal `HYDROLIX_URL` (the cluster public URL), enforced upstream by `canonical_idp_endpoints` (specified in `oauth-config-and-preflight`) and independently re-asserted at the verifier layer by the `iss` exact-match check.
 
@@ -60,7 +62,7 @@ This requirement's effective scope is the non-conflation guarantee. The verifier
 - **WHEN** a JWT is presented with `iss="https://cluster.example.com"` (matching `HYDROLIX_URL`, not the derived issuer)
 - **THEN** the chain rejects the request with 401 (the OAuth verifier defers because the conflated `iss` does not match the resolved OAuth issuer, and no other backend claims it)
 
-### Requirement: Jwt Verification Rejects Mismatched Audience
+### Requirement: JWT Verification Rejects Mismatched Audience
 
 The OAuth verifier SHALL reject any JWT whose `aud` claim, when normalized to a set, contains no value present in the configured audience allowlist (`OAuthConfig.audience`, parsed from `HYDROLIX_OAUTH_AUDIENCE` by `oauth-config-and-preflight`). Matching uses set intersection: a JWT is accepted when any one value in its `aud` set is present in the allowlist (see design decision `audience-as-set-intersection`).
 

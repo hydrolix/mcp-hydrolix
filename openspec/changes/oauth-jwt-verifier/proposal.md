@@ -6,13 +6,11 @@ Cluster operators need a way to gate MCP tool access on OIDC-issued bearer token
 
 ## What Changes
 
-- Add `OAuthBearerToken` and `OAuthHydrolixAuthProvider` to `mcp_hydrolix/auth/oauth.py`, implementing JWT claim verification via FastMCP's `JWTVerifier`.
-- Implement iss-based routing: peek the `iss` claim without signature verification to decide whether to claim or defer a bearer. Hydrolix SA tokens are also JWTs (different `iss`, EdDSA key source); the OAuth verifier defers any bearer whose `iss` does not match the resolved OAuth issuer URL (returns `None`), so SA auth is not broken.
-- Enforce issuer exact-match: any JWT whose `iss` does not match the resolved issuer URL (from `OAuthConfig.issuer`) is either deferred (routing predicate) or rejected with 401 (post-claim verification).
-- Enforce non-conflation as a verifier invariant: `iss=<HYDROLIX_URL>` is unreachable as an authenticated principal because the routing predicate defers it and no other backend claims it.
-- Enforce audience allowlist: any JWT whose `aud` does not intersect `OAuthConfig.audience` is rejected with 401.
-- Enforce required scopes when `OAuthConfig.required_scopes` is non-empty.
-- Accept well-formed bearers end-to-end: a JWT that passes all claim checks is dispatched to the MCP tool layer.
+- OAuth bearer tokens are routed to the OAuth verifier by `iss` claim; service-account bearers are deferred to the SA backend (iss-based routing for chain composability).
+- JWTs with an issuer that does not match the configured OAuth issuer URL are rejected with 401.
+- JWTs with no `aud` value in the configured audience allowlist are rejected with 401.
+- JWTs missing a required scope (when scopes are configured) are rejected with 401.
+- Well-formed bearers satisfying all claim checks are authenticated and dispatched to the MCP tool layer.
 
 ## Capabilities
 
@@ -26,8 +24,7 @@ Cluster operators need a way to gate MCP tool access on OIDC-issued bearer token
 
 ## Impact
 
-- `mcp_hydrolix/auth/oauth.py`: New `OAuthBearerToken` and `OAuthHydrolixAuthProvider` classes; claim-validation logic.
-- `fastmcp` `JWTVerifier`: new external-dependency integration point (already a dep from `oauth-config-and-preflight`).
-- `tests/auth/test_oauth_verifier.py`: New test module using mocked JWTs and a mock JWKS; no I/O at test time.
-- No new env vars (all configuration consumed from `OAuthConfig`, parsed upstream by `oauth-config-and-preflight`).
-- Downstream: `oauth-auth-chain-and-activation` composes `OAuthHydrolixAuthProvider` with the SA chain.
+- `mcp_hydrolix/auth/oauth.py`: new verifier classes.
+- `fastmcp` `JWTVerifier`: integration point (existing dep from `oauth-config-and-preflight`).
+- `tests/auth/test_oauth_jwt_verifier.py`: new test module.
+- Downstream: `oauth-auth-chain-and-activation`.

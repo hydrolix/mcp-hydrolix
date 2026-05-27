@@ -40,4 +40,4 @@
 
 ## 3. Integration Verification
 
-- [ ] 3.1 Run full auth test suite to confirm no regressions [implements: meta/tests] — verify: `pytest -q tests/auth/` green
+- [ ] 3.1 Run full auth test suite to confirm no regressions [implements: meta/tests] — verify: `pytest -q tests/auth/` exits 0 with no failures or errors reported
