@@ -18,7 +18,7 @@ When an exception message could include raw token bytes (e.g. a JWT parser error
 
 #### Scenario: Successful Activation Log Content
 
-- **WHEN** OAuth activates successfully at startup (OIDC discovery and JWKS preflight both succeed)
+- **WHEN** `HYDROLIX_OAUTH_AUDIENCE="mcp-test"` and `HYDROLIX_OAUTH_ISSUER="https://idp.example.com/realms/test"` are set AND OIDC discovery and JWKS preflight are mocked to return valid responses
 - **THEN** the INFO activation log line MAY include the resolved issuer URL, the audience allowlist, and the required scopes
 - **AND** SHALL NOT include the raw JWKS response body
 - **AND** SHALL NOT include any private key material
@@ -26,7 +26,7 @@ When an exception message could include raw token bytes (e.g. a JWT parser error
 
 #### Scenario: Valid Bearer Accepted Log Content
 
-- **WHEN** OAuth is active and a request presents a valid bearer token that is accepted
+- **WHEN** `HYDROLIX_OAUTH_AUDIENCE="mcp-test"` and `HYDROLIX_OAUTH_ISSUER="https://idp.example.com/realms/test"` are set, OAuth is active, AND a request presents a JWT with `iss="https://idp.example.com/realms/test"`, `aud="mcp-test"`, `exp` in future, and valid signature against the mock JWKS
 - **THEN** any log line emitted by the auth layer MAY include decoded claim values (`sub`, `aud`, `iss`, `client_id`, etc.)
 - **AND** SHALL NOT include the raw `Authorization` header value
 - **AND** SHALL NOT include the JWT's signature segment

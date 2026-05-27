@@ -4,6 +4,16 @@
 
 Log aggregation pipelines in Kubernetes clusters are not secret stores. Any raw JWT, bearer string, or JWKS private exponent that reaches a log line is permanently exposed to anyone with log-read access — a replay or forgery risk that cannot be patched after the fact. This audit closes that gap before OAuth reaches production.
 
+## Family Context
+
+One of 5 sub-specs decomposing OAuth bearer authentication for [HDX-11442](https://hydrolix.atlassian.net/browse/HDX-11442). All five target the shared capability `oauth-authentication`. This change is **orthogonal** — it does not depend on the other four, and they do not depend on it.
+
+- `oauth-config-and-preflight` — env-var activation gate, canonical IdP derivation, JWKS preflight.
+- `oauth-resource-metadata` — RFC 9728 protected-resource-metadata endpoint.
+- `oauth-jwt-verifier` — JWT claim validation with iss-based routing.
+- `oauth-auth-chain-and-activation` — flat auth chain composition and per-worker activation.
+- `oauth-log-redaction` (this change) — log-redaction invariant across the auth layer.
+
 ## What Changes
 
 - Extend the `oauth-authentication` capability with log-redaction requirements specifying what the auth layer MAY and SHALL NOT log for three call paths: successful activation, valid bearer accepted, and invalid bearer rejected.
