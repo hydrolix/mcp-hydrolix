@@ -7,6 +7,11 @@ from pathlib import Path
 import yaml
 
 
+# Standard LogRecord attribute names — anything else on the record came from
+# a caller's ``extra={...}`` kwarg and should be surfaced in the JSON envelope.
+_STANDARD_LOGRECORD_ATTRS = frozenset(logging.LogRecord("", 0, "", 0, "", None, None).__dict__)
+
+
 class JsonFormatter(logging.Formatter):
     """
     Custom formatter to output logs in JSON format.
@@ -28,6 +33,13 @@ class JsonFormatter(logging.Formatter):
 
         if record.exc_info:
             log_record["exception"] = self.formatException(record.exc_info)
+
+        # ``setdefault`` keeps envelope fields (level, timestamp, ...) from
+        # being clobbered if a caller accidentally passes a same-named extra.
+        for key, value in record.__dict__.items():
+            if key in _STANDARD_LOGRECORD_ATTRS:
+                continue
+            log_record.setdefault(key, value)
 
         return json.dumps(log_record)
 
