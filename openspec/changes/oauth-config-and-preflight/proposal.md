@@ -16,11 +16,11 @@ mcp-hydrolix needs a well-defined configuration layer before any OAuth-adjacent 
 
 ### New
 
-- `oauth-config-and-preflight` — OAuth activation gating, env-var config loading, IdP endpoint derivation, and startup preflight
+*none*
 
 ### Modified
 
-*none*
+- `oauth-authentication` — adds the env-var activation gate, canonical IdP endpoint derivation, JWKS URI override and insecure transport flag, and fail-open OIDC discovery + JWKS startup preflight
 
 ## Impact
 
