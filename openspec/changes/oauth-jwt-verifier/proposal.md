@@ -16,11 +16,11 @@ Cluster operators need a way to gate MCP tool access on OIDC-issued bearer token
 
 ### New
 
-- `oauth-jwt-verifier` — pure claim validation for OAuth bearer tokens: issuer, audience, scopes, end-to-end acceptance
+*none*
 
 ### Modified
 
-*none*
+- `oauth-authentication` — JWT claim validation: iss-based routing for chain composability, signature/audience/scopes/expiry verification, non-conflation invariant, end-to-end happy path
 
 ## Impact
 
