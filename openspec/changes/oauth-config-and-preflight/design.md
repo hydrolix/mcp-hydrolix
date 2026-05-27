@@ -8,9 +8,13 @@
 - The cluster-URL-to-IdP convention is [HDX-11431](https://hydrolix.atlassian.net/browse/HDX-11431)'s deliverable; the derivation function is a stub until it lands.
 - The non-conflation invariant (issuer ≠ cluster URL) is enforced at request time by `oauth-jwt-verifier`. See `non-conflation-is-a-verifier-invariant` below.
 
+## OAuthConfig Fields Owned By This Sub-Spec
+
+`OAuthConfig` is defined here with: `issuer`, `audience`, `required_scopes`, `jwks_uri`, `allow_insecure_jwks`. The `resource_url` field is added by `oauth-resource-metadata` in a later sub-spec.
+
 ## Goals / Non-Goals
 
-**Goals:** Single entry point for all `HYDROLIX_OAUTH_*` validation; single encapsulation point for IdP endpoint knowledge; visually distinct fatal-startup exception types; fail-open network failures at startup.
+**Goals:** Single entry point for all `HYDROLIX_OAUTH_*` validation; single encapsulation point for IdP endpoint knowledge; visually distinct fatal-startup exception types; fail-open network failures at startup. **Fail-open contract**: `try_activate_oauth()` catches OIDC discovery, JWKS preflight, and HTTP/JSON errors internally; emits the single `WARNING "OAuth configured but not activated <ExcClass>"` log line itself; and returns `None`. Callers (notably `oauth-auth-chain-and-activation`'s wiring function) check the return value rather than catching exceptions.
 
 **Non-Goals:** `canonical_idp_endpoints` body ([HDX-11431](https://hydrolix.atlassian.net/browse/HDX-11431)); request-time bearer verification (`oauth-jwt-verifier`, `oauth-auth-chain-and-activation`); RFC 9728 resource-metadata endpoint (`oauth-resource-metadata`); log-redaction (`oauth-log-redaction`).
 
