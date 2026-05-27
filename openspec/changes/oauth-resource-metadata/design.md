@@ -2,24 +2,24 @@
 
 ## Context
 
-- OAuth activation, `OAuthConfig` shape, and the partial-config error path are all defined by the upstream `oauth-config-and-preflight` sub-spec. This change only adds to that config object and registers one new route.
-- The MCP server uses FastAPI/Starlette under FastMCP. New routes are registered on the ASGI app returned by `create_app()` in `webapp.py`.
-- The `WWW-Authenticate: Bearer` header is already emitted by the JWT verifier for 401 responses; this change extends it with a `resource_metadata=` parameter.
-- The metadata endpoint must be reachable by unauthenticated clients (including MCP discovery agents and OAuth clients performing discovery). RFC 9728 §3 explicitly forbids protecting the endpoint with the credentials it describes.
-- `HYDROLIX_URL` is defined by the `hydrolix-url-config-collapse` change; this change consumes it but does not own its parsing.
+- OAuth activation, `OAuthConfig` shape, and the partial-config error path are defined by `oauth-config-and-preflight`. This change adds one field to that config and registers one new route.
+- New routes are registered on the ASGI app returned by `create_app()` in `webapp.py` (FastAPI/Starlette under FastMCP).
+- The `WWW-Authenticate: Bearer` header is already emitted by the JWT verifier on 401 responses; this change appends a `resource_metadata=` parameter.
+- RFC 9728 §3 forbids protecting the metadata endpoint with the credentials it describes.
+- `HYDROLIX_URL` is owned by `hydrolix-url-config-collapse`; this change consumes it.
 
 ## Goals / Non-Goals
 
 **Goals:**
 - One new route, registered only when OAuth is active.
-- `OAuthConfig.resource_url` resolved before any request is served (at `create_app()` time).
-- Partial-config error for `HYDROLIX_OAUTH_RESOURCE_URL` without audience detected in `load_oauth_config()`, consistent with how all other optional OAuth vars are checked.
+- `OAuthConfig.resource_url` resolved at `create_app()` time.
+- Partial-config error for `HYDROLIX_OAUTH_RESOURCE_URL` without audience, consistent with other optional-var guards.
 - No new external dependencies.
 
 **Non-Goals:**
-- Serving RFC 9728 metadata when OAuth is inactive (returns 404, not a partial document).
-- Implementing the authorization server metadata endpoint (RFC 8414) — that belongs to the IdP.
-- Caching or signing the metadata document.
+- RFC 9728 metadata when OAuth is inactive (returns 404).
+- Authorization server metadata endpoint (RFC 8414) — belongs to the IdP.
+- Caching or signing the document.
 
 ## Decisions
 
@@ -61,8 +61,8 @@
 
 ## Risks / Trade-offs
 
-- [Risk] Bind-URL fallback requires access to the uvicorn/Hypercorn host+port config inside `create_app()` → `create_app()` already receives the server config; reading bind address from it is straightforward and avoids new coupling.
-- [Risk] Unauthenticated endpoint could be abused for SSRF fingerprinting → The document is static and contains no internal addresses beyond the issuer URL (which is already public); risk is negligible.
+- [Risk] Bind-URL fallback requires host+port from server config inside `create_app()` → `create_app()` already receives this config; no new coupling needed.
+- [Risk] Unauthenticated endpoint used for SSRF fingerprinting → document is static and contains only the public issuer URL; risk negligible.
 
 ## Open Questions
 

@@ -18,16 +18,16 @@
 
 ## 3. Test Coverage
 
-- [ ] 3.1 Add test for scenario "Metadata Endpoint Returns Rfc 9728 Json" [implements: oauth-resource-metadata/rfc-9728-protected-resource-metadata-endpoint, meta/tests] — verify: `pytest -q tests/test_oauth_resource_metadata.py::test_metadata_endpoint_returns_rfc_9728_json` green
+- [ ] 3.1 Add test for scenario "Metadata Endpoint Returns RFC 9728 JSON" [implements: oauth-resource-metadata/rfc-9728-protected-resource-metadata-endpoint, meta/tests] — verify: `pytest -q tests/test_oauth_resource_metadata.py::test_metadata_endpoint_returns_rfc_9728_json` green
 
-- [ ] 3.2 Add test for scenario "401 References Metadata Url" [implements: oauth-resource-metadata/rfc-9728-protected-resource-metadata-endpoint, meta/tests] — verify: `pytest -q tests/test_oauth_resource_metadata.py::test_401_references_metadata_url` green
+- [ ] 3.2 Add test for scenario "401 References Metadata URL" [implements: oauth-resource-metadata/rfc-9728-protected-resource-metadata-endpoint, meta/tests] — verify: `pytest -q tests/test_oauth_resource_metadata.py::test_401_references_metadata_url` green
 
-- [ ] 3.3 Add test for scenario "Metadata Endpoint Returns 404 When Oauth Inactive" [implements: oauth-resource-metadata/rfc-9728-protected-resource-metadata-endpoint, meta/tests] — verify: `pytest -q tests/test_oauth_resource_metadata.py::test_metadata_endpoint_returns_404_when_oauth_inactive` green
+- [ ] 3.3 Add test for scenario "Metadata Endpoint Returns 404 When OAuth Inactive" [implements: oauth-resource-metadata/rfc-9728-protected-resource-metadata-endpoint, meta/tests] — verify: `pytest -q tests/test_oauth_resource_metadata.py::test_metadata_endpoint_returns_404_when_oauth_inactive` green
 
-- [ ] 3.4 Add test for scenario "Explicit Resource Url Wins" [implements: oauth-resource-metadata/resource-url-configuration, meta/tests] — verify: `pytest -q tests/test_oauth_resource_metadata.py::test_explicit_resource_url_wins` green
+- [ ] 3.4 Add test for scenario "Explicit Resource URL Wins" [implements: oauth-resource-metadata/resource-url-configuration, meta/tests] — verify: `pytest -q tests/test_oauth_resource_metadata.py::test_explicit_resource_url_wins` green
 
-- [ ] 3.5 Add test for scenario "Resource Url Defaults To Hydrolix Url" [implements: oauth-resource-metadata/resource-url-configuration, meta/tests] — verify: `pytest -q tests/test_oauth_resource_metadata.py::test_resource_url_defaults_to_hydrolix_url` green
+- [ ] 3.5 Add test for scenario "Resource URL Defaults To Hydrolix URL" [implements: oauth-resource-metadata/resource-url-configuration, meta/tests] — verify: `pytest -q tests/test_oauth_resource_metadata.py::test_resource_url_defaults_to_hydrolix_url` green
 
-- [ ] 3.6 Add test for scenario "Resource Url Falls Back To Server Bind Url" [implements: oauth-resource-metadata/resource-url-configuration, meta/tests] — verify: `pytest -q tests/test_oauth_resource_metadata.py::test_resource_url_falls_back_to_server_bind_url` green
+- [ ] 3.6 Add test for scenario "Resource URL Falls Back To Server Bind URL" [implements: oauth-resource-metadata/resource-url-configuration, meta/tests] — verify: `pytest -q tests/test_oauth_resource_metadata.py::test_resource_url_falls_back_to_server_bind_url` green
 
-- [ ] 3.7 Add test for scenario "Resource Url Set Without Audience Triggers Partial Config Error" [implements: oauth-resource-metadata/resource-url-configuration, meta/tests] — verify: `pytest -q tests/test_oauth_resource_metadata.py::test_resource_url_set_without_audience_triggers_partial_config_error` green
+- [ ] 3.7 Add test for scenario "Resource URL Set Without Audience Triggers Partial Config Error" [implements: oauth-resource-metadata/resource-url-configuration, meta/tests] — verify: `pytest -q tests/test_oauth_resource_metadata.py::test_resource_url_set_without_audience_triggers_partial_config_error` green

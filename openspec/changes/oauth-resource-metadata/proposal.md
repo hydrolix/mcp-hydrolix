@@ -6,11 +6,11 @@ MCP clients that implement OAuth discovery need a standards-compliant `/.well-kn
 
 ## What Changes
 
-- Add a `/.well-known/oauth-protected-resource` endpoint that returns an RFC 9728 JSON document when OAuth is active; returns 404 when OAuth is inactive.
-- The endpoint is unauthenticated by design (RFC 9728 §3 requirement).
-- `WWW-Authenticate` 401 responses on authenticated endpoints include a `resource_metadata=<url>` parameter pointing to the metadata endpoint.
-- Introduce `OAuthConfig.resource_url` resolved via a three-tier precedence chain: `HYDROLIX_OAUTH_RESOURCE_URL` → `HYDROLIX_URL` → server bind URL.
-- Setting `HYDROLIX_OAUTH_RESOURCE_URL` without an activatable OAuth config (no `HYDROLIX_OAUTH_AUDIENCE`) triggers the partial-configuration error path defined in `oauth-config-and-preflight`.
+- A `/.well-known/oauth-protected-resource` endpoint is available when OAuth is active, returning an RFC 9728 JSON document; returns 404 when OAuth is inactive.
+- The endpoint is reachable without authentication (RFC 9728 §3 requirement).
+- HTTP 401 responses on authenticated endpoints include a `resource_metadata` pointer to the metadata endpoint in their `WWW-Authenticate` header.
+- `OAuthConfig.resource_url` is resolved from a three-tier precedence chain (`HYDROLIX_OAUTH_RESOURCE_URL` → `HYDROLIX_URL` → server bind URL).
+- Setting `HYDROLIX_OAUTH_RESOURCE_URL` without `HYDROLIX_OAUTH_AUDIENCE` triggers the partial-configuration error path defined in `oauth-config-and-preflight`.
 
 ## Capabilities
 
@@ -24,8 +24,7 @@ MCP clients that implement OAuth discovery need a standards-compliant `/.well-kn
 
 ## Impact
 
-- **mcp_hydrolix/auth/config.py**: Add `resource_url` field to `OAuthConfig`; extend `load_oauth_config()` with the three-tier precedence chain.
-- **mcp_hydrolix/webapp.py**: Register `/.well-known/oauth-protected-resource` route; inject `resource_metadata=` into `WWW-Authenticate` headers on 401 responses.
-- **tests/test_oauth_resource_metadata.py**: New test module covering all scenarios.
-- **No new external dependencies**: endpoint uses stdlib JSON serialization via the existing ASGI framework.
-- **Upstream dependency**: `oauth-config-and-preflight` must land first; this change consumes `OAuthConfig.issuer` and the partial-config error path it defines.
+- **mcp_hydrolix/auth/config.py**: `OAuthConfig` and `load_oauth_config()`
+- **mcp_hydrolix/webapp.py**: route registration and 401 response headers
+- **tests/test_oauth_resource_metadata.py**: new test module
+- **Upstream dependency**: `oauth-config-and-preflight` must land first
