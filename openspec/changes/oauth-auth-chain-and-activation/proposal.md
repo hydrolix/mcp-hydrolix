@@ -16,11 +16,11 @@ The MCP server needs a single, consistent auth chain that enforces OAuth bearer 
 
 ### New
 
-- `oauth-auth-chain-and-activation` — per-worker auth chain assembly and fail-closed OAuth bearer enforcement
+*none*
 
 ### Modified
 
-*none*
+- `oauth-authentication` — flat three-element auth chain `[OAuth, BearerSA, GetParamSA]` when OAuth is active, two-element SA chain when inactive; per-worker activation in `webapp.py:create_app()`; request-time fail-closed behavior for OAuth-claimed bearers; SA credential fallback preservation
 
 ## Impact
 
