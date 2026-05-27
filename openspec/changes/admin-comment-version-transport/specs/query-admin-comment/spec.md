@@ -6,13 +6,13 @@
 ### Requirement: Query Comment Composition
 <!-- settle: explore/comment-format -->
 
-The server MUST set `hdx_query_admin_comment` on every SQL query executed via `execute_query` to `User:mcp-hydrolix version:<version> transport:<transport>`, in that order, as space-separated `key:value` tokens.
+The server MUST set `hdx_query_admin_comment` on every SQL query executed via `execute_query` to `User: mcp-hydrolix version: <version> transport: <transport>`, in that order, as space-separated `key: value` tokens (each key followed by a colon and a single space before the value).
 
 #### Scenario: Renders Composed Comment
 
 - **GIVEN** server name `mcp-hydrolix`, version `0.3.2`, transport `stdio`
 - **WHEN** the server executes a query
-- **THEN** the `hdx_query_admin_comment` setting equals `User:mcp-hydrolix version:0.3.2 transport:stdio`
+- **THEN** the `hdx_query_admin_comment` setting equals `User: mcp-hydrolix version: 0.3.2 transport: stdio`
 
 ### Requirement: Catalog Command Exclusion
 

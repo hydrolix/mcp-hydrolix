@@ -196,7 +196,7 @@ def test_renders_composed_comment(monkeypatch, reload_server_after_test):
         transport="stdio",
         pkg_version_mock=MagicMock(return_value="0.3.2"),
     )
-    assert module.HDX_ADMIN_COMMENT == "User:mcp-hydrolix version:0.3.2 transport:stdio"
+    assert module.HDX_ADMIN_COMMENT == "User: mcp-hydrolix version: 0.3.2 transport: stdio"
 
 
 def test_version_metadata_available():
@@ -223,7 +223,7 @@ def test_transport_reflects_config(monkeypatch, reload_server_after_test):
         transport="sse",
         pkg_version_mock=MagicMock(return_value="0.3.2"),
     )
-    assert "transport:sse" in module.HDX_ADMIN_COMMENT
+    assert "transport: sse" in module.HDX_ADMIN_COMMENT
 
 
 async def test_execute_cmd_omits_admin_comment():

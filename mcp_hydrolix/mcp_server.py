@@ -77,9 +77,9 @@ def _resolve_server_version() -> str:
 
 
 HDX_ADMIN_COMMENT: Final[str] = (
-    f"User:{MCP_SERVER_NAME} "
-    f"version:{_resolve_server_version()} "
-    f"transport:{HYDROLIX_CONFIG.mcp_server_transport}"
+    f"User: {MCP_SERVER_NAME} "
+    f"version: {_resolve_server_version()} "
+    f"transport: {HYDROLIX_CONFIG.mcp_server_transport}"
 )
 
 mcp = FastMCP(
