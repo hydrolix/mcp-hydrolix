@@ -7,7 +7,7 @@
 The server SHALL activate OAuth bearer authentication for the HTTP and SSE transports if and only if `HYDROLIX_OAUTH_AUDIENCE` is set to a non-empty value AND a usable issuer is resolvable. The issuer is resolved with the following precedence:
 
 1. `HYDROLIX_OAUTH_ISSUER` if set to a non-empty value (explicit operator override).
-2. Otherwise, if `HYDROLIX_URL` is set to a non-empty value, the issuer is derived from it via `canonical_idp_endpoints` (see "Canonical Idp Endpoint Derivation Is A Single Contained Function").
+2. Otherwise, if `HYDROLIX_URL` is set to a non-empty value, the issuer is derived from it via `canonical_idp_endpoints` (see "Canonical IdP Endpoint Derivation Is A Single Contained Function").
 3. Otherwise, the issuer is unresolved and OAuth is not activated.
 
 When OAuth is not activated and no partial configuration is present (defined below), the server SHALL behave byte-identically to a build without OAuth code: no new endpoints, no `WWW-Authenticate` headers, no OAuth log lines, and the existing service-account credential chain handles all requests. `HYDROLIX_URL` alone is not a signal of OAuth intent — it belongs to [HDX-11441](https://hydrolix.atlassian.net/browse/HDX-11441) and has non-OAuth uses — so its presence does not break the byte-identical guarantee.
@@ -21,7 +21,7 @@ The byte-identical guarantee above does not apply to partial configuration; the 
 
 **The pre-[HDX-11431](https://hydrolix.atlassian.net/browse/HDX-11431) stub case is not partial configuration.** When `HYDROLIX_OAUTH_AUDIENCE` and `HYDROLIX_URL` are set, `HYDROLIX_OAUTH_ISSUER` is unset, and `canonical_idp_endpoints` raises `NotImplementedError`, the config is valid — the system just can't derive the issuer until [HDX-11431](https://hydrolix.atlassian.net/browse/HDX-11431) lands. `NotImplementedError` propagates directly (not wrapped as `OAuthConfigError`), so operators can tell "I set something wrong" from "this code path doesn't exist yet" in logs.
 
-#### Scenario: No Oauth Vars Set
+#### Scenario: No OAuth Vars Set
 
 - **WHEN** the server starts the HTTP transport with neither `HYDROLIX_OAUTH_ISSUER` nor `HYDROLIX_URL` set
 - **AND** `HYDROLIX_OAUTH_AUDIENCE` is also unset
@@ -36,7 +36,7 @@ The byte-identical guarantee above does not apply to partial configuration; the 
 - **THEN** the worker SHALL raise `OAuthConfigError` during factory initialization
 - **AND** SHALL NOT serve any request
 
-#### Scenario: Issuer Derivation Attempted Before Hdx-11431
+#### Scenario: Issuer Derivation Attempted Before HDX-11431
 
 - **WHEN** `HYDROLIX_OAUTH_AUDIENCE` and `HYDROLIX_URL` are both set
 - **AND** `HYDROLIX_OAUTH_ISSUER` is unset
@@ -45,7 +45,7 @@ The byte-identical guarantee above does not apply to partial configuration; the 
 - **AND** the propagated exception SHALL be `NotImplementedError`, not `OAuthConfigError`
 - **AND** the error message SHALL contain the substring `HDX-11431`
 
-#### Scenario: Issuer Derived From Cluster Url Post-Hdx-11431
+#### Scenario: Issuer Derived From Cluster URL Post-HDX-11431
 
 - **WHEN** [HDX-11431](https://hydrolix.atlassian.net/browse/HDX-11431) has landed and the derivation function returns a valid record
 - **AND** `HYDROLIX_OAUTH_AUDIENCE` and `HYDROLIX_URL` are both set, with `HYDROLIX_OAUTH_ISSUER` unset
@@ -65,20 +65,20 @@ The byte-identical guarantee above does not apply to partial configuration; the 
 - **THEN** the worker SHALL raise `OAuthConfigError` during factory initialization
 - **AND** SHALL NOT serve any request
 
-#### Scenario: Hydrolix Url Set Without Oauth Vars
+#### Scenario: Hydrolix URL Set Without OAuth Vars
 
 - **WHEN** `HYDROLIX_URL` is set
 - **AND** no `HYDROLIX_OAUTH_*` env vars are set
 - **THEN** OAuth SHALL NOT activate
 - **AND** the server SHALL behave byte-identically to a build without OAuth code
 
-#### Scenario: Optional Oauth Var Set Without Audience
+#### Scenario: Optional OAuth Var Set Without Audience
 
 - **WHEN** any of `HYDROLIX_OAUTH_JWKS_URI`, `HYDROLIX_OAUTH_REQUIRED_SCOPES`, `HYDROLIX_OAUTH_ALLOW_INSECURE_JWKS`, or `HYDROLIX_OAUTH_RESOURCE_URL` is set
 - **AND** `HYDROLIX_OAUTH_AUDIENCE` is unset
 - **THEN** the worker SHALL raise `OAuthConfigError` during factory initialization
 
-### Requirement: Canonical Idp Endpoint Derivation Is A Single Contained Function
+### Requirement: Canonical IdP Endpoint Derivation Is A Single Contained Function
 
 All knowledge of where the cluster's canonical IdP lives relative to `HYDROLIX_URL` SHALL be encapsulated in a single function that takes the cluster URL and returns an immutable record containing at least the issuer URL, the OIDC discovery URL, the JWKS URI, and the network-reachable address of the IdP. The function SHALL live in module `mcp_hydrolix.auth.idp_endpoints`.
 
@@ -86,7 +86,7 @@ Until [HDX-11431](https://hydrolix.atlassian.net/browse/HDX-11431) publishes the
 
 When the function eventually returns a result (after [HDX-11431](https://hydrolix.atlassian.net/browse/HDX-11431) lands and the body is replaced), the returned record SHALL be frozen, SHALL contain the four named fields, and SHALL never return an `issuer` string-equal to its input `hydrolix_url` (preserving the issuer/cluster-URL non-conflation invariant; enforcement at request time is owned by `oauth-jwt-verifier`).
 
-#### Scenario: Stub Raises Not Implemented Error Until Hdx-11431
+#### Scenario: Stub Raises Not Implemented Error Until HDX-11431
 
 - **WHEN** `canonical_idp_endpoints` is called with any value of `hydrolix_url` before [HDX-11431](https://hydrolix.atlassian.net/browse/HDX-11431) has landed
 - **THEN** the function SHALL raise `NotImplementedError`
@@ -99,23 +99,23 @@ When the function eventually returns a result (after [HDX-11431](https://hydroli
 - **AND** the record SHALL expose `issuer`, `discovery_url`, `jwks_uri`, and `address` as string-typed fields
 - **AND** calling the function twice with the same input SHALL return equal records
 
-#### Scenario: Eventual Derived Issuer Is Never Equal To Input Cluster Url
+#### Scenario: Eventual Derived Issuer Is Never Equal To Input Cluster URL
 
 - **WHEN** [HDX-11431](https://hydrolix.atlassian.net/browse/HDX-11431) has landed and `canonical_idp_endpoints` is called with any non-empty `hydrolix_url` value, returning successfully
 - **THEN** the returned `issuer` SHALL NOT be string-equal to the input `hydrolix_url`
 
-### Requirement: Jwks Uri Override And Insecure Transport Flag
+### Requirement: JWKS URI Override And Insecure Transport Flag
 
 `load_oauth_config()` SHALL honor an explicit `HYDROLIX_OAUTH_JWKS_URI` value as the JWKS URI for in-cluster deployments where the public discovery URL is not reachable from the pod. By default, when `HYDROLIX_OAUTH_JWKS_URI` carries an `http://` scheme, `load_oauth_config()` SHALL raise `OAuthConfigError` at startup before any JWKS fetch is attempted. When `HYDROLIX_OAUTH_ALLOW_INSECURE_JWKS=true` is also set, `load_oauth_config()` SHALL accept the `http://` JWKS URI and the runtime verifier SHALL fetch keys from it (supporting cluster-internal backchannel calls).
 
-#### Scenario: Plain Http Jwks Rejected By Default
+#### Scenario: Plain HTTP JWKS Rejected By Default
 
 - **WHEN** `HYDROLIX_OAUTH_AUDIENCE` and `HYDROLIX_OAUTH_ISSUER` are set to activate OAuth
 - **AND** `HYDROLIX_OAUTH_JWKS_URI="http://idp.internal/realms/x/protocol/openid-connect/certs"` is set
 - **AND** `HYDROLIX_OAUTH_ALLOW_INSECURE_JWKS` is unset
 - **THEN** `load_oauth_config()` SHALL raise `OAuthConfigError` at startup (the insecure-scheme check fires before any preflight)
 
-#### Scenario: Plain Http Jwks Allowed When Explicitly Opted In
+#### Scenario: Plain HTTP JWKS Allowed When Explicitly Opted In
 
 - **WHEN** `HYDROLIX_OAUTH_AUDIENCE` and `HYDROLIX_OAUTH_ISSUER` are set to activate OAuth
 - **AND** `HYDROLIX_OAUTH_JWKS_URI="http://idp.internal/.../certs"` is set

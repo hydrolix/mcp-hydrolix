@@ -6,12 +6,11 @@ mcp-hydrolix needs a well-defined configuration layer before any OAuth-adjacent 
 
 ## What Changes
 
-- Add `load_oauth_config()` that reads and validates `HYDROLIX_OAUTH_*` env vars and raises `OAuthConfigError` for partial configuration.
-- Add activation gating: OAuth activates only when `HYDROLIX_OAUTH_AUDIENCE` is set and an issuer is resolvable via explicit `HYDROLIX_OAUTH_ISSUER` or via derivation from `HYDROLIX_URL`.
-- Add `canonical_idp_endpoints(hydrolix_url)` in a new `auth/idp_endpoints.py` module as the single encapsulation point for cluster-URL-to-IdP knowledge.
-- Add JWKS URI override (`HYDROLIX_OAUTH_JWKS_URI`) with an insecure-transport guard that rejects `http://` URIs unless `HYDROLIX_OAUTH_ALLOW_INSECURE_JWKS=true` is set.
-- Add fail-open startup preflight: OIDC discovery or JWKS fetch failures at startup log a WARNING and continue serving with the credential chain; they do not crash the worker.
-- Distinguish two fatal-startup exception types: `OAuthConfigError` for operator misconfiguration, `NotImplementedError` (propagated directly) for the pre-[HDX-11431](https://hydrolix.atlassian.net/browse/HDX-11431) stub case.
+- OAuth bearer authentication activates only when `HYDROLIX_OAUTH_AUDIENCE` is set and an issuer is resolvable; without those vars the server is byte-identical to a build without OAuth code.
+- Partial or conflicting `HYDROLIX_OAUTH_*` configuration causes a fatal startup error surfaced as `OAuthConfigError`.
+- All cluster-URL-to-IdP endpoint knowledge is encapsulated in a single module; no other code may encode that mapping.
+- Plain-HTTP JWKS URIs are rejected at startup unless an explicit insecure opt-in flag is set.
+- OIDC discovery and JWKS preflight failures at startup are fail-open: the worker logs a warning and continues without OAuth active.
 
 ## Capabilities
 
@@ -25,8 +24,8 @@ mcp-hydrolix needs a well-defined configuration layer before any OAuth-adjacent 
 
 ## Impact
 
-- **mcp_hydrolix/auth/oauth.py**: Add or update `OAuthConfig` dataclass, `load_oauth_config()`, `OAuthConfigError`.
-- **mcp_hydrolix/auth/idp_endpoints.py** (new file): `CanonicalIdPEndpoints` frozen dataclass and `canonical_idp_endpoints()` stub.
-- **mcp_hydrolix/webapp.py**: `_activate_oauth_if_configured()` helper calls `load_oauth_config()` and handles fail-open preflight errors; called from `create_app()`.
-- **tests/auth/**: New test modules for config loading, idp-endpoint stub contract, and startup preflight behavior.
-- No new production dependencies beyond what the JWT verifier already requires.
+- **mcp_hydrolix/auth/oauth.py**: config loading and error types
+- **mcp_hydrolix/auth/idp_endpoints.py** (new): IdP endpoint encapsulation module
+- **mcp_hydrolix/webapp.py**: startup activation wiring
+- **tests/auth/**: new test modules
+- No new production dependencies
