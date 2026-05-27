@@ -2,11 +2,11 @@
 
 ## 1. Config Extension
 
-- [ ] 1.1 Add `resource_url` field to `OAuthConfig`: add a `resource_url: str` field to the `OAuthConfig` dataclass in `mcp_hydrolix/auth/config.py` [implements: oauth-authentication/resource-url-configuration, design/resource-url-bind-url-fallback] — verify: `ruff check mcp_hydrolix/auth/config.py` clean and `mypy mcp_hydrolix/auth/config.py` passes
+- [ ] 1.1 Add `resource_url` field to `OAuthConfig`: add a `resource_url: str` field to the `OAuthConfig` dataclass in `mcp_hydrolix/auth/oauth.py` [implements: oauth-authentication/resource-url-configuration, design/resource-url-bind-url-fallback] — verify: `ruff check mcp_hydrolix/auth/oauth.py` clean and `mypy mcp_hydrolix/auth/oauth.py` passes
 
-- [ ] 1.2 Implement three-tier precedence in `load_oauth_config()`: resolve `resource_url` from `HYDROLIX_OAUTH_RESOURCE_URL` → `HYDROLIX_URL` → bind base URL (passed in as a parameter) and assign to `OAuthConfig.resource_url` [implements: oauth-authentication/resource-url-configuration, design/resource-url-bind-url-fallback] — verify: `ruff check mcp_hydrolix/auth/config.py` clean
+- [ ] 1.2 Implement three-tier precedence in `load_oauth_config()`: resolve `resource_url` from `HYDROLIX_OAUTH_RESOURCE_URL` → `HYDROLIX_URL` → bind base URL (passed in as a parameter) and assign to `OAuthConfig.resource_url` [implements: oauth-authentication/resource-url-configuration, design/resource-url-bind-url-fallback] — verify: `ruff check mcp_hydrolix/auth/oauth.py` clean
 
-- [ ] 1.3 Add partial-config guard for `HYDROLIX_OAUTH_RESOURCE_URL` without audience: inside `load_oauth_config()`, when `HYDROLIX_OAUTH_RESOURCE_URL` is set and `HYDROLIX_OAUTH_AUDIENCE` is unset, raise `OAuthConfigError` (consistent with the other optional-var guards in `oauth-config-and-preflight`) [implements: oauth-authentication/resource-url-configuration] — verify: `ruff check mcp_hydrolix/auth/config.py` clean
+- [ ] 1.3 Add partial-config guard for `HYDROLIX_OAUTH_RESOURCE_URL` without audience: inside `load_oauth_config()`, when `HYDROLIX_OAUTH_RESOURCE_URL` is set and `HYDROLIX_OAUTH_AUDIENCE` is unset, raise `OAuthConfigError` (consistent with the other optional-var guards in `oauth-config-and-preflight`) [implements: oauth-authentication/resource-url-configuration] — verify: `ruff check mcp_hydrolix/auth/oauth.py` clean
 
 ## 2. Route and Header Registration
 

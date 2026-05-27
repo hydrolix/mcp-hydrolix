@@ -4,7 +4,7 @@
 
 - OAuth activation, `OAuthConfig` shape, and the partial-config error path are defined by `oauth-config-and-preflight`. This change adds one field to that config and registers one new route.
 - New routes are registered on the ASGI app returned by `create_app()` in `webapp.py` (FastAPI/Starlette under FastMCP).
-- The `WWW-Authenticate: Bearer` header is already emitted by the JWT verifier on 401 responses; this change appends a `resource_metadata=` parameter.
+- When `oauth-jwt-verifier` or `oauth-auth-chain-and-activation` has landed, requests rejected at the auth layer return HTTP 401 with a `WWW-Authenticate: Bearer realm=…` header. This change appends a `resource_metadata=<url>` parameter to that header when present. The RFC 9728 metadata endpoint itself functions independently of any 401-emitting path — it can be exercised standalone.
 - RFC 9728 §3 forbids protecting the metadata endpoint with the credentials it describes.
 - `HYDROLIX_URL` is owned by `hydrolix-url-config-collapse`; this change consumes it.
 

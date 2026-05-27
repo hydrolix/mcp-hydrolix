@@ -16,8 +16,7 @@ When a request to an authenticated endpoint is rejected with HTTP 401, the `WWW-
 
 #### Scenario: Metadata Endpoint Returns RFC 9728 JSON
 
-- **GIVEN** OAuth is active
-- **WHEN** an unauthenticated GET request is made to `/.well-known/oauth-protected-resource`
+- **WHEN** OAuth is active and an unauthenticated GET request is made to `/.well-known/oauth-protected-resource`
 - **THEN** the response status SHALL be 200
 - **AND** the `Content-Type` header SHALL be `application/json`
 - **AND** the response body SHALL be valid JSON containing `resource`, `authorization_servers`, and `bearer_methods_supported` keys
@@ -26,15 +25,13 @@ When a request to an authenticated endpoint is rejected with HTTP 401, the `WWW-
 
 #### Scenario: 401 References Metadata URL
 
-- **GIVEN** OAuth is active
-- **WHEN** a request to an authenticated endpoint is rejected with HTTP 401
+- **WHEN** `HYDROLIX_OAUTH_AUDIENCE="mcp-test"` and `HYDROLIX_OAUTH_ISSUER="https://idp.example.com/realms/test"` are set, OAuth is active (and an auth chain capable of emitting 401 is present, i.e. `oauth-jwt-verifier` or `oauth-auth-chain-and-activation` has landed), and a GET request to `/tools/list` arrives with an invalid bearer token
 - **THEN** the `WWW-Authenticate` response header SHALL include a `resource_metadata=` parameter
 - **AND** the parameter value SHALL be the absolute URL of the `/.well-known/oauth-protected-resource` endpoint on this server
 
 #### Scenario: Metadata Endpoint Returns 404 When OAuth Inactive
 
-- **GIVEN** OAuth is inactive (no `HYDROLIX_OAUTH_AUDIENCE` set)
-- **WHEN** a GET request is made to `/.well-known/oauth-protected-resource`
+- **WHEN** OAuth is inactive (no `HYDROLIX_OAUTH_AUDIENCE` set) and a GET request is made to `/.well-known/oauth-protected-resource`
 - **THEN** the response status SHALL be 404
 
 ### Requirement: Resource URL Configuration
@@ -49,33 +46,24 @@ The `resource` field in the RFC 9728 document SHALL be resolved from `OAuthConfi
 
 #### Scenario: Explicit Resource URL Wins
 
-- **GIVEN** `HYDROLIX_OAUTH_RESOURCE_URL="https://mcp.example.com/api"` is set alongside an activatable OAuth config
-- **WHEN** the server starts and OAuth activates
+- **WHEN** `HYDROLIX_OAUTH_RESOURCE_URL="https://mcp.example.com/api"` is set alongside an activatable OAuth config and the server starts
 - **THEN** `OAuthConfig.resource_url` SHALL equal `"https://mcp.example.com/api"`
 - **AND** the `resource` field in the RFC 9728 JSON SHALL equal `"https://mcp.example.com/api"`
 
 #### Scenario: Resource URL Defaults To Hydrolix URL
 
-- **GIVEN** `HYDROLIX_OAUTH_RESOURCE_URL` is unset
-- **AND** `HYDROLIX_URL="https://cluster.example.com"` is set
-- **AND** OAuth is active
-- **WHEN** `OAuthConfig.resource_url` is resolved
+- **WHEN** `HYDROLIX_OAUTH_RESOURCE_URL` is unset, `HYDROLIX_URL="https://cluster.example.com"` is set, OAuth is active, and `OAuthConfig.resource_url` is resolved
 - **THEN** `OAuthConfig.resource_url` SHALL equal `"https://cluster.example.com"`
 - **AND** the `resource` field in the RFC 9728 JSON SHALL equal `"https://cluster.example.com"`
 
 #### Scenario: Resource URL Falls Back To Server Bind URL
 
-- **GIVEN** `HYDROLIX_OAUTH_RESOURCE_URL` is unset
-- **AND** `HYDROLIX_URL` is unset
-- **AND** OAuth is active with an explicit `HYDROLIX_OAUTH_ISSUER`
-- **WHEN** `OAuthConfig.resource_url` is resolved
+- **WHEN** `HYDROLIX_OAUTH_RESOURCE_URL` is unset, `HYDROLIX_URL` is unset, OAuth is active with an explicit `HYDROLIX_OAUTH_ISSUER`, and `OAuthConfig.resource_url` is resolved
 - **THEN** `OAuthConfig.resource_url` SHALL equal the server's bound base URL (scheme + host + port)
 - **AND** the `resource` field in the RFC 9728 JSON SHALL equal that bound base URL
 
 #### Scenario: Resource URL Set Without Audience Triggers Partial Config Error
 
-- **GIVEN** `HYDROLIX_OAUTH_RESOURCE_URL` is set to a non-empty value
-- **AND** `HYDROLIX_OAUTH_AUDIENCE` is unset
-- **WHEN** the server starts (factory initialization runs)
+- **WHEN** `HYDROLIX_OAUTH_RESOURCE_URL` is set to a non-empty value, `HYDROLIX_OAUTH_AUDIENCE` is unset, and the server starts (factory initialization runs)
 - **THEN** the worker SHALL raise `OAuthConfigError`
 - **AND** SHALL NOT serve any requests
