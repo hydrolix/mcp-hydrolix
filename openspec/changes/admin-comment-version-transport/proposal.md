@@ -8,7 +8,7 @@ Usage tracking needs to separate Hydrolix query traffic by MCP server version an
 
 ## What Changes
 
-- Set `hdx_query_admin_comment` to `User=<name>; version=<version>; transport=<transport>` on every query.
+- Set `hdx_query_admin_comment` to `User:<name> version:<version> transport:<transport>` on every query.
 
 ## Capabilities
 
