@@ -4,12 +4,80 @@ This module handles all environment variable configuration with sensible default
 and type conversion.
 """
 
+import logging
 import os
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional
+from typing import List, Optional
+from urllib.parse import ParseResult, urlparse
 
 from mcp_hydrolix.auth.credentials import HydrolixCredential, ServiceAccountToken, UsernamePassword
+
+logger = logging.getLogger("mcp-hydrolix")
+
+
+# Mapping of deprecated env var names to their replacements.
+# Transitional — will be REMOVED when the five deprecated aliases are dropped.
+ALIAS_RENAMES: dict[str, str] = {
+    "HYDROLIX_HOST": "HYDROLIX_HTTP_QUERY_HOST",
+    "HYDROLIX_PORT": "HYDROLIX_HTTP_QUERY_PORT",
+    "HYDROLIX_SECURE": "HYDROLIX_HTTP_QUERY_SECURE",
+    "HYDROLIX_API_HOST": "HYDROLIX_VERSION_API_HOST",
+    "HYDROLIX_API_PORT": "HYDROLIX_VERSION_API_PORT",
+}
+DEPRECATED_ALIASES: tuple[str, ...] = tuple(ALIAS_RENAMES.keys())
+
+EXTERNAL_DEPRECATION_MESSAGE = (
+    "Deprecated Hydrolix environment variable(s) detected: {aliases}. "
+    "These will be removed in a future release. "
+    "For typical external deployments, setting HYDROLIX_URL alone "
+    "(e.g. HYDROLIX_URL=https://mycluster.hydrolix.live) is sufficient "
+    "and replaces all of these variables."
+)
+INTERNAL_DEPRECATION_MESSAGE = (
+    "Deprecated Hydrolix environment variable(s) detected: {pairs}. "
+    "These will be removed in a future release; please migrate to the "
+    "replacement variable names."
+)
+
+# Process-level sentinels so we log each deprecation at most once.
+_external_deprecation_warned: bool = False
+_internal_deprecation_warned: bool = False
+
+
+def _detect_deprecated_aliases() -> List[str]:
+    """Return the deprecated alias env vars that are currently set, in canonical order."""
+    return [name for name in DEPRECATED_ALIASES if name in os.environ]
+
+
+def _classify_deprecation(aliases: List[str]) -> Optional[str]:
+    """Classify deprecation audience based on HYDROLIX_NAME presence.
+
+    Returns ``"external"``, ``"internal"``, or ``None`` if no aliases are set.
+    """
+    if not aliases:
+        return None
+    return "internal" if "HYDROLIX_NAME" in os.environ else "external"
+
+
+def _parse_hydrolix_url() -> Optional[ParseResult]:
+    """Parse the ``HYDROLIX_URL`` env var, returning ``None`` if unset/empty.
+
+    Raises ``ValueError`` for a non-empty value with a missing/unsupported scheme
+    or missing hostname.
+    """
+    raw = os.environ.get("HYDROLIX_URL")
+    if raw is None:
+        return None
+    stripped = raw.strip()
+    if not stripped:
+        return None
+    parsed = urlparse(stripped)
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError(f"Invalid HYDROLIX_URL={raw!r}: scheme must be 'http' or 'https'.")
+    if not parsed.hostname:
+        raise ValueError(f"Invalid HYDROLIX_URL={raw!r}: missing hostname.")
+    return parsed
 
 
 class TransportType(str, Enum):
@@ -32,14 +100,42 @@ class HydrolixConfig:
     This class handles all environment variable configuration with sensible defaults
     and type conversion. It provides typed methods for accessing each configuration value.
 
-    Required environment variables:
-        HYDROLIX_HOST: The hostname of the Hydrolix server
+    Connection target (one of these MUST be set; for ``http``/``sse`` transports
+    ``HYDROLIX_URL`` specifically is required):
+        HYDROLIX_URL: Canonical public URL of the Hydrolix cluster
+            (e.g. ``https://mycluster.hydrolix.live``). For typical external
+            deployments this single variable is sufficient to derive ``host``,
+            ``port``, ``secure``, ``version_api_host``, ``version_api_port``,
+            and ``version_api_secure``.
+        HYDROLIX_HOST (deprecated alias): Hostname of the Hydrolix HTTP query
+            endpoint. Accepted as a connection target only for stdio transport.
+
+    Endpoint overrides (ClickHouse HTTP query endpoint):
+        HYDROLIX_HTTP_QUERY_HOST: Override the query hostname
+            (precedence: this > HYDROLIX_HOST > URL hostname).
+        HYDROLIX_HTTP_QUERY_PORT: Override the query port
+            (precedence: this > HYDROLIX_PORT > URL scheme default > 8088).
+        HYDROLIX_HTTP_QUERY_SECURE: Override the query TLS flag
+            (precedence: this > HYDROLIX_SECURE > URL scheme == "https" > True).
+
+    Endpoint overrides (REST ``/version`` probe):
+        HYDROLIX_VERSION_API_HOST: Override the version-api hostname
+            (precedence: this > HYDROLIX_API_HOST > URL hostname > resolved host).
+        HYDROLIX_VERSION_API_PORT: Override the version-api port
+            (precedence: this > HYDROLIX_API_PORT > URL scheme default >
+            443 if secure else 80).
+        HYDROLIX_VERSION_API_SECURE: Override the version-api TLS flag
+            (precedence: this > resolved ``secure``).
+
+    Deprecated environment variables (still honored during the transition window):
+        HYDROLIX_HOST, HYDROLIX_PORT, HYDROLIX_SECURE,
+        HYDROLIX_API_HOST, HYDROLIX_API_PORT
 
     Optional environment variables (with defaults):
         HYDROLIX_TOKEN: Service account token to the Hydrolix Server (this or user+password is required)
         HYDROLIX_USER: The username for authentication (this or token is required)
         HYDROLIX_PASSWORD: The password for authentication (this or token is required)
-        HYDROLIX_PORT: The port number (default: 8088)
+        HYDROLIX_PORT (deprecated): The port number (default: 8088). Prefer HYDROLIX_HTTP_QUERY_PORT.
         HYDROLIX_VERIFY: Verify SSL certificates (default: true)
         HYDROLIX_CONNECT_TIMEOUT: Connection timeout in seconds (default: 30)
         HYDROLIX_SEND_RECEIVE_TIMEOUT: Send/receive timeout in seconds (default: 300)
@@ -65,7 +161,22 @@ class HydrolixConfig:
 
     def __init__(self) -> None:
         """Initialize the configuration from environment variables."""
+        # Parse HYDROLIX_URL eagerly so validation errors surface at construction time.
+        self._parsed_url: Optional[ParseResult] = _parse_hydrolix_url()
         self._validate_required_vars()
+
+        # Snapshot deprecation state once so the LLM-visible notice and the
+        # version-gated internal probe log agree on what was seen at startup.
+        self._deprecated_aliases: List[str] = _detect_deprecated_aliases()
+        self._deprecation_audience: Optional[str] = _classify_deprecation(self._deprecated_aliases)
+
+        global _external_deprecation_warned
+        if self._deprecation_audience == "external" and not _external_deprecation_warned:
+            logger.warning(
+                EXTERNAL_DEPRECATION_MESSAGE.format(aliases=", ".join(self._deprecated_aliases))
+            )
+            _external_deprecation_warned = True
+
         # Credential to use for clickhouse connections when no per-request credential is provided
         self._default_credential: Optional[HydrolixCredential] = None
 
@@ -96,39 +207,113 @@ class HydrolixConfig:
 
     @property
     def host(self) -> str:
-        """Get the Hydrolix host. Called during __init__"""
-        return os.environ["HYDROLIX_HOST"]
+        """Get the Hydrolix HTTP query host.
+
+        Precedence: HYDROLIX_HTTP_QUERY_HOST > HYDROLIX_HOST (deprecated) > URL hostname.
+        """
+        if value := os.getenv("HYDROLIX_HTTP_QUERY_HOST"):
+            return value
+        if value := os.getenv("HYDROLIX_HOST"):
+            return value
+        if self._parsed_url is not None and self._parsed_url.hostname:
+            return self._parsed_url.hostname
+        # Unreachable: _validate_required_vars guarantees a connection target.
+        raise ValueError("No Hydrolix host configured (set HYDROLIX_URL or HYDROLIX_HOST).")
 
     @property
     def port(self) -> int:
-        """Get the Hydrolix port.
+        """Get the Hydrolix HTTP query port.
 
-        Defaults to 8088.
-        Can be overridden by HYDROLIX_PORT environment variable.
+        Precedence: HYDROLIX_HTTP_QUERY_PORT > HYDROLIX_PORT (deprecated) >
+        URL-derived (443 https / 80 http) > hard default 8088.
         """
-        return int(os.getenv("HYDROLIX_PORT", "8088"))
+        if raw := os.getenv("HYDROLIX_HTTP_QUERY_PORT"):
+            return int(raw)
+        if raw := os.getenv("HYDROLIX_PORT"):
+            return int(raw)
+        if self._parsed_url is not None:
+            return 443 if self._parsed_url.scheme == "https" else 80
+        return 8088
 
     @property
-    def api_host(self) -> str:
-        """Get the Hydrolix REST API hostname.
+    def secure(self) -> bool:
+        """Get whether to use a secured (TLS) connection for the HTTP query endpoint.
 
-        Defaults to HYDROLIX_HOST.
-        Override with HYDROLIX_API_HOST when the MCP server runs inside a Hydrolix cluster,
-        where the version service is reachable at the internal hostname 'version'.
+        Precedence: HYDROLIX_HTTP_QUERY_SECURE > HYDROLIX_SECURE (deprecated) >
+        URL scheme == "https" > hard default True.
         """
-        return os.getenv("HYDROLIX_API_HOST") or self.host
+        if (raw := os.getenv("HYDROLIX_HTTP_QUERY_SECURE")) is not None:
+            return raw.lower() == "true"
+        if (raw := os.getenv("HYDROLIX_SECURE")) is not None:
+            return raw.lower() == "true"
+        if self._parsed_url is not None:
+            return self._parsed_url.scheme == "https"
+        return True
 
     @property
-    def api_port(self) -> int:
-        """Get the Hydrolix REST API port.
+    def version_api_host(self) -> str:
+        """Get the hostname of the Hydrolix REST ``/version`` probe endpoint.
 
-        Defaults to 443 for secure connections, 80 otherwise.
-        Override with HYDROLIX_API_PORT when the MCP server runs inside a Hydrolix cluster,
-        where the version service is reachable on port 23925.
+        Precedence: HYDROLIX_VERSION_API_HOST > HYDROLIX_API_HOST (deprecated) >
+        URL hostname > resolved ``host``.
         """
+        if value := os.getenv("HYDROLIX_VERSION_API_HOST"):
+            return value
+        if value := os.getenv("HYDROLIX_API_HOST"):
+            return value
+        if self._parsed_url is not None and self._parsed_url.hostname:
+            return self._parsed_url.hostname
+        return self.host
+
+    @property
+    def version_api_port(self) -> int:
+        """Get the port of the Hydrolix REST ``/version`` probe endpoint.
+
+        Precedence: HYDROLIX_VERSION_API_PORT > HYDROLIX_API_PORT (deprecated) >
+        URL-derived (443/80 by scheme) > ``443`` if secure else ``80``.
+        """
+        if raw := os.getenv("HYDROLIX_VERSION_API_PORT"):
+            return int(raw)
         if raw := os.getenv("HYDROLIX_API_PORT"):
             return int(raw)
+        if self._parsed_url is not None:
+            return 443 if self._parsed_url.scheme == "https" else 80
         return 443 if self.secure else 80
+
+    @property
+    def version_api_secure(self) -> bool:
+        """Get whether to use TLS for the ``/version`` probe endpoint.
+
+        Precedence: HYDROLIX_VERSION_API_SECURE > resolved ``secure``.
+        Note: this inherits from the *resolved* ``secure`` value (which already
+        respects HYDROLIX_HTTP_QUERY_SECURE / HYDROLIX_SECURE / URL scheme), not
+        the URL scheme directly.
+        """
+        if (raw := os.getenv("HYDROLIX_VERSION_API_SECURE")) is not None:
+            return raw.lower() == "true"
+        return self.secure
+
+    @property
+    def deprecated_aliases(self) -> List[str]:
+        """Deprecated alias env var names that were set at construction time."""
+        return list(self._deprecated_aliases)
+
+    @property
+    def deprecation_audience(self) -> Optional[str]:
+        """``"external"``, ``"internal"``, or ``None`` -- determined at construction time."""
+        return self._deprecation_audience
+
+    @property
+    def deprecation_notice(self) -> Optional[str]:
+        """LLM-visible deprecation advisory string, or ``None``.
+
+        Returns a non-empty message only for the ``"external"`` audience. Internal
+        operators are notified via the version-gated probe log, not via the MCP
+        ``instructions`` channel.
+        """
+        if self._deprecation_audience != "external":
+            return None
+        return EXTERNAL_DEPRECATION_MESSAGE.format(aliases=", ".join(self._deprecated_aliases))
 
     @property
     def database(self) -> Optional[str]:
@@ -142,14 +327,6 @@ class HydrolixConfig:
         Default: True
         """
         return os.getenv("HYDROLIX_VERIFY", "true").lower() == "true"
-
-    @property
-    def secure(self) -> bool:
-        """Get whether use secured connection.
-
-        Default: True
-        """
-        return os.getenv("HYDROLIX_SECURE", "true").lower() == "true"
 
     @property
     def connect_timeout(self) -> int:
@@ -390,20 +567,30 @@ class HydrolixConfig:
         Raises:
             ValueError: If any required environment variable is missing.
         """
-        missing_vars = []
-        required_vars = ["HYDROLIX_HOST"]
-        for var in required_vars:
-            if var not in os.environ:
-                missing_vars.append(var)
-
         # HYDROLIX_USER and HYDROLIX_PASSWORD must either be both present or both absent
         if ("HYDROLIX_USER" in os.environ) != ("HYDROLIX_PASSWORD" in os.environ):
             raise ValueError(
                 "User/password authentication is only partially configured: set both HYDROLIX_USER and HYDROLIX_PASSWORD"
             )
 
-        if missing_vars:
-            raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
+        # http/sse transports surface the cluster URL in OAuth metadata, so
+        # HYDROLIX_URL specifically (not HYDROLIX_HOST) is required for those.
+        transport = os.getenv("HYDROLIX_MCP_SERVER_TRANSPORT", TransportType.STDIO.value).lower()
+        if transport in (TransportType.HTTP.value, TransportType.SSE.value):
+            if self._parsed_url is None:
+                raise ValueError(
+                    "HYDROLIX_URL is required when HYDROLIX_MCP_SERVER_TRANSPORT is "
+                    f"{transport!r}. Set HYDROLIX_URL=https://<your-cluster-host>."
+                )
+        else:
+            # All other transports: HYDROLIX_URL or HYDROLIX_HOST (deprecated) must
+            # supply a connection target. HYDROLIX_HTTP_QUERY_HOST is an override
+            # on top of the connection target and is never sufficient alone.
+            if self._parsed_url is None and "HYDROLIX_HOST" not in os.environ:
+                raise ValueError(
+                    "Missing Hydrolix connection target: set HYDROLIX_URL "
+                    "(e.g. https://mycluster.hydrolix.live) or HYDROLIX_HOST."
+                )
 
         # Validate HYDROLIX_MAX_RESULT_CELLS: must be a positive integer if set.
         raw_cells = os.getenv("HYDROLIX_MAX_RESULT_CELLS")

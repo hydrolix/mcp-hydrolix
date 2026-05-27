@@ -351,7 +351,34 @@ claude mcp add --transport stdio hydrolix \
 The following variables are used to configure the Hydrolix connection. These variables may be provided via the MCP config block (as shown above), a `.env` file, or traditional environment variables.
 
 #### Required Variables
-* `HYDROLIX_HOST`: The hostname of your Hydrolix server
+
+You MUST set one of the following to identify the cluster:
+
+* `HYDROLIX_URL` *(recommended)*: The canonical public URL of your Hydrolix cluster, e.g. `https://mycluster.hydrolix.live`. For typical out-of-cluster deployments this single variable is sufficient — it supplies the host, port (scheme-default 443/80), and TLS settings for both the HTTP query endpoint and the REST `/version` probe.
+* `HYDROLIX_HOST` *(deprecated)*: The hostname of your Hydrolix server. Still honored for backwards compatibility but should be replaced by `HYDROLIX_URL`.
+
+When `HYDROLIX_MCP_SERVER_TRANSPORT` is `http` or `sse`, `HYDROLIX_URL` *specifically* is required (the OAuth metadata endpoint advertises it). `HYDROLIX_HOST` alone is not sufficient for these transports.
+
+#### Endpoint overrides
+
+These override the values derived from `HYDROLIX_URL`. They are useful for in-cluster deployments where the HTTP query endpoint and the version-API live at different internal hostnames or ports. Override precedence: explicit new var > deprecated alias > `HYDROLIX_URL`-derived > hard default.
+
+* `HYDROLIX_HTTP_QUERY_HOST` / `HYDROLIX_HTTP_QUERY_PORT` / `HYDROLIX_HTTP_QUERY_SECURE`: override the ClickHouse HTTP query endpoint.
+* `HYDROLIX_VERSION_API_HOST` / `HYDROLIX_VERSION_API_PORT` / `HYDROLIX_VERSION_API_SECURE`: override the REST `/version` probe endpoint. `HYDROLIX_VERSION_API_SECURE` inherits from the resolved HTTP-query secure value by default.
+
+#### Deprecated variables
+
+The following are still honored during the transition window but will be removed in a future release. Migrate at your convenience:
+
+| Deprecated | Replacement |
+|---|---|
+| `HYDROLIX_HOST` | `HYDROLIX_URL` (preferred) or `HYDROLIX_HTTP_QUERY_HOST` |
+| `HYDROLIX_PORT` | `HYDROLIX_HTTP_QUERY_PORT` |
+| `HYDROLIX_SECURE` | `HYDROLIX_HTTP_QUERY_SECURE` |
+| `HYDROLIX_API_HOST` | `HYDROLIX_VERSION_API_HOST` |
+| `HYDROLIX_API_PORT` | `HYDROLIX_VERSION_API_PORT` |
+
+External operators using any of these will see a one-time startup warning advising the migration to `HYDROLIX_URL`. In-cluster (o6r-managed) deployments will not see this warning; their migration is handled by the platform.
 
 #### Authentication Variables
 At least one authentication method must be configured when using the stdio transport:
@@ -424,7 +451,7 @@ Example `mcpServers` configuration connecting to a remote HTTP server with per-r
 Example minimal `.env` configuration for running your own HTTP server without environment credentials:
 
 ```env
-HYDROLIX_HOST=my-cluster.hydrolix.net
+HYDROLIX_URL=https://my-cluster.hydrolix.net
 HYDROLIX_MCP_SERVER_TRANSPORT=http
 ```
 
