@@ -5,13 +5,18 @@ Verifies that:
 - hdx_query_max_timerange_sec is set to the configured max_raw_timerange only when the query
   targets no SummaryColumns
 - Neither setting leaks into non-final queries (execute_query base settings)
+- hdx_query_admin_comment composition (User/version/transport) and execute_cmd exclusion
 """
 
+import importlib
 import inspect
-from unittest.mock import AsyncMock, patch
+import logging
+from importlib.metadata import PackageNotFoundError, version as _real_pkg_version
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+import mcp_hydrolix.mcp_server as mcp_server_module
 from mcp_hydrolix.mcp_env import get_config
 from mcp_hydrolix.models import HdxQueryResult
 from mcp_hydrolix.mcp_server import run_select_query
@@ -163,3 +168,77 @@ class TestQuerySettings:
         settings = kwargs["settings"]
         assert "hdx_query_timerange_required" not in settings
         assert "hdx_query_max_timerange_sec" not in settings
+
+
+@pytest.fixture
+def reload_server_after_test():
+    """Reload mcp_server after the test to restore the real HDX_ADMIN_COMMENT."""
+    yield
+    importlib.reload(mcp_server_module)
+
+
+def _reload_server_with(monkeypatch, transport, pkg_version_mock):
+    """Reload mcp_server with the given transport env and a patched importlib.metadata.version.
+
+    Patching `importlib.metadata.version` (the source `version` callable, before the
+    `from importlib.metadata import version as _pkg_version` re-binding fires) is the
+    only way to stub the import-time value of `_pkg_version` inside the reloaded module.
+    """
+    monkeypatch.setenv("HYDROLIX_MCP_SERVER_TRANSPORT", transport)
+    with patch("importlib.metadata.version", pkg_version_mock):
+        return importlib.reload(mcp_server_module)
+
+
+def test_renders_composed_comment(monkeypatch, reload_server_after_test):
+    """Scenario: Renders Composed Comment."""
+    module = _reload_server_with(
+        monkeypatch,
+        transport="stdio",
+        pkg_version_mock=MagicMock(return_value="0.3.2"),
+    )
+    assert module.HDX_ADMIN_COMMENT == "User: mcp-hydrolix version: 0.3.2 transport: stdio"
+
+
+def test_version_metadata_available():
+    """Scenario: Version Metadata Available."""
+    assert mcp_server_module._resolve_server_version() == _real_pkg_version("mcp-hydrolix")
+
+
+def test_version_metadata_unavailable(caplog):
+    """Scenario: Version Metadata Unavailable."""
+    with patch(
+        "mcp_hydrolix.mcp_server._pkg_version",
+        side_effect=PackageNotFoundError("mcp-hydrolix"),
+    ):
+        with caplog.at_level(logging.WARNING, logger="mcp-hydrolix"):
+            result = mcp_server_module._resolve_server_version()
+    assert result == "unknown"
+    assert any("mcp-hydrolix" in record.getMessage() for record in caplog.records)
+
+
+def test_transport_reflects_config(monkeypatch, reload_server_after_test):
+    """Scenario: Transport Reflects Config."""
+    module = _reload_server_with(
+        monkeypatch,
+        transport="sse",
+        pkg_version_mock=MagicMock(return_value="0.3.2"),
+    )
+    assert "transport: sse" in module.HDX_ADMIN_COMMENT
+
+
+async def test_execute_cmd_omits_admin_comment():
+    """Scenario: execute_cmd Omits Admin Comment."""
+    mock_client = AsyncMock()
+    mock_client.command.return_value = "ok"
+
+    mock_ctx = AsyncMock()
+    mock_ctx.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_ctx.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("mcp_hydrolix.mcp_server.create_hydrolix_client", return_value=mock_ctx):
+        await mcp_server_module.execute_cmd("SHOW DATABASES")
+
+    mock_client.command.assert_awaited_once()
+    _, kwargs = mock_client.command.call_args
+    settings = kwargs.get("settings", {})
+    assert "hdx_query_admin_comment" not in settings

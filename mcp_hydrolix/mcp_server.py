@@ -2,6 +2,7 @@ import asyncio
 import base64
 import logging
 import time
+from importlib.metadata import PackageNotFoundError, version as _pkg_version
 from pathlib import Path
 from typing import (
     Any,
@@ -61,6 +62,24 @@ logger = logging.getLogger(MCP_SERVER_NAME)
 load_dotenv()
 
 HYDROLIX_CONFIG: Final[HydrolixConfig] = get_config()
+
+
+def _resolve_server_version() -> str:
+    try:
+        return _pkg_version(MCP_SERVER_NAME)
+    except PackageNotFoundError:
+        logger.warning(
+            "Could not resolve package version for %s; using 'unknown' in admin comment",
+            MCP_SERVER_NAME,
+        )
+        return "unknown"
+
+
+HDX_ADMIN_COMMENT: Final[str] = (
+    f"User: {MCP_SERVER_NAME} "
+    f"version: {_resolve_server_version()} "
+    f"transport: {HYDROLIX_CONFIG.mcp_server_transport}"
+)
 
 mcp = FastMCP(
     name=MCP_SERVER_NAME,
@@ -217,7 +236,7 @@ async def execute_query(
                 "hdx_query_max_attempts": 1,
                 "hdx_query_max_result_rows": 100_000,
                 "hdx_query_max_memory_usage": 2 * 1024 * 1024 * 1024,  # 2GiB
-                "hdx_query_admin_comment": f"User: {MCP_SERVER_NAME}",
+                "hdx_query_admin_comment": HDX_ADMIN_COMMENT,
             } | (extra_settings or {})
             res = await client.query(
                 query,

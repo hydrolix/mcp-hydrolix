@@ -12,8 +12,8 @@
 ### Decision: comment-format
 
 - **Question:** Format for the extended comment value?
-- **Answer:** `User=<name>; version=<version>; transport=<transport>` (key=value pairs joined by `; `). Replaces the legacy `User:` prefix.
-- **Rationale:** Human-readable and trivially parseable in query logs.
+- **Answer:** `User: <name> version: <version> transport: <transport>` (space-separated `key: value` tokens; each key followed by a colon and a single space before the value). Extends the legacy `User: <name>` prefix with two additional tokens.
+- **Rationale:** Human-readable, trivially parseable in query logs, and preserves the exact legacy `User: mcp-hydrolix` prefix so existing log scanners keep matching.
 - **Affects:** `specs/query-admin-comment/spec.md → Requirement: Query Comment Composition`
 
 ### Decision: version-fallback

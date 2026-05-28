@@ -1,18 +1,18 @@
-*Server name, version, and transport stamped on every Hydrolix query via `hdx_query_admin_comment`.*
+## Purpose
 
+Server name, version, and transport stamped on every Hydrolix query via `hdx_query_admin_comment`.
 
-## ADDED Requirements
+## Requirements
 
 ### Requirement: Query Comment Composition
-<!-- settle: explore/comment-format -->
 
-The server MUST set `hdx_query_admin_comment` on every SQL query executed via `execute_query` to `User=mcp-hydrolix; version=<version>; transport=<transport>`, in that order, joined by `; `.
+The server MUST set `hdx_query_admin_comment` on every SQL query executed via `execute_query` to `User: mcp-hydrolix version: <version> transport: <transport>`, in that order, as space-separated `key: value` tokens (each key followed by a colon and a single space before the value).
 
 #### Scenario: Renders Composed Comment
 
 - **GIVEN** server name `mcp-hydrolix`, version `0.3.2`, transport `stdio`
 - **WHEN** the server executes a query
-- **THEN** the `hdx_query_admin_comment` setting equals `User=mcp-hydrolix; version=0.3.2; transport=stdio`
+- **THEN** the `hdx_query_admin_comment` setting equals `User: mcp-hydrolix version: 0.3.2 transport: stdio`
 
 ### Requirement: Catalog Command Exclusion
 
@@ -24,7 +24,6 @@ The server MUST NOT set `hdx_query_admin_comment` on requests issued via `execut
 - **THEN** the request settings MUST NOT contain a `hdx_query_admin_comment` key
 
 ### Requirement: Version Resolution
-<!-- settle: explore/version-fallback -->
 
 The server MUST resolve the `version` field via `importlib.metadata.version("mcp-hydrolix")`. On `PackageNotFoundError`, the server MUST emit `version=unknown` and log a warning.
 
