@@ -187,3 +187,6 @@ mcpb/manifest.json
 mcpb/pyproject.toml
 mcpb/icon.png
 dist/*.mcpb
+
+# Claude Code writes per-user permission overrides here — never commit.
+.claude/settings.local.json
