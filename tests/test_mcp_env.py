@@ -24,8 +24,9 @@ def _isolate_hydrolix_env(monkeypatch: pytest.MonkeyPatch) -> None:
     for key in list(os.environ):
         if key.startswith("HYDROLIX_"):
             monkeypatch.delenv(key, raising=False)
-    mcp_env._external_deprecation_warned = False
-    mcp_env._internal_deprecation_warned = False
+    # setattr so pytest restores these process-global sentinels on teardown.
+    monkeypatch.setattr(mcp_env, "_external_deprecation_warned", False)
+    monkeypatch.setattr(mcp_env, "_internal_deprecation_warned", False)
 
 
 @pytest.fixture

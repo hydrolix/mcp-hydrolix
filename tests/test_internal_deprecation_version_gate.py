@@ -25,9 +25,11 @@ def _reset_probe_state(monkeypatch: pytest.MonkeyPatch) -> None:
     for key in list(os.environ):
         if key.startswith("HYDROLIX_"):
             monkeypatch.delenv(key, raising=False)
-    server._parameterized_queries_supported = None
-    mcp_env._external_deprecation_warned = False
-    mcp_env._internal_deprecation_warned = False
+    # setattr (not bare assignment) so pytest restores these process-global
+    # values on teardown, keeping state from leaking between tests.
+    monkeypatch.setattr(server, "_parameterized_queries_supported", None)
+    monkeypatch.setattr(mcp_env, "_external_deprecation_warned", False)
+    monkeypatch.setattr(mcp_env, "_internal_deprecation_warned", False)
 
 
 def _resp(body: str, status: int = 200) -> MagicMock:

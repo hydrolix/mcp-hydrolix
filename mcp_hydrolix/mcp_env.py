@@ -8,7 +8,7 @@ import logging
 import os
 from dataclasses import dataclass
 from enum import Enum
-from typing import List, Optional
+from typing import Optional
 from urllib.parse import ParseResult, urlparse
 
 from mcp_hydrolix.auth.credentials import HydrolixCredential, ServiceAccountToken, UsernamePassword
@@ -45,12 +45,12 @@ _external_deprecation_warned: bool = False
 _internal_deprecation_warned: bool = False
 
 
-def _detect_deprecated_aliases() -> List[str]:
+def _detect_deprecated_aliases() -> list[str]:
     """Return the deprecated alias env vars that are currently set, in canonical order."""
     return [name for name in DEPRECATED_ALIASES if name in os.environ]
 
 
-def _classify_deprecation(aliases: List[str]) -> Optional[str]:
+def _classify_deprecation(aliases: list[str]) -> Optional[str]:
     """Classify deprecation audience based on HYDROLIX_NAME presence.
 
     Returns ``"external"``, ``"internal"``, or ``None`` if no aliases are set.
@@ -167,14 +167,19 @@ class HydrolixConfig:
 
         # Snapshot deprecation state once so the LLM-visible notice and the
         # version-gated internal probe log agree on what was seen at startup.
-        self._deprecated_aliases: List[str] = _detect_deprecated_aliases()
+        self._deprecated_aliases: list[str] = _detect_deprecated_aliases()
         self._deprecation_audience: Optional[str] = _classify_deprecation(self._deprecated_aliases)
+        # Format the external advisory once; both the startup log and the
+        # deprecation_notice property read this cached value.
+        self._deprecation_notice: Optional[str] = (
+            EXTERNAL_DEPRECATION_MESSAGE.format(aliases=", ".join(self._deprecated_aliases))
+            if self._deprecation_audience == "external"
+            else None
+        )
 
         global _external_deprecation_warned
-        if self._deprecation_audience == "external" and not _external_deprecation_warned:
-            logger.warning(
-                EXTERNAL_DEPRECATION_MESSAGE.format(aliases=", ".join(self._deprecated_aliases))
-            )
+        if self._deprecation_notice is not None and not _external_deprecation_warned:
+            logger.warning(self._deprecation_notice)
             _external_deprecation_warned = True
 
         # Credential to use for clickhouse connections when no per-request credential is provided
@@ -294,7 +299,7 @@ class HydrolixConfig:
         return self.secure
 
     @property
-    def deprecated_aliases(self) -> List[str]:
+    def deprecated_aliases(self) -> list[str]:
         """Deprecated alias env var names that were set at construction time."""
         return list(self._deprecated_aliases)
 
@@ -311,9 +316,7 @@ class HydrolixConfig:
         operators are notified via the version-gated probe log, not via the MCP
         ``instructions`` channel.
         """
-        if self._deprecation_audience != "external":
-            return None
-        return EXTERNAL_DEPRECATION_MESSAGE.format(aliases=", ".join(self._deprecated_aliases))
+        return self._deprecation_notice
 
     @property
     def database(self) -> Optional[str]:
