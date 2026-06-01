@@ -3,8 +3,8 @@
 <!-- mcp-name: io.github.hydrolix/mcp-hydrolix -->
 
 [![PyPI - Version](https://img.shields.io/pypi/v/mcp-hydrolix)](https://pypi.org/project/mcp-hydrolix)
-[![Install in VS Code](https://img.shields.io/badge/VS_Code-Install_mcp--hydrolix-0098FF?style=flat-square&logo=visualstudiocode&logoColor=white)](https://vscode.dev/redirect/mcp/install?name=mcp-hydrolix&config=%7B%22type%22%3A%22stdio%22%2C%22command%22%3A%22uvx%22%2C%22args%22%3A%5B%22--python%22%2C%223.13%22%2C%22--refresh-package%22%2C%22mcp-hydrolix%22%2C%22mcp-hydrolix%22%5D%2C%22env%22%3A%7B%22HYDROLIX_HOST%22%3A%22%24%7Binput%3Ahydrolix_host%7D%22%2C%22HYDROLIX_USER%22%3A%22%24%7Binput%3Ahydrolix_user%7D%22%2C%22HYDROLIX_PASSWORD%22%3A%22%24%7Binput%3Ahydrolix_password%7D%22%7D%7D&inputs=%5B%7B%22id%22%3A%22hydrolix_host%22%2C%22type%22%3A%22promptString%22%2C%22description%22%3A%22Hydrolix%20hostname%20%28e.g.%20mycluster.hydrolix.live%29%22%7D%2C%7B%22id%22%3A%22hydrolix_user%22%2C%22type%22%3A%22promptString%22%2C%22description%22%3A%22Hydrolix%20username%22%7D%2C%7B%22id%22%3A%22hydrolix_password%22%2C%22type%22%3A%22promptString%22%2C%22description%22%3A%22Hydrolix%20password%22%2C%22password%22%3Atrue%7D%5D)
-[![Install in VS Code Insiders](https://img.shields.io/badge/VS_Code_Insiders-Install_mcp--hydrolix-24bfa5?style=flat-square&logo=visualstudiocode&logoColor=white)](https://insiders.vscode.dev/redirect/mcp/install?name=mcp-hydrolix&quality=insiders&config=%7B%22type%22%3A%22stdio%22%2C%22command%22%3A%22uvx%22%2C%22args%22%3A%5B%22--python%22%2C%223.13%22%2C%22--refresh-package%22%2C%22mcp-hydrolix%22%2C%22mcp-hydrolix%22%5D%2C%22env%22%3A%7B%22HYDROLIX_HOST%22%3A%22%24%7Binput%3Ahydrolix_host%7D%22%2C%22HYDROLIX_USER%22%3A%22%24%7Binput%3Ahydrolix_user%7D%22%2C%22HYDROLIX_PASSWORD%22%3A%22%24%7Binput%3Ahydrolix_password%7D%22%7D%7D&inputs=%5B%7B%22id%22%3A%22hydrolix_host%22%2C%22type%22%3A%22promptString%22%2C%22description%22%3A%22Hydrolix%20hostname%20%28e.g.%20mycluster.hydrolix.live%29%22%7D%2C%7B%22id%22%3A%22hydrolix_user%22%2C%22type%22%3A%22promptString%22%2C%22description%22%3A%22Hydrolix%20username%22%7D%2C%7B%22id%22%3A%22hydrolix_password%22%2C%22type%22%3A%22promptString%22%2C%22description%22%3A%22Hydrolix%20password%22%2C%22password%22%3Atrue%7D%5D)
+[![Install in VS Code](https://img.shields.io/badge/VS_Code-Install_mcp--hydrolix-0098FF?style=flat-square&logo=visualstudiocode&logoColor=white)](https://vscode.dev/redirect/mcp/install?name=mcp-hydrolix&config=%7B%22type%22%3A%22stdio%22%2C%22command%22%3A%22uvx%22%2C%22args%22%3A%5B%22--python%22%2C%223.13%22%2C%22--refresh-package%22%2C%22mcp-hydrolix%22%2C%22mcp-hydrolix%22%5D%2C%22env%22%3A%7B%22HYDROLIX_URL%22%3A%22%24%7Binput%3Ahydrolix_url%7D%22%2C%22HYDROLIX_USER%22%3A%22%24%7Binput%3Ahydrolix_user%7D%22%2C%22HYDROLIX_PASSWORD%22%3A%22%24%7Binput%3Ahydrolix_password%7D%22%7D%7D&inputs=%5B%7B%22id%22%3A%22hydrolix_url%22%2C%22type%22%3A%22promptString%22%2C%22description%22%3A%22Hydrolix%20URL%20%28e.g.%20https%3A%2F%2Fmycluster.hydrolix.live%29%22%7D%2C%7B%22id%22%3A%22hydrolix_user%22%2C%22type%22%3A%22promptString%22%2C%22description%22%3A%22Hydrolix%20username%22%7D%2C%7B%22id%22%3A%22hydrolix_password%22%2C%22type%22%3A%22promptString%22%2C%22description%22%3A%22Hydrolix%20password%22%2C%22password%22%3Atrue%7D%5D)
+[![Install in VS Code Insiders](https://img.shields.io/badge/VS_Code_Insiders-Install_mcp--hydrolix-24bfa5?style=flat-square&logo=visualstudiocode&logoColor=white)](https://insiders.vscode.dev/redirect/mcp/install?name=mcp-hydrolix&quality=insiders&config=%7B%22type%22%3A%22stdio%22%2C%22command%22%3A%22uvx%22%2C%22args%22%3A%5B%22--python%22%2C%223.13%22%2C%22--refresh-package%22%2C%22mcp-hydrolix%22%2C%22mcp-hydrolix%22%5D%2C%22env%22%3A%7B%22HYDROLIX_URL%22%3A%22%24%7Binput%3Ahydrolix_url%7D%22%2C%22HYDROLIX_USER%22%3A%22%24%7Binput%3Ahydrolix_user%7D%22%2C%22HYDROLIX_PASSWORD%22%3A%22%24%7Binput%3Ahydrolix_password%7D%22%7D%7D&inputs=%5B%7B%22id%22%3A%22hydrolix_url%22%2C%22type%22%3A%22promptString%22%2C%22description%22%3A%22Hydrolix%20URL%20%28e.g.%20https%3A%2F%2Fmycluster.hydrolix.live%29%22%7D%2C%7B%22id%22%3A%22hydrolix_user%22%2C%22type%22%3A%22promptString%22%2C%22description%22%3A%22Hydrolix%20username%22%7D%2C%7B%22id%22%3A%22hydrolix_password%22%2C%22type%22%3A%22promptString%22%2C%22description%22%3A%22Hydrolix%20password%22%2C%22password%22%3Atrue%7D%5D)
 
 An MCP server for Hydrolix.
 
@@ -67,7 +67,7 @@ pip install mcp-hydrolix
         "mcp-hydrolix"
       ],
       "env": {
-        "HYDROLIX_HOST": "<your-hydrolix-hostname>",
+        "HYDROLIX_URL": "https://<your-hydrolix-hostname>",
         "HYDROLIX_USER": "<your-username>",
         "HYDROLIX_PASSWORD": "<your-password>"
       }
@@ -130,7 +130,7 @@ If you prefer the command line, make sure uv is installed (Option A from [Step 2
 
 ```bash
 claude mcp add --transport stdio hydrolix \
-  --env HYDROLIX_HOST=<your-hydrolix-hostname> \
+  --env HYDROLIX_URL=https://<your-hydrolix-hostname> \
   --env HYDROLIX_USER=<your-username> \
   --env HYDROLIX_PASSWORD=<your-password> \
   --env HYDROLIX_MCP_SERVER_TRANSPORT=stdio \
@@ -217,7 +217,7 @@ MCP Server definition using username and password (JSON):
     "mcp-hydrolix"
   ],
   "env": {
-    "HYDROLIX_HOST": "<hydrolix-host>",
+    "HYDROLIX_URL": "https://<hydrolix-host>",
     "HYDROLIX_USER": "<hydrolix-user>",
     "HYDROLIX_PASSWORD": "<hydrolix-password>"
   }
@@ -237,7 +237,7 @@ MCP Server definition using service account token (JSON):
     "mcp-hydrolix"
   ],
   "env": {
-    "HYDROLIX_HOST": "<hydrolix-host>",
+    "HYDROLIX_URL": "https://<hydrolix-host>",
     "HYDROLIX_TOKEN": "<hydrolix-service-account-token>"
   }
 }
@@ -254,7 +254,7 @@ args:
 - mcp-hydrolix
 - mcp-hydrolix
 env:
-  HYDROLIX_HOST: <hydrolix-host>
+  HYDROLIX_URL: https://<hydrolix-host>
   HYDROLIX_USER: <hydrolix-user>
   HYDROLIX_PASSWORD: <hydrolix-password>
 ```
@@ -270,7 +270,7 @@ args:
 - mcp-hydrolix
 - mcp-hydrolix
 env:
-  HYDROLIX_HOST: <hydrolix-host>
+  HYDROLIX_URL: https://<hydrolix-host>
   HYDROLIX_TOKEN: <hydrolix-service-account-token>
 ```
 
@@ -295,7 +295,7 @@ env:
         "mcp-hydrolix"
       ],
       "env": {
-        "HYDROLIX_HOST": "<hydrolix-host>",
+        "HYDROLIX_URL": "https://<hydrolix-host>",
         "HYDROLIX_USER": "<hydrolix-user>",
         "HYDROLIX_PASSWORD": "<hydrolix-password>"
       }
@@ -319,7 +319,7 @@ To leverage service account use the following config block:
         "mcp-hydrolix"
       ],
       "env": {
-        "HYDROLIX_HOST": "<hydrolix-host>",
+        "HYDROLIX_URL": "https://<hydrolix-host>",
         "HYDROLIX_TOKEN": "<hydrolix-service-account-token>"
       }
     }
@@ -341,7 +341,7 @@ To configure the Hydrolix MCP server for Claude Code, run the following command:
 claude mcp add --transport stdio hydrolix \
   --env HYDROLIX_USER=<hydrolix-user> \
   --env HYDROLIX_PASSWORD=<hydrolix-password> \
-  --env HYDROLIX_HOST=<hydrolix-host> \
+  --env HYDROLIX_URL=https://<hydrolix-host> \
   --env HYDROLIX_MCP_SERVER_TRANSPORT=stdio \
   -- uvx --python 3.13 --refresh-package mcp-hydrolix mcp-hydrolix
 ```
@@ -393,9 +393,6 @@ In summary:
 If no credentials are provided via the environment or the request, the request will fail.
 
 #### Optional Variables
-* `HYDROLIX_PORT`: The port number of your Hydrolix server
-  * Default: `8088`
-  * Usually doesn't need to be set unless using a non-standard port
 * `HYDROLIX_VERIFY`: Enable/disable SSL certificate verification
   * Default: `"true"`
   * Set to `"false"` to disable certificate verification (not recommended for production)
@@ -420,7 +417,7 @@ If no credentials are provided via the environment or the request, the request w
 For MCP Inspector or remote access with HTTP transport:
 
 ```env
-HYDROLIX_HOST=localhost
+HYDROLIX_URL=https://my-cluster.hydrolix.net
 HYDROLIX_USER=default
 HYDROLIX_PASSWORD=myPassword
 HYDROLIX_MCP_SERVER_TRANSPORT=http
