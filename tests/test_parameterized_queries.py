@@ -156,7 +156,6 @@ class TestCheckParameterizedQuerySupport:
         mock_config.version_api_secure = False
         mock_config.version_api_host = "localhost"
         mock_config.version_api_port = 80
-        mock_config.proxy_path = ""
         mock_to_thread.return_value = _make_urllib3_response("v5.12.0")
 
         result = await server._check_parameterized_query_support()
@@ -178,7 +177,6 @@ class TestCheckParameterizedQuerySupport:
         mock_config.version_api_secure = True
         mock_config.version_api_host = "hydrolix.example.com"
         mock_config.version_api_port = 443
-        mock_config.proxy_path = ""
         mock_to_thread.return_value = _make_urllib3_response("v5.12.0")
 
         result = await server._check_parameterized_query_support()
@@ -198,7 +196,6 @@ class TestCheckParameterizedQuerySupport:
         mock_config.version_api_secure = True
         mock_config.version_api_host = "qe-innovations-3.hydrolix.dev"
         mock_config.version_api_port = 443
-        mock_config.proxy_path = ""
         mock_to_thread.return_value = _make_urllib3_response("v5.12.0")
 
         await server._check_parameterized_query_support()
@@ -217,7 +214,6 @@ class TestCheckParameterizedQuerySupport:
         mock_config.version_api_secure = False
         mock_config.version_api_host = "version"
         mock_config.version_api_port = 23925
-        mock_config.proxy_path = ""
         mock_to_thread.return_value = _make_urllib3_response("v5.12.0")
 
         await server._check_parameterized_query_support()

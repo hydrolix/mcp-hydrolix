@@ -210,10 +210,9 @@ async def _check_parameterized_query_support() -> bool:
             headers = {"Authorization": f"Bearer {cast(ServiceAccountToken, creds).token}"}
 
         scheme = "https" if HYDROLIX_CONFIG.version_api_secure else "http"
-        proxy = HYDROLIX_CONFIG.proxy_path or ""
         url = (
             f"{scheme}://{HYDROLIX_CONFIG.version_api_host}:"
-            f"{HYDROLIX_CONFIG.version_api_port}{proxy}/version"
+            f"{HYDROLIX_CONFIG.version_api_port}/version"
         )
 
         try:

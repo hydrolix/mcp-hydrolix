@@ -44,7 +44,6 @@ def _apply_internal_cfg(mock_config: MagicMock) -> None:
     mock_config.version_api_secure = False
     mock_config.version_api_host = "version"
     mock_config.version_api_port = 23925
-    mock_config.proxy_path = ""
     mock_config.deprecation_audience = "internal"
     mock_config.deprecated_aliases = ["HYDROLIX_HOST", "HYDROLIX_API_PORT"]
 
@@ -54,7 +53,6 @@ def _apply_external_cfg(mock_config: MagicMock) -> None:
     mock_config.version_api_secure = True
     mock_config.version_api_host = "cluster.example.com"
     mock_config.version_api_port = 443
-    mock_config.proxy_path = ""
     mock_config.deprecation_audience = "external"
     mock_config.deprecated_aliases = ["HYDROLIX_HOST"]
 
@@ -64,7 +62,6 @@ def _apply_no_deprecation_cfg(mock_config: MagicMock) -> None:
     mock_config.version_api_secure = True
     mock_config.version_api_host = "cluster.example.com"
     mock_config.version_api_port = 443
-    mock_config.proxy_path = ""
     mock_config.deprecation_audience = None
     mock_config.deprecated_aliases = []
 

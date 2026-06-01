@@ -140,7 +140,6 @@ class HydrolixConfig:
         HYDROLIX_CONNECT_TIMEOUT: Connection timeout in seconds (default: 30)
         HYDROLIX_SEND_RECEIVE_TIMEOUT: Send/receive timeout in seconds (default: 300)
         HYDROLIX_DATABASE: Default database to use (default: None)
-        HYDROLIX_PROXY_PATH: Path to be added to the host URL. For instance, for servers behind an HTTP proxy (default: None)
         HYDROLIX_MCP_SERVER_TRANSPORT: MCP server transport method - "stdio", "http", or "sse" (default: stdio)
         HYDROLIX_MCP_BIND_HOST: Host to bind the MCP server to when using HTTP or SSE transport (default: 127.0.0.1)
         HYDROLIX_MCP_BIND_PORT: Port to bind the MCP server to when using HTTP or SSE transport (default: 8000)
@@ -384,10 +383,6 @@ class HydrolixConfig:
         return int(os.getenv("HYDROLIX_MAX_RESULT_CELLS_LIMIT", "0"))
 
     @property
-    def proxy_path(self) -> Optional[str]:
-        return os.getenv("HYDROLIX_PROXY_PATH")
-
-    @property
     def mcp_server_transport(self) -> str:
         """Get the MCP server transport method.
 
@@ -555,9 +550,6 @@ class HydrolixConfig:
         # Add optional database if set
         if self.database:
             config["database"] = self.database
-
-        if self.proxy_path:
-            config["proxy_path"] = self.proxy_path
 
         # Add credentials
         config |= self.creds_with(request_credential).clickhouse_config_entries()
