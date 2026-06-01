@@ -21,7 +21,7 @@
 
 ### Decision: env-var-namespace-chain
 
-- **Question:** When both `TRAFFICPEAK_*` and `HYDROLIX_*` are set at runtime, do we compare per-variable (e.g. `TRAFFICPEAK_HOST` vs `HYDROLIX_HOST`) or run two complete resolution chains with whole-chain precedence?
+- **Question:** When both `TRAFFICPEAK_*` and `HYDROLIX_*` are set at runtime, do we compare per-variable (e.g. `TRAFFICPEAK_HTTP_QUERY_HOST` vs `HYDROLIX_HTTP_QUERY_HOST`) or run two complete resolution chains with whole-chain precedence?
 - **Answer:** Run the full configuration resolver — including the four-tier precedence chain introduced by the sibling `hydrolix-url-config-collapse` change — once over the entire `TRAFFICPEAK_*` namespace. If it yields a usable config (layer-1 anchor present), use that result and ignore `HYDROLIX_*` entirely. Otherwise re-run the same resolver over `HYDROLIX_*`. The two namespaces MUST NOT interleave per-variable.
 - **Rationale:** Per-variable interleaving is pathological — a customer who sets `TRAFFICPEAK_URL` but inherits an env-baked `HYDROLIX_HTTP_QUERY_HOST` from a launcher would silently get a half-TP / half-Hydrolix config pointing at two different clusters. Whole-chain semantics keep the two brands as mutually-exclusive configurations and let the existing resolver implementation be reused under a thin namespace-parameter wrapper.
 - **Affects:** `specs/mcp-server-branding/spec.md → Requirement: Dual-Namespace Env-Var Contract With Whole-Chain Precedence`, `design.md → Decision: dual-namespace-precedence`

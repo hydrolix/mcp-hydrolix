@@ -8,7 +8,7 @@
     - mcpb bundle
     - Docker image
 - The mcpb manifest template (`mcpb/manifest.json.tmpl`) currently hard-codes `name: mcp-hydrolix`, Hydrolix author/homepage/repo, `HYDROLIX_*` env-var keys in `server.mcp_config.env`, and `hydrolix_*` `user_config` field keys.
-- Sibling change `hydrolix-url-config-collapse` introduces a four-tier precedence resolver (`explicit new var > deprecated alias > URL-derived > hard default`) over the `HYDROLIX_*` namespace; this change wraps that resolver to also operate over `TRAFFICPEAK_*`
+- Sibling change `hydrolix-url-config-collapse` introduces a four-tier precedence resolver (`explicit new var > deprecated alias > URL-derived > hard default`) over the `HYDROLIX_*` namespace; this change wraps that resolver to also operate over `TRAFFICPEAK_*`, which exposes only the modern (non-deprecated) variables — the deprecated-alias tier applies to `HYDROLIX_*` only.
 
 ## Goals / Non-Goals
 
@@ -36,7 +36,7 @@
 
 ### Decision: dual-namespace-precedence
 
-- **Choice:** At startup, run the full `hydrolix-url-config-collapse` resolver once over the entire `TRAFFICPEAK_*` namespace; if it yields a layer-1 anchor (`TRAFFICPEAK_URL` / `TRAFFICPEAK_HOST`) use that result and ignore `HYDROLIX_*` entirely. Otherwise re-run the same resolver over `HYDROLIX_*`. Both chains resolving to different effective configs → prefer TP, emit one WARNING log line. Identical → silent. Neither → exit non-zero naming all four layer-1 anchors.
+- **Choice:** At startup, run the full `hydrolix-url-config-collapse` resolver once over the entire `TRAFFICPEAK_*` namespace; if it yields a layer-1 anchor (`TRAFFICPEAK_URL` — the only TP anchor, since `TRAFFICPEAK_*` mirrors only the modern variable scheme and not the deprecated aliases) use that result and ignore `HYDROLIX_*` entirely. Otherwise re-run the same resolver over `HYDROLIX_*` (anchored by `HYDROLIX_URL`, or the deprecated `HYDROLIX_HOST` for stdio). Both chains resolving to different effective configs → prefer TP, emit one WARNING log line. Identical → silent. Neither → exit non-zero naming `TRAFFICPEAK_URL` and `HYDROLIX_URL`.
 - **Why:** Implements `explore/env-var-namespace-chain`. Per-variable interleaving is pathological — a TP customer with `TRAFFICPEAK_URL` set but an inherited `HYDROLIX_HTTP_QUERY_HOST` would silently get a half-TP / half-Hydrolix config pointing at two clusters. Whole-chain semantics preserve the resolver's invariants and let the existing implementation be reused under a thin namespace-parameter wrapper.
 - **Alternatives:** Per-variable interleaved precedence — rejected, see above. Separate `--brand` / `MCP_MODE` flag to pick the namespace — rejected, the namespace itself is sufficient signal.
 - **Binding:** The resolver implementation MUST take the env-var prefix as a parameter and MUST NOT be duplicated; callers MUST run the TP resolution and the Hydrolix resolution as two whole-chain invocations, not interleave them.

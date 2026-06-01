@@ -121,7 +121,7 @@ These values MUST NOT be derived from `sys.argv[0]`, from which environment-vari
 ### Requirement: Dual-Namespace Env-Var Contract With Whole-Chain Precedence
 <!-- settle: explore/env-var-namespace-chain -->
 
-The server SHALL accept a `TRAFFICPEAK_*` environment-variable namespace that mirrors the entire `HYDROLIX_*` namespace one-for-one — every variable consumed by the configuration resolver (including but not limited to `URL`, `HOST`, `TOKEN`, `HTTP_QUERY_HOST` / `PORT` / `SECURE`, `VERSION_API_HOST` / `PORT` / `SECURE`, `VERIFY`, `USER`, `PASSWORD`) MUST be accepted under both prefixes with identical semantics, including identical within-namespace precedence rules. At startup, the server SHALL resolve its effective configuration by first running the full resolver over the `TRAFFICPEAK_*` namespace; if a layer-1 anchor (`TRAFFICPEAK_URL` or `TRAFFICPEAK_HOST`) is present the result MUST be used and `HYDROLIX_*` MUST be ignored entirely; otherwise the server SHALL re-run the same resolver over `HYDROLIX_*`. The two namespaces MUST NOT interleave on a per-variable basis. If both namespaces independently resolve to different effective values, the server SHALL prefer the TrafficPeak resolution and SHALL emit exactly one WARNING-level log line at startup naming the conflicting layer-1 variables and identifying `TRAFFICPEAK_*` as the winner. Identical effective values → silent. Neither namespace resolves → exit non-zero with an error message naming `TRAFFICPEAK_URL` / `TRAFFICPEAK_HOST` and `HYDROLIX_URL` / `HYDROLIX_HOST` as acceptable layer-1 anchors.
+The server SHALL accept a `TRAFFICPEAK_*` environment-variable namespace that mirrors the **modern** `HYDROLIX_*` variables one-for-one — every non-deprecated variable consumed by the configuration resolver (including but not limited to `URL`, `TOKEN`, `HTTP_QUERY_HOST` / `PORT` / `SECURE`, `VERSION_API_HOST` / `PORT` / `SECURE`, `VERIFY`, `USER`, `PASSWORD`) MUST be accepted under both prefixes with identical semantics, including identical within-namespace precedence rules. The deprecated `HYDROLIX_*` aliases (`HYDROLIX_HOST`, `HYDROLIX_PORT`, `HYDROLIX_SECURE`, `HYDROLIX_API_HOST`, `HYDROLIX_API_PORT`) are NOT mirrored under `TRAFFICPEAK_*`; the TrafficPeak namespace supports only the modern variable scheme, so `TRAFFICPEAK_URL` is its sole layer-1 anchor. At startup, the server SHALL resolve its effective configuration by first running the full resolver over the `TRAFFICPEAK_*` namespace; if the layer-1 anchor `TRAFFICPEAK_URL` is present the result MUST be used and `HYDROLIX_*` MUST be ignored entirely; otherwise the server SHALL re-run the same resolver over `HYDROLIX_*` (whose layer-1 anchor is `HYDROLIX_URL`, or the deprecated `HYDROLIX_HOST` alias accepted only for stdio transport). The two namespaces MUST NOT interleave on a per-variable basis. If both namespaces independently resolve to different effective values, the server SHALL prefer the TrafficPeak resolution and SHALL emit exactly one WARNING-level log line at startup naming the conflicting layer-1 variables and identifying `TRAFFICPEAK_*` as the winner. Identical effective values → silent. Neither namespace resolves → exit non-zero with an error message naming `TRAFFICPEAK_URL` and `HYDROLIX_URL` as the acceptable layer-1 anchors.
 
 #### Scenario: Only Trafficpeak Env Vars Provided
 
@@ -137,7 +137,7 @@ The server SHALL accept a `TRAFFICPEAK_*` environment-variable namespace that mi
 
 #### Scenario: Partial Trafficpeak Config Falls Through To Hydrolix
 
-- **GIVEN** `TRAFFICPEAK_HTTP_QUERY_HOST` is set, no `TRAFFICPEAK_URL` / `TRAFFICPEAK_HOST` anchor is set, and `HYDROLIX_URL` is set
+- **GIVEN** `TRAFFICPEAK_HTTP_QUERY_HOST` is set, no `TRAFFICPEAK_URL` anchor is set, and `HYDROLIX_URL` is set
 - **WHEN** the server starts
 - **THEN** the server falls through to the `HYDROLIX_*` namespace, uses `HYDROLIX_URL` and Hydrolix-namespace overrides, and ignores the stray `TRAFFICPEAK_HTTP_QUERY_HOST`
 
@@ -155,9 +155,9 @@ The server SHALL accept a `TRAFFICPEAK_*` environment-variable namespace that mi
 
 #### Scenario: Neither Namespace Provides An Anchor
 
-- **GIVEN** none of `TRAFFICPEAK_URL`, `TRAFFICPEAK_HOST`, `HYDROLIX_URL`, `HYDROLIX_HOST` are set
+- **GIVEN** none of `TRAFFICPEAK_URL`, `HYDROLIX_URL`, or the deprecated `HYDROLIX_HOST` are set
 - **WHEN** the server starts
-- **THEN** the server exits non-zero with an error message naming all four acceptable layer-1 variables
+- **THEN** the server exits non-zero with an error message naming `TRAFFICPEAK_URL` and `HYDROLIX_URL` as the acceptable layer-1 anchors
 
 ### Requirement: Existing Hydrolix-Branded Surface Is Preserved
 
