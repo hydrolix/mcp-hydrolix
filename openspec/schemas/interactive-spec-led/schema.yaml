@@ -149,7 +149,8 @@ artifacts:
         binding constraints wherever they apply. Each downstream artifact's
         instruction names a concrete citation mechanism:
           - specs: inline `<!-- settle: explore/<slug> -->` HTML comment
-            on the affected requirement or scenario.
+            after the affected requirement's statement (or scenario's
+            bullets) — never directly under the heading.
           - design: cite the slug in the relevant Decision's `Why` line.
           - tasks: `[implements: explore/<slug>]` in the task's citations.
     requires:
@@ -234,7 +235,10 @@ artifacts:
 
       Tracing explore Decisions:
       - When a requirement or scenario implements an explore Decision, add
-        an HTML comment on its own line immediately under the heading:
+        an HTML comment on its own line immediately AFTER the requirement
+        statement (and after a scenario's bullets) — never directly under
+        the heading, where a leading comment masks the requirement's RFC
+        2119 keyword and fails `openspec validate`:
         `<!-- settle: explore/<slug> -->`. Multiple comments allowed when
         multiple decisions converge. This marker is what /opsx:verify uses
         to confirm explore→spec traceability.

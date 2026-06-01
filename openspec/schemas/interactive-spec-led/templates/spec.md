@@ -33,8 +33,10 @@
   don't apply to this change rather than commenting them out.
 
   Tracing explore Decisions: add `<!-- settle: explore/<slug> -->` on its
-  own line immediately under any requirement or scenario heading that
-  implements an explore decision.
+  own line immediately AFTER the requirement statement (and after a
+  scenario's bullets) that implements an explore decision — never directly
+  under the heading, where a leading comment masks the requirement's RFC
+  2119 keyword and fails `openspec validate`.
 
   Anti-patterns:
   - Lowercase `should` / `may` (use uppercase RFC 2119 keywords; only the
@@ -51,9 +53,10 @@
 ## ADDED Requirements
 
 ### Requirement: <Title Case Name>
-<!-- settle: explore/<slug> -->
 
-<!-- One-sentence requirement statement using RFC 2119 / BCP 14 keywords (prefer MUST / SHALL). -->
+<one-sentence requirement statement using RFC 2119 / BCP 14 keywords (prefer MUST / SHALL)>
+
+<!-- settle: explore/<slug> -->
 
 #### Scenario: <Short Scenario Name>
 
@@ -72,16 +75,18 @@
 -->
 
 ### Requirement: <Existing Title Case Name>
-<!-- settle: explore/<slug> -->
 
 <updated requirement statement (RFC 2119 / BCP 14 keywords)>
 
-#### Scenario: <Existing Or New Scenario Name>
 <!-- settle: explore/<slug> -->
+
+#### Scenario: <Existing Or New Scenario Name>
 
 - **GIVEN** ...
 - **WHEN** ...
 - **THEN** ...
+
+<!-- settle: explore/<slug> -->
 
 ## REMOVED Requirements
 
