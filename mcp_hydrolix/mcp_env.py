@@ -231,7 +231,7 @@ class HydrolixConfig:
         if self._parsed_url is not None and self._parsed_url.hostname:
             return self._parsed_url.hostname
         # Unreachable: _validate_required_vars guarantees a connection target.
-        raise ValueError("No Hydrolix host configured (set HYDROLIX_URL or HYDROLIX_HOST).")
+        raise ValueError("No Hydrolix host configured (set HYDROLIX_URL).")
 
     @property
     def port(self) -> int:
@@ -587,13 +587,14 @@ class HydrolixConfig:
                     f"{transport!r}. Set HYDROLIX_URL=https://<your-cluster-host>."
                 )
         else:
-            # All other transports: HYDROLIX_URL or HYDROLIX_HOST (deprecated) must
-            # supply a connection target. HYDROLIX_HTTP_QUERY_HOST is an override
-            # on top of the connection target and is never sufficient alone.
+            # All other transports: a connection target is required. The deprecated
+            # HYDROLIX_HOST is still honored as a target, but we never recommend it --
+            # the error points operators only at HYDROLIX_URL. HYDROLIX_HTTP_QUERY_HOST
+            # is an override on top of the connection target and is never sufficient alone.
             if self._parsed_url is None and "HYDROLIX_HOST" not in os.environ:
                 raise ValueError(
                     "Missing Hydrolix connection target: set HYDROLIX_URL "
-                    "(e.g. https://mycluster.hydrolix.live) or HYDROLIX_HOST."
+                    "(e.g. https://mycluster.hydrolix.live)."
                 )
 
         # Validate HYDROLIX_MAX_RESULT_CELLS: must be a positive integer if set.

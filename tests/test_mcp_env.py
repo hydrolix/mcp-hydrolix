@@ -426,8 +426,10 @@ class TestInClusterShapes:
 
 class TestConnectionTargetValidation:
     def test_no_connection_target_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        with pytest.raises(ValueError, match=r"HYDROLIX_URL|HYDROLIX_HOST"):
+        with pytest.raises(ValueError, match="HYDROLIX_URL") as exc_info:
             HydrolixConfig()
+        # Never recommend the deprecated HYDROLIX_HOST in the guidance.
+        assert "HYDROLIX_HOST" not in str(exc_info.value)
 
     def test_only_http_query_host_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
         # HTTP_QUERY_HOST is an override, never a standalone connection target.
