@@ -15,7 +15,7 @@ Without activation and without partial config, the server is byte-identical to a
 **Partial configuration** — server SHALL raise `OAuthConfigError` at startup for:
 - `HYDROLIX_OAUTH_AUDIENCE` set but neither `HYDROLIX_OAUTH_ISSUER` nor `HYDROLIX_URL` set.
 - `HYDROLIX_OAUTH_ISSUER` set but `HYDROLIX_OAUTH_AUDIENCE` unset.
-- Any of `HYDROLIX_OAUTH_JWKS_URI`, `HYDROLIX_OAUTH_ALLOW_INSECURE_JWKS`, `HYDROLIX_OAUTH_REQUIRED_SCOPES`, `HYDROLIX_OAUTH_RESOURCE_URL` set but `HYDROLIX_OAUTH_AUDIENCE` unset.
+- Any of `HYDROLIX_OAUTH_JWKS_URI`, `HYDROLIX_OAUTH_ALLOW_INSECURE_JWKS`, `HYDROLIX_OAUTH_REQUIRED_SCOPES` set but `HYDROLIX_OAUTH_AUDIENCE` unset.
 
 When `HYDROLIX_OAUTH_AUDIENCE` + `HYDROLIX_URL` are set and `canonical_idp_endpoints` raises `NotImplementedError`, that is NOT partial config — `NotImplementedError` propagates unwrapped.
 
@@ -68,7 +68,7 @@ When `HYDROLIX_OAUTH_AUDIENCE` + `HYDROLIX_URL` are set and `canonical_idp_endpo
 
 #### Scenario: Optional OAuth Var Set Without Audience
 
-- **WHEN** any of `HYDROLIX_OAUTH_JWKS_URI`, `HYDROLIX_OAUTH_REQUIRED_SCOPES`, `HYDROLIX_OAUTH_ALLOW_INSECURE_JWKS`, or `HYDROLIX_OAUTH_RESOURCE_URL` is set and `HYDROLIX_OAUTH_AUDIENCE` is unset
+- **WHEN** any of `HYDROLIX_OAUTH_JWKS_URI`, `HYDROLIX_OAUTH_REQUIRED_SCOPES`, or `HYDROLIX_OAUTH_ALLOW_INSECURE_JWKS` is set and `HYDROLIX_OAUTH_AUDIENCE` is unset
 - **THEN** the worker SHALL raise `OAuthConfigError` during factory initialization
 
 ### Requirement: Canonical IdP Endpoint Derivation Is A Single Contained Function
