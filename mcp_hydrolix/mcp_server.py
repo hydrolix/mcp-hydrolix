@@ -40,9 +40,8 @@ from mcp_hydrolix.auth import (
 from mcp_hydrolix.sa_attribution import ServiceAccountAttributionMiddleware
 from mcp_hydrolix import mcp_env
 from mcp_hydrolix.mcp_env import (
-    ALIAS_RENAMES,
     HydrolixConfig,
-    INTERNAL_DEPRECATION_MESSAGE,
+    _internal_deprecation_message,
     get_config,
 )
 from mcp_hydrolix.column_analysis import (
@@ -165,10 +164,7 @@ def _maybe_emit_internal_deprecation_log(parsed_version: tuple[int, int]) -> Non
         return
     if mcp_env._internal_deprecation_warned:
         return
-    pairs = ", ".join(
-        f"{old} -> {ALIAS_RENAMES[old]}" for old in HYDROLIX_CONFIG.deprecated_aliases
-    )
-    logger.error(INTERNAL_DEPRECATION_MESSAGE.format(pairs=pairs))
+    logger.error(_internal_deprecation_message(HYDROLIX_CONFIG.deprecated_aliases))
     mcp_env._internal_deprecation_warned = True
 
 

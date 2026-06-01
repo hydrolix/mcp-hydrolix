@@ -27,18 +27,27 @@ ALIAS_RENAMES: dict[str, str] = {
 }
 DEPRECATED_ALIASES: tuple[str, ...] = tuple(ALIAS_RENAMES.keys())
 
-EXTERNAL_DEPRECATION_MESSAGE = (
-    "Deprecated Hydrolix environment variable(s) detected: {aliases}. "
-    "These will be removed in a future release. "
-    "For typical external deployments, setting HYDROLIX_URL alone "
-    "(e.g. HYDROLIX_URL=https://mycluster.hydrolix.live) is sufficient "
-    "and replaces all of these variables."
-)
-INTERNAL_DEPRECATION_MESSAGE = (
-    "Deprecated Hydrolix environment variable(s) detected: {pairs}. "
-    "These will be removed in a future release; please migrate to the "
-    "replacement variable names."
-)
+
+def _external_deprecation_message(aliases: list[str]) -> str:
+    """Build the external-audience deprecation advisory for the given deprecated aliases."""
+    return (
+        f"Deprecated Hydrolix environment variable(s) detected: {', '.join(aliases)}. "
+        "These will be removed in a future release. "
+        "For typical external deployments, setting HYDROLIX_URL alone "
+        "(e.g. HYDROLIX_URL=https://mycluster.hydrolix.live) is sufficient "
+        "and replaces all of these variables."
+    )
+
+
+def _internal_deprecation_message(aliases: list[str]) -> str:
+    """Build the internal-audience deprecation message (OLD -> NEW pairs) for the given aliases."""
+    pairs = ", ".join(f"{old} -> {ALIAS_RENAMES[old]}" for old in aliases)
+    return (
+        f"Deprecated Hydrolix environment variable(s) detected: {pairs}. "
+        "These will be removed in a future release; please migrate to the "
+        "replacement variable names."
+    )
+
 
 # Process-level sentinels so we log each deprecation at most once.
 _external_deprecation_warned: bool = False
@@ -171,7 +180,7 @@ class HydrolixConfig:
         # Format the external advisory once; both the startup log and the
         # deprecation_notice property read this cached value.
         self._deprecation_notice: Optional[str] = (
-            EXTERNAL_DEPRECATION_MESSAGE.format(aliases=", ".join(self._deprecated_aliases))
+            _external_deprecation_message(self._deprecated_aliases)
             if self._deprecation_audience == "external"
             else None
         )
