@@ -28,7 +28,7 @@ Three return modes:
 
 #### Scenario: Bearer With Service Account Issuer Is Deferred
 
-- **GIVEN** OAuth is active and a request presents a JWT whose `iss` ends in `/config`
+- **GIVEN** OAuth is active and a request presents a JWT whose `iss` ends in `/config` (i.e., a service account issuer)
 - **WHEN** `OAuthHydrolixAuthProvider` evaluates the bearer
 - **THEN** the OAuth verifier SHALL return `None` without raising
 - **AND** SHALL emit no log line for the deferral
@@ -43,7 +43,7 @@ Three return modes:
 
 ### Requirement: JWT Verification Rejects Mismatched Issuer
 
-The verifier enforces a non-conflation invariant: `iss` exact-match makes it structurally impossible for a token with `iss = HYDROLIX_URL` to be claimed (since `canonical_idp_endpoints` guarantees `issuer != HYDROLIX_URL`). The scenarios below make this testable independent of real env state. `OAuthHydrolixAuthProvider` MUST NOT reference `HYDROLIX_URL`.
+The verifier enforces a non-conflation invariant: `iss` exact-match makes it structurally impossible for a token with `iss = HYDROLIX_URL` to be claimed (since `canonical_idp_endpoints` guarantees `issuer != HYDROLIX_URL`). The scenarios below make this testable independent of real env state. `OAuthHydrolixAuthProvider` MUST NOT reference `HYDROLIX_URL` directly (only `OAuthConfig.issuer`).
 
 #### Scenario: Token Uses Cluster Url As Issuer
 
