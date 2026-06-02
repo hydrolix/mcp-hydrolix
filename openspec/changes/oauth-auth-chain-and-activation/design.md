@@ -10,7 +10,7 @@
 **Non-Goals**:
 - OIDC discovery and JWKS preflight (owned by `oauth-config-and-preflight`).
 - JWT claim validation logic (owned by `oauth-jwt-verifier`).
-- Log redaction of OAuth material (owned by `oauth-log-redaction`).
+- Log redaction of OAuth material (owned by `oauth-log-redaction`, upcoming).
 - RFC 9728 resource metadata endpoint (owned by `oauth-resource-metadata`).
 
 ## Context
@@ -28,13 +28,12 @@
 
 - **Choice**: OAuth activation (OIDC discovery, JWKS preflight, `mcp.auth` assignment) happens inside `create_app()` before `mcp.http_app(...)`, once per worker.
 - **Why**: `create_app()` is the only place `mcp` is in the worker's address space. Supervisor-side activation fails — `mcp.auth` does not cross the spawn boundary. FastMCP lifespan fires after `http_app` is constructed. Per-request activation introduces first-request latency and a race window.
-- **Alternatives**: supervisor-side; FastMCP lifespan; per-request lazy; `subprocess_setup` callback — all rejected.
 - **Binding**: `_activate_oauth_if_configured()` MUST appear in `create_app()` before `mcp.http_app(...)`. No other call site is valid.
 
-### Decision: asyncio-run-inside-the-factory
+### Decision: asyncio-run-inside-create-app
 
 - **Choice**: `try_activate_oauth(cfg)` is driven with a fresh `asyncio.run(...)` call inside `create_app()`, before the event loop starts.
-- **Why**: uvicorn imports the factory before `Server.serve()`; the loop is not yet running. `multiprocessing` spawn workers start with no running loop. This is the only safe site.
+- **Why**: The `asyncio.run` loop here is a **temporary, setup-only** construct — built to drive one OIDC discovery + JWKS preflight round-trip, then torn down before uvicorn's serving loop ever exists. The two loops never coexist (uvicorn's `Server.serve()` runs after `create_app()` returns), so this is not a "two concurrent runtimes" pattern; it's the canonical Python idiom for running async I/O from a sync context with no live loop. `multiprocessing` spawn workers start with no running loop, so `create_app()` is the only safe site.
 - **Alternatives**: `loop.run_until_complete(...)` (requires an existing loop); delegating to lifespan (loop exists but `http_app` already constructed); thread executor (unnecessary indirection).
 - **Binding**: If `create_app()` is invoked under an active event loop, `asyncio.run` raises `RuntimeError`. The activation code SHALL catch this and re-raise with a message naming the test setup as the likely cause.
 
@@ -48,7 +47,7 @@
 ### Decision: chain-construction-lives-in-hydrolixcredentialchain
 
 - **Choice**: `HydrolixCredentialChain.get_middleware()` gains an optional `oauth_provider: AuthProvider | None = None` parameter. When non-None, it prepends `oauth_provider` to the `ChainedAuthBackend` backends list, yielding a flat three-element chain. When None, the existing two-element list is returned unchanged.
-- **Why**: One construction site means SA wiring is never duplicated; the two paths differ by a single parameter. `ChainedAuthBackend` itself is not modified.
+- **Why**: `HydrolixCredentialChain` is the business-logic-specific, fully-bound authentication implementation. `ChainedAuthBackend`, as the generic utility combinator for creating a chain, is not modified simply by the introduction of another composable link.
 - **Alternatives**: Ad-hoc construction in `webapp.py:create_app()` — rejected; duplicates SA wiring and risks drift on future refactors.
 - **Binding**: The returned chain SHALL always be a flat `ChainedAuthBackend` — never nested. Satisfies the `auth-chain-is-flat` requirement.
 
@@ -65,6 +64,6 @@
 
 ## Risks / Trade-offs
 
-- **`asyncio.run` fragile under refactor** → Test that asserts `RuntimeError` when `create_app()` is invoked under an active loop.
-- **Workers diverge if preflight fails** → Fail-open per `oauth-config-and-preflight`: workers that succeed serve with OAuth; others serve SA credential chain only with a WARNING log.
+- **`asyncio.run` fragile under refactor** → documented by test that asserts `RuntimeError` when `create_app()` is invoked under an active loop.
+- **Workers diverge if preflight fails** → Mitigated by fail-open behavior per `oauth-config-and-preflight`: workers that succeed serve with OAuth; others serve SA credential chain only with a WARNING log.
 - **SA credential chain not consulted for OAuth-claimed bearer** → Intended. Tests MUST cover: invalid OAuth-claimed bearer → 401; SA bearer (different `iss`) → SA credential chain; no-bearer → SA credential chain.

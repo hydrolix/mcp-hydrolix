@@ -17,19 +17,21 @@ When OAuth is active, the worker SHALL install `mcp.auth` as a single flat `Chai
 
 #### Scenario: Chain Has Three Backends When OAuth Is Active
 
-- **WHEN** OAuth is active and the worker has finished factory initialization
+- **WHEN** OAuth is active and the worker has finished `create_app()` initialization
 - **THEN** `mcp.auth` SHALL be a `ChainedAuthBackend` instance
 - **AND** its `backends` list SHALL have exactly three elements in the order `[OAuthHydrolixAuthProvider, BearerAuthBackend, GetParamAuthBackend]`
 
 #### Scenario: Chain Has Two Backends When OAuth Is Inactive
 
-- **WHEN** OAuth is not active and the worker has finished factory initialization
+- **WHEN** OAuth is not active and the worker has finished `create_app()` initialization
 - **THEN** `mcp.auth` SHALL be a `ChainedAuthBackend` with exactly two elements `[BearerAuthBackend, GetParamAuthBackend]` (the pre-OAuth shape preserved)
 
 #### Scenario: Chain Is Not Nested
 
 - **WHEN** the auth chain is constructed (whether OAuth is active or inactive)
 - **THEN** no element of the `backends` list SHALL itself be a `ChainedAuthBackend`
+
+The ChainedAuthBackend utility is intended to be a general-purpose, N-ary chain. If multiple instances need to be nested, it has not accomplished its goal.
 
 ### Requirement: Active Verifier Is Fail-Closed
 
