@@ -189,7 +189,7 @@ class TestCheckParameterizedQuerySupport:
     @patch("mcp_hydrolix.mcp_server.get_request_credential", return_value=None)
     @patch("mcp_hydrolix.mcp_server.asyncio.to_thread")
     async def test_version_url_out_of_cluster(self, mock_to_thread, mock_cred, mock_config):
-        """Out-of-cluster: api_host matches HYDROLIX_HOST, api_port is 443."""
+        """Out-of-cluster: version_api_host matches the cluster host, version_api_port is 443."""
         mock_token = MagicMock()
         mock_token.token = "tok"
         mock_config.creds_with.return_value = mock_token
@@ -207,7 +207,7 @@ class TestCheckParameterizedQuerySupport:
     @patch("mcp_hydrolix.mcp_server.get_request_credential", return_value=None)
     @patch("mcp_hydrolix.mcp_server.asyncio.to_thread")
     async def test_version_url_in_cluster(self, mock_to_thread, mock_cred, mock_config):
-        """In-cluster pod: api_host='version', api_port=23925, scheme http."""
+        """In-cluster pod: version_api_host='version', version_api_port=23925, scheme http."""
         mock_token = MagicMock()
         mock_token.token = "tok"
         mock_config.creds_with.return_value = mock_token
