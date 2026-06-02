@@ -32,8 +32,26 @@ jobs:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
       - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86  # v5
       - run: uv python install
-      - run: uv build
+      # This repo publishes ONLY the Hydrolix distribution to PyPI. The
+      # mcp-trafficpeak distribution is published by the sibling repo
+      # hydrolix/mcp-trafficpeak, triggered by the dispatch step below.
+      - run: MCP_BRAND=hydrolix uv build
       - uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b  # release/v1
+      # After the Hydrolix wheel is uploaded, trigger the sibling repo to build
+      # and publish mcp-trafficpeak from this same tag. `gh workflow run` exits
+      # non-zero if the dispatch API call fails, which fails the release (the
+      # sibling's own publish completion is verified post-release; it is async).
+      # TP_DISPATCH_TOKEN is a GitHub App / PAT secret with `actions: write` on
+      # hydrolix/mcp-trafficpeak (provisioned out-of-band).
+      - name: Dispatch TrafficPeak sibling publish
+        env:
+          GH_TOKEN: ${{ secrets.TP_DISPATCH_TOKEN }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          echo "::notice::Dispatching mcp-trafficpeak publish for tag ${TAG}"
+          gh workflow run publish.yml \
+            -R hydrolix/mcp-trafficpeak \
+            -f tag="${TAG}"
   publish-docker:
     name: Upload release to GAR
     needs: prove-main
@@ -59,18 +77,43 @@ jobs:
           tag="v$(uv version --short)"
           echo "::notice::Tag is $tag"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
-      - name: Build docker image for MCP
+      # Artifact-parity invariant: build BOTH brands from the same commit in the
+      # same job. The brand list is the single source of truth -- dropping a
+      # brand here would be caught by the parity assertion below before push.
+      - name: Build docker images for MCP (both brands)
         shell: bash
         run: |
-          docker buildx build \
-            -t us-docker.pkg.dev/hdx-art/t/mcp-hydrolix:${{ steps.get_tag.outputs.tag }} \
-            -t us-docker.pkg.dev/hdx-art/t/mcp-hydrolix:latest \
-            .
-      - name: Push docker image
+          TAG="${{ steps.get_tag.outputs.tag }}"
+          for brand in hydrolix trafficpeak; do
+            img="us-docker.pkg.dev/hdx-art/t/mcp-${brand}"
+            echo "::group::build ${img}"
+            docker buildx build \
+              --build-arg MCP_BRAND="${brand}" \
+              -t "${img}:${TAG}" \
+              -t "${img}:latest" \
+              .
+            echo "::endgroup::"
+          done
+      - name: Assert both brand images exist before pushing (parity)
         shell: bash
         run: |
-          docker push us-docker.pkg.dev/hdx-art/t/mcp-hydrolix:${{ steps.get_tag.outputs.tag }}
-          docker push us-docker.pkg.dev/hdx-art/t/mcp-hydrolix:latest
+          TAG="${{ steps.get_tag.outputs.tag }}"
+          for brand in hydrolix trafficpeak; do
+            img="us-docker.pkg.dev/hdx-art/t/mcp-${brand}:${TAG}"
+            if ! docker image inspect "${img}" >/dev/null 2>&1; then
+              echo "::error::artifact parity violated: ${img} was not built"
+              exit 1
+            fi
+          done
+      - name: Push docker images (both brands)
+        shell: bash
+        run: |
+          TAG="${{ steps.get_tag.outputs.tag }}"
+          for brand in hydrolix trafficpeak; do
+            img="us-docker.pkg.dev/hdx-art/t/mcp-${brand}"
+            docker push "${img}:${TAG}"
+            docker push "${img}:latest"
+          done
   publish-mcpb:
     name: Build and attach MCPB bundle to release
     needs: prove-main
@@ -81,9 +124,21 @@ jobs:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
       - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86  # v5
       - run: uv python install
-      - name: Build MCPB bundle
-        run: bash mcpb/build.sh
-      - name: Attach MCPB to GitHub Release
+      # Artifact-parity invariant: build BOTH brand bundles from the same commit.
+      - name: Build MCPB bundles (both brands)
+        run: |
+          MCP_BRAND=hydrolix bash mcpb/build.sh
+          MCP_BRAND=trafficpeak bash mcpb/build.sh
+      - name: Assert both brand bundles exist (parity)
+        run: |
+          shopt -s nullglob
+          hydrolix_bundles=(dist/mcp-hydrolix-*.mcpb)
+          trafficpeak_bundles=(dist/mcp-trafficpeak-*.mcpb)
+          if [[ ${#hydrolix_bundles[@]} -eq 0 || ${#trafficpeak_bundles[@]} -eq 0 ]]; then
+            echo "::error::artifact parity violated: hydrolix=${#hydrolix_bundles[@]} trafficpeak=${#trafficpeak_bundles[@]} .mcpb files in dist/"
+            exit 1
+          fi
+      - name: Attach MCPB bundles to GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -95,6 +150,9 @@ jobs:
           fi
   bump-version:
     name: Bump to next patch version
+    # Gate only on this repo's in-repo artifact jobs. The sibling repo's TP PyPI
+    # publish is asynchronous (fired via workflow_dispatch from the `publish`
+    # job) and is verified post-release, so it is intentionally NOT a dependency.
     needs: [publish, publish-docker, publish-mcpb]
     runs-on: ubuntu-latest
     permissions:

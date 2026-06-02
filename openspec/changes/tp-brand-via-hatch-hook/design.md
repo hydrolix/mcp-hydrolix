@@ -95,7 +95,7 @@
 - **Choice:** `mcpb/build.sh` reads `MCP_BRAND` (default `hydrolix`) and substitutes brand-specific values from a per-brand vars table into `manifest.json.tmpl` and `pyproject.toml.tmpl` (covering distribution name, display name, author/homepage/repo, user-config keys + titles, and `server.mcp_config.env` keys). Output filenames are `dist/mcp-<brand>-V.mcpb`.
 - **Why:** mcpb is a customer-facing artifact distinct from the PyPI wheel and carries its own brand-bearing surfaces (display_name, user_config field titles, env-var keys in `server.mcp_config.env`). Without templating, TP customers installing the mcpb would see "Hydrolix" in their AI-tool installer UI.
 - **Alternatives:** Maintain two `manifest.json` files — rejected, drift surface. Post-build sed pass — rejected, brittle (key names appear in multiple structural positions).
-- **Binding:** The mcpb manifest produced in TP mode MUST contain zero instances of the literal `hydrolix` (case-insensitive) in any user-visible field; an assertion in the build pipeline checks this.
+- **Binding:** The mcpb manifest produced in TP mode MUST contain zero instances of the literal `hydrolix` (case-insensitive) in any customer-facing field (`name`, `display_name`, `description`, `user_config` keys/titles, `server.mcp_config.env` keys); source/account-level fields (`homepage`, `repository`, `author`) MAY reference the `hydrolix` org since the bundle ships under the same account and the `github.com/hydrolix/mcp-trafficpeak` repo. An assertion in the build pipeline checks the customer-facing fields.
 
 ## Risks / Trade-offs
 

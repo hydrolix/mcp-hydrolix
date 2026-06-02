@@ -8,6 +8,7 @@ import sqlglot
 import sqlglot.errors as sqlglot_errors
 import sqlglot.expressions as sqlglot_exp
 
+from mcp_hydrolix.brand import DIST_NAME
 from mcp_hydrolix.models import (
     AggregateColumn,
     AliasColumn,
@@ -17,7 +18,7 @@ from mcp_hydrolix.models import (
     Table,
 )
 
-logger = logging.getLogger("mcp-hydrolix")
+logger = logging.getLogger(DIST_NAME)
 
 
 def result_to_table(query_columns, result) -> List[Table]:

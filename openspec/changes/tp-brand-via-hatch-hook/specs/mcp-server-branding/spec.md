@@ -33,7 +33,7 @@ Two PyPI distributions, `mcp-hydrolix` and `mcp-trafficpeak`, SHALL be released 
 
 ### Requirement: Brand-Appropriate Distribution Metadata With Zero Cross-Brand Leakage
 
-The Hatchling build hook SHALL set `project.name`, `[project.scripts]` console-script name, `project.urls`, `project.description`, and `Author`/`Maintainer` fields to brand-appropriate values for the wheel being built. The TrafficPeak wheel's distribution metadata MUST NOT contain the literal string `hydrolix` (case-insensitive) in any user-visible field, with the sole exception of internal Python module / import paths which are not user-visible. The Hydrolix wheel's distribution metadata MUST NOT contain the literal string `trafficpeak` (case-insensitive) in any field.
+The Hatchling build hook SHALL set `project.name`, `[project.scripts]` console-script name, `project.urls`, `project.description`, and `Author`/`Maintainer` fields to brand-appropriate values for the wheel being built. The TrafficPeak wheel's **customer-facing brand-identity** fields — the distribution `Name`, the console-script name, and the `Summary`/description — MUST NOT contain the literal string `hydrolix` (case-insensitive). Two classes of field are exempt: (1) internal Python module / import paths, which are not user-visible; and (2) source/account-level fields (`project.urls` repository links, `Author`/`Maintainer`), which legitimately reference the Hydrolix org because `mcp-trafficpeak` is published under the same PyPI account and its repository is `github.com/hydrolix/mcp-trafficpeak`. The Hydrolix wheel's distribution metadata MUST NOT contain the literal string `trafficpeak` (case-insensitive) in any field.
 
 <!-- settle: explore/approach-hatchling-hook -->
 
@@ -41,7 +41,8 @@ The Hatchling build hook SHALL set `project.name`, `[project.scripts]` console-s
 
 - **GIVEN** the TP wheel built with `MCP_BRAND=trafficpeak` has been installed into a fresh virtualenv
 - **WHEN** a user runs `pip show mcp-trafficpeak`
-- **THEN** none of the output fields (Name, Version, Summary, Home-page, Author, Author-email, License, Project-URLs) contain the substring `hydrolix` (case-insensitive)
+- **THEN** the customer-facing brand-identity fields (Name, Summary) do not contain the substring `hydrolix` (case-insensitive), and Name is `mcp-trafficpeak`
+- **AND** the source/account-level fields (Home-page / Project-URLs repository link, Author) MAY reference the `hydrolix` org (the package ships under the Hydrolix PyPI account; its repository is `github.com/hydrolix/mcp-trafficpeak`)
 
 #### Scenario: Pip Show On Hydrolix Wheel Is Unchanged
 
@@ -245,7 +246,7 @@ For every release artifact this repository emits under the `mcp-hydrolix` brand 
 - **WHEN** `MCP_BRAND=trafficpeak bash mcpb/build.sh` is invoked at version V
 - **THEN** `dist/mcp-trafficpeak-V.mcpb` is produced
 - **AND** its `manifest.json` reports `name: mcp-trafficpeak`
-- **AND** no `manifest.json` field contains the substring `hydrolix` (case-insensitive)
+- **AND** no customer-facing field (`name`, `display_name`, `description`, `user_config` keys/titles, `server.mcp_config.env` keys) contains the substring `hydrolix` (case-insensitive); source/account-level fields (`homepage`, `repository`, `author`) MAY reference the `hydrolix` org
 - **AND** the `user_config` block uses TrafficPeak-prefixed field titles
 
 #### Scenario: Default Mode Mcpb Build Emits The Hydrolix Bundle Unchanged

@@ -37,6 +37,12 @@ dev = [
 [tool.hatch.build.targets.wheel]
 packages = ["mcp_hydrolix"]
 
+# Brand selection (mcp-hydrolix / mcp-trafficpeak) is performed at build time by
+# this hook, keyed on the MCP_BRAND env var. The [project] block above holds the
+# Hydrolix-default values; see hatch_build.py for the per-brand metadata table.
+[tool.hatch.build.hooks.custom]
+path = "hatch_build.py"
+
 [tool.ruff]
 line-length = 100
 

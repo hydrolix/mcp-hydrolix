@@ -6,6 +6,8 @@ from pathlib import Path
 
 import yaml
 
+from mcp_hydrolix.brand import DIST_NAME
+
 
 # Standard LogRecord attribute names — anything else on the record came from
 # a caller's ``extra={...}`` kwarg and should be surfaced in the JSON envelope.
@@ -22,7 +24,7 @@ class JsonFormatter(logging.Formatter):
         log_record = {
             "timestamp": self.formatTime(record, self.datefmt),
             "level": record.levelname,
-            "component": "mcp-hydrolix",
+            "component": DIST_NAME,
             "logger": record.name,
         }
 

@@ -2,7 +2,6 @@ import asyncio
 import base64
 import logging
 import time
-from importlib.metadata import PackageNotFoundError, version as _pkg_version
 from pathlib import Path
 from typing import (
     Any,
@@ -30,6 +29,7 @@ from starlette.requests import Request
 from starlette.responses import PlainTextResponse, Response
 
 from mcp_hydrolix import metrics
+from mcp_hydrolix.brand import BRAND, DIST_NAME, SERVER_VERSION, USER_AGENT
 from mcp_hydrolix.auth import (
     HydrolixCredential,
     HydrolixCredentialChain,
@@ -61,7 +61,11 @@ from mcp_hydrolix.models import (
 from mcp_hydrolix.utils import coerce_rows, inject_limit
 
 
-MCP_SERVER_NAME = "mcp-hydrolix"
+# Distribution name baked at build time (mcp-hydrolix or mcp-trafficpeak). This
+# is the single source for every customer-visible self-identification: the
+# logger/log component, the FastMCP server-name advertisement, the outbound
+# User-Agent, and the hdx_query_admin_comment User token. See mcp_hydrolix.brand.
+MCP_SERVER_NAME = DIST_NAME
 logger = logging.getLogger(MCP_SERVER_NAME)
 
 load_dotenv()
@@ -69,20 +73,9 @@ load_dotenv()
 HYDROLIX_CONFIG: Final[HydrolixConfig] = get_config()
 
 
-def _resolve_server_version() -> str:
-    try:
-        return _pkg_version(MCP_SERVER_NAME)
-    except PackageNotFoundError:
-        logger.warning(
-            "Could not resolve package version for %s; using 'unknown' in admin comment",
-            MCP_SERVER_NAME,
-        )
-        return "unknown"
-
-
 HDX_ADMIN_COMMENT: Final[str] = (
     f"User: {MCP_SERVER_NAME} "
-    f"version: {_resolve_server_version()} "
+    f"version: {SERVER_VERSION} "
     f"transport: {HYDROLIX_CONFIG.mcp_server_transport}"
 )
 
@@ -91,6 +84,21 @@ mcp = FastMCP(
     auth=HydrolixCredentialChain(None),
     instructions=HYDROLIX_CONFIG.deprecation_notice,
 )
+
+
+def server_banner() -> str:
+    """One-line brand/version banner logged at startup.
+
+    Sources the brand identifier and distribution name from the build-time-baked
+    constants (mcp_hydrolix.brand), never from argv or the env-var namespace.
+    """
+    return (
+        f"{MCP_SERVER_NAME} {SERVER_VERSION} "
+        f"(brand: {BRAND}, transport: {HYDROLIX_CONFIG.mcp_server_transport})"
+    )
+
+
+logger.info("Starting %s", server_banner())
 
 
 async def create_hydrolix_client(pool_mgr, request_credential: Optional[HydrolixCredential]):
@@ -204,6 +212,9 @@ async def _check_parameterized_query_support() -> bool:
             headers = {"Authorization": f"Basic {encoded}"}
         else:
             headers = {"Authorization": f"Bearer {cast(ServiceAccountToken, creds).token}"}
+        # Brand-baked User-Agent on the /version probe (the clickhouse-connect
+        # query path sets its own via client_name=USER_AGENT in get_client_config).
+        headers["User-Agent"] = USER_AGENT
 
         scheme = "https" if HYDROLIX_CONFIG.version_api_secure else "http"
         url = (

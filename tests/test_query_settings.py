@@ -16,6 +16,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+import mcp_hydrolix.brand as brand_module
 import mcp_hydrolix.mcp_server as mcp_server_module
 from mcp_hydrolix.mcp_env import get_config
 from mcp_hydrolix.models import HdxQueryResult
@@ -172,8 +173,9 @@ class TestQuerySettings:
 
 @pytest.fixture
 def reload_server_after_test():
-    """Reload mcp_server after the test to restore the real HDX_ADMIN_COMMENT."""
+    """Reload brand + mcp_server after the test to restore the real version/comment."""
     yield
+    importlib.reload(brand_module)
     importlib.reload(mcp_server_module)
 
 
@@ -186,6 +188,9 @@ def _reload_server_with(monkeypatch, transport, pkg_version_mock):
     """
     monkeypatch.setenv("HYDROLIX_MCP_SERVER_TRANSPORT", transport)
     with patch("importlib.metadata.version", pkg_version_mock):
+        # Version resolution lives in mcp_hydrolix.brand; reload it first so the
+        # baked SERVER_VERSION the reloaded mcp_server imports reflects the mock.
+        importlib.reload(brand_module)
         return importlib.reload(mcp_server_module)
 
 
@@ -201,17 +206,17 @@ def test_renders_composed_comment(monkeypatch, reload_server_after_test):
 
 def test_version_metadata_available():
     """Scenario: Version Metadata Available."""
-    assert mcp_server_module._resolve_server_version() == _real_pkg_version("mcp-hydrolix")
+    assert brand_module._resolve_version() == _real_pkg_version("mcp-hydrolix")
 
 
 def test_version_metadata_unavailable(caplog):
     """Scenario: Version Metadata Unavailable."""
     with patch(
-        "mcp_hydrolix.mcp_server._pkg_version",
+        "mcp_hydrolix.brand._pkg_version",
         side_effect=PackageNotFoundError("mcp-hydrolix"),
     ):
         with caplog.at_level(logging.WARNING, logger="mcp-hydrolix"):
-            result = mcp_server_module._resolve_server_version()
+            result = brand_module._resolve_version()
     assert result == "unknown"
     assert any("mcp-hydrolix" in record.getMessage() for record in caplog.records)
 

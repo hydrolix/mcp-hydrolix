@@ -12,8 +12,9 @@ from typing import Optional
 from urllib.parse import ParseResult, urlparse
 
 from mcp_hydrolix.auth.credentials import HydrolixCredential, ServiceAccountToken, UsernamePassword
+from mcp_hydrolix.brand import DIST_NAME, USER_AGENT
 
-logger = logging.getLogger("mcp-hydrolix")
+logger = logging.getLogger(DIST_NAME)
 
 
 # Mapping of deprecated env var names to their replacements.
@@ -69,13 +70,15 @@ def _classify_deprecation(aliases: list[str]) -> Optional[str]:
     return "internal" if "HYDROLIX_NAME" in os.environ else "external"
 
 
-def _parse_hydrolix_url() -> Optional[ParseResult]:
-    """Parse the ``HYDROLIX_URL`` env var, returning ``None`` if unset/empty.
+def _parse_url(prefix: str = "HYDROLIX_") -> Optional[ParseResult]:
+    """Parse the ``<prefix>URL`` env var, returning ``None`` if unset/empty.
 
-    Raises ``ValueError`` for a non-empty value with a missing/unsupported scheme
-    or missing hostname.
+    ``prefix`` selects the env-var namespace (``HYDROLIX_`` or ``TRAFFICPEAK_``)
+    so the same resolver runs over either. Raises ``ValueError`` for a non-empty
+    value with a missing/unsupported scheme or missing hostname.
     """
-    raw = os.environ.get("HYDROLIX_URL")
+    var = f"{prefix}URL"
+    raw = os.environ.get(var)
     if raw is None:
         return None
     stripped = raw.strip()
@@ -83,9 +86,9 @@ def _parse_hydrolix_url() -> Optional[ParseResult]:
         return None
     parsed = urlparse(stripped)
     if parsed.scheme not in ("http", "https"):
-        raise ValueError(f"Invalid HYDROLIX_URL={raw!r}: scheme must be 'http' or 'https'.")
+        raise ValueError(f"Invalid {var}={raw!r}: scheme must be 'http' or 'https'.")
     if not parsed.hostname:
-        raise ValueError(f"Invalid HYDROLIX_URL={raw!r}: missing hostname.")
+        raise ValueError(f"Invalid {var}={raw!r}: missing hostname.")
     return parsed
 
 
@@ -167,15 +170,32 @@ class HydrolixConfig:
         HYDROLIX_MAX_RAW_TIMERANGE: Max timerange in seconds for non-summary queries (default: 21600 = 6 hours)
     """
 
-    def __init__(self) -> None:
-        """Initialize the configuration from environment variables."""
-        # Parse HYDROLIX_URL eagerly so validation errors surface at construction time.
-        self._parsed_url: Optional[ParseResult] = _parse_hydrolix_url()
+    def __init__(self, prefix: str = "HYDROLIX_", allow_deprecated_aliases: bool = True) -> None:
+        """Initialize the configuration from environment variables.
+
+        Args:
+            prefix: Env-var namespace to resolve over (``HYDROLIX_`` or
+                ``TRAFFICPEAK_``). The same four-tier precedence resolver runs
+                over whichever prefix is supplied -- it is never duplicated.
+            allow_deprecated_aliases: When False (the TrafficPeak namespace), the
+                deprecated ``*_HOST`` / ``*_PORT`` / ``*_SECURE`` / ``*_API_HOST``
+                / ``*_API_PORT`` alias tier is disabled, so only the modern
+                variable scheme (``<prefix>URL`` + the explicit overrides) is
+                honored and ``<prefix>URL`` is the sole layer-1 anchor.
+        """
+        self._prefix = prefix
+        self._allow_aliases = allow_deprecated_aliases
+        # Parse <prefix>URL eagerly so validation errors surface at construction time.
+        self._parsed_url: Optional[ParseResult] = _parse_url(prefix)
         self._validate_required_vars()
 
         # Snapshot deprecation state once so the LLM-visible notice and the
         # version-gated internal probe log agree on what was seen at startup.
-        self._deprecated_aliases: list[str] = _detect_deprecated_aliases()
+        # Deprecation applies only to the Hydrolix namespace (the TP namespace
+        # never had the deprecated aliases).
+        self._deprecated_aliases: list[str] = (
+            _detect_deprecated_aliases() if allow_deprecated_aliases else []
+        )
         self._deprecation_audience: Optional[str] = _classify_deprecation(self._deprecated_aliases)
         # Format the external advisory once; both the startup log and the
         # deprecation_notice property read this cached value.
@@ -197,11 +217,11 @@ class HydrolixConfig:
         # Both token and username are stripped and checked for non-empty so that
         # MCPB hosts injecting blank user_config fields (as empty strings) do not produce
         # bogus credentials.
-        if global_service_account := os.getenv("HYDROLIX_TOKEN", "").strip():
+        if global_service_account := os.getenv(f"{self._prefix}TOKEN", "").strip():
             self._default_credential = ServiceAccountToken(global_service_account, None)
         else:
-            if (global_username := os.getenv("HYDROLIX_USER", "").strip()) and (
-                global_password := os.getenv("HYDROLIX_PASSWORD", "")
+            if (global_username := os.getenv(f"{self._prefix}USER", "").strip()) and (
+                global_password := os.getenv(f"{self._prefix}PASSWORD", "")
             ):
                 self._default_credential = UsernamePassword(global_username, global_password)
 
@@ -213,8 +233,8 @@ class HydrolixConfig:
         else:
             raise ValueError(
                 "No credentials available for Hydrolix connection. "
-                "Please provide credentials either through HYDROLIX_TOKEN or "
-                "HYDROLIX_USER/HYDROLIX_PASSWORD environment variables, "
+                f"Please provide credentials either through {self._prefix}TOKEN or "
+                f"{self._prefix}USER/{self._prefix}PASSWORD environment variables, "
                 "or pass credentials explicitly via the creds parameter."
             )
 
@@ -224,14 +244,14 @@ class HydrolixConfig:
 
         Precedence: HYDROLIX_HTTP_QUERY_HOST > HYDROLIX_HOST (deprecated) > URL hostname.
         """
-        if value := os.getenv("HYDROLIX_HTTP_QUERY_HOST"):
+        if value := os.getenv(f"{self._prefix}HTTP_QUERY_HOST"):
             return value
-        if value := os.getenv("HYDROLIX_HOST"):
+        if self._allow_aliases and (value := os.getenv(f"{self._prefix}HOST")):
             return value
         if self._parsed_url is not None and self._parsed_url.hostname:
             return self._parsed_url.hostname
         # Unreachable: _validate_required_vars guarantees a connection target.
-        raise ValueError("No Hydrolix host configured (set HYDROLIX_URL).")
+        raise ValueError(f"No Hydrolix host configured (set {self._prefix}URL).")
 
     @property
     def port(self) -> int:
@@ -240,9 +260,9 @@ class HydrolixConfig:
         Precedence: HYDROLIX_HTTP_QUERY_PORT > HYDROLIX_PORT (deprecated) >
         URL-derived (443 https / 80 http) > hard default 8088.
         """
-        if raw := os.getenv("HYDROLIX_HTTP_QUERY_PORT"):
+        if raw := os.getenv(f"{self._prefix}HTTP_QUERY_PORT"):
             return int(raw)
-        if raw := os.getenv("HYDROLIX_PORT"):
+        if self._allow_aliases and (raw := os.getenv(f"{self._prefix}PORT")):
             return int(raw)
         if self._parsed_url is not None:
             return 443 if self._parsed_url.scheme == "https" else 80
@@ -255,9 +275,9 @@ class HydrolixConfig:
         Precedence: HYDROLIX_HTTP_QUERY_SECURE > HYDROLIX_SECURE (deprecated) >
         URL scheme == "https" > hard default True.
         """
-        if (raw := os.getenv("HYDROLIX_HTTP_QUERY_SECURE")) is not None:
+        if (raw := os.getenv(f"{self._prefix}HTTP_QUERY_SECURE")) is not None:
             return raw.lower() == "true"
-        if (raw := os.getenv("HYDROLIX_SECURE")) is not None:
+        if self._allow_aliases and (raw := os.getenv(f"{self._prefix}SECURE")) is not None:
             return raw.lower() == "true"
         if self._parsed_url is not None:
             return self._parsed_url.scheme == "https"
@@ -270,9 +290,9 @@ class HydrolixConfig:
         Precedence: HYDROLIX_VERSION_API_HOST > HYDROLIX_API_HOST (deprecated) >
         URL hostname > resolved ``host``.
         """
-        if value := os.getenv("HYDROLIX_VERSION_API_HOST"):
+        if value := os.getenv(f"{self._prefix}VERSION_API_HOST"):
             return value
-        if value := os.getenv("HYDROLIX_API_HOST"):
+        if self._allow_aliases and (value := os.getenv(f"{self._prefix}API_HOST")):
             return value
         if self._parsed_url is not None and self._parsed_url.hostname:
             return self._parsed_url.hostname
@@ -285,9 +305,9 @@ class HydrolixConfig:
         Precedence: HYDROLIX_VERSION_API_PORT > HYDROLIX_API_PORT (deprecated) >
         URL-derived (443/80 by scheme) > ``443`` if secure else ``80``.
         """
-        if raw := os.getenv("HYDROLIX_VERSION_API_PORT"):
+        if raw := os.getenv(f"{self._prefix}VERSION_API_PORT"):
             return int(raw)
-        if raw := os.getenv("HYDROLIX_API_PORT"):
+        if self._allow_aliases and (raw := os.getenv(f"{self._prefix}API_PORT")):
             return int(raw)
         if self._parsed_url is not None:
             return 443 if self._parsed_url.scheme == "https" else 80
@@ -302,7 +322,7 @@ class HydrolixConfig:
         respects HYDROLIX_HTTP_QUERY_SECURE / HYDROLIX_SECURE / URL scheme), not
         the URL scheme directly.
         """
-        if (raw := os.getenv("HYDROLIX_VERSION_API_SECURE")) is not None:
+        if (raw := os.getenv(f"{self._prefix}VERSION_API_SECURE")) is not None:
             return raw.lower() == "true"
         return self.secure
 
@@ -329,7 +349,7 @@ class HydrolixConfig:
     @property
     def database(self) -> Optional[str]:
         """Get the default database name if set."""
-        return os.getenv("HYDROLIX_DATABASE")
+        return os.getenv(f"{self._prefix}DATABASE")
 
     @property
     def verify(self) -> bool:
@@ -337,7 +357,7 @@ class HydrolixConfig:
 
         Default: True
         """
-        return os.getenv("HYDROLIX_VERIFY", "true").lower() == "true"
+        return os.getenv(f"{self._prefix}VERIFY", "true").lower() == "true"
 
     @property
     def connect_timeout(self) -> int:
@@ -345,7 +365,7 @@ class HydrolixConfig:
 
         Default: 30
         """
-        return int(os.getenv("HYDROLIX_CONNECT_TIMEOUT", "30"))
+        return int(os.getenv(f"{self._prefix}CONNECT_TIMEOUT", "30"))
 
     @property
     def send_receive_timeout(self) -> int:
@@ -353,7 +373,7 @@ class HydrolixConfig:
 
         Default: 300 (Hydrolix default)
         """
-        return int(os.getenv("HYDROLIX_SEND_RECEIVE_TIMEOUT", "300"))
+        return int(os.getenv(f"{self._prefix}SEND_RECEIVE_TIMEOUT", "300"))
 
     @property
     def query_pool_size(self) -> int:
@@ -361,7 +381,7 @@ class HydrolixConfig:
 
         Default: 100
         """
-        return int(os.getenv("HYDROLIX_QUERIES_POOL_SIZE", 100))
+        return int(os.getenv(f"{self._prefix}QUERIES_POOL_SIZE", 100))
 
     @property
     def query_timeout_sec(self) -> int:
@@ -369,7 +389,7 @@ class HydrolixConfig:
 
         Default: 30
         """
-        return int(os.getenv("HYDROLIX_QUERY_TIMEOUT_SECS", 30))
+        return int(os.getenv(f"{self._prefix}QUERY_TIMEOUT_SECS", 30))
 
     @property
     def max_result_cells(self) -> int:
@@ -377,7 +397,7 @@ class HydrolixConfig:
 
         Configured via HYDROLIX_MAX_RESULT_CELLS (default: 50000).
         """
-        return int(os.getenv("HYDROLIX_MAX_RESULT_CELLS", "50000"))
+        return int(os.getenv(f"{self._prefix}MAX_RESULT_CELLS", "50000"))
 
     @property
     def max_result_cells_limit(self) -> int:
@@ -389,7 +409,7 @@ class HydrolixConfig:
         Configured via HYDROLIX_MAX_RESULT_CELLS_LIMIT (default: 0, no cap enforced).
         Set to a positive integer to enforce a cap in multi-tenant HTTP/SSE deployments.
         """
-        return int(os.getenv("HYDROLIX_MAX_RESULT_CELLS_LIMIT", "0"))
+        return int(os.getenv(f"{self._prefix}MAX_RESULT_CELLS_LIMIT", "0"))
 
     @property
     def mcp_server_transport(self) -> str:
@@ -398,7 +418,9 @@ class HydrolixConfig:
         Valid options: "stdio", "http", "sse"
         Default: "stdio"
         """
-        transport = os.getenv("HYDROLIX_MCP_SERVER_TRANSPORT", TransportType.STDIO.value).lower()
+        transport = os.getenv(
+            f"{self._prefix}MCP_SERVER_TRANSPORT", TransportType.STDIO.value
+        ).lower()
 
         # Validate transport type
         if transport not in TransportType.values():
@@ -413,7 +435,7 @@ class HydrolixConfig:
         Only used when transport is "http" or "sse".
         Default: "127.0.0.1"
         """
-        return os.getenv("HYDROLIX_MCP_BIND_HOST", "127.0.0.1")
+        return os.getenv(f"{self._prefix}MCP_BIND_HOST", "127.0.0.1")
 
     @property
     def mcp_bind_port(self) -> int:
@@ -422,7 +444,7 @@ class HydrolixConfig:
         Only used when transport is "http" or "sse".
         Default: 8000
         """
-        return int(os.getenv("HYDROLIX_MCP_BIND_PORT", "8000"))
+        return int(os.getenv(f"{self._prefix}MCP_BIND_PORT", "8000"))
 
     @property
     def mcp_timeout(self) -> int:
@@ -431,7 +453,7 @@ class HydrolixConfig:
         Only used when transport is "http" or "sse".
         Default: 120
         """
-        return int(os.getenv("HYDROLIX_MCP_REQUEST_TIMEOUT", 120))
+        return int(os.getenv(f"{self._prefix}MCP_REQUEST_TIMEOUT", 120))
 
     @property
     def mcp_workers(self) -> int:
@@ -440,7 +462,7 @@ class HydrolixConfig:
         Only used when transport is "http" or "sse".
         Default: 1
         """
-        return int(os.getenv("HYDROLIX_MCP_WORKERS", 1))
+        return int(os.getenv(f"{self._prefix}MCP_WORKERS", 1))
 
     @property
     def mcp_worker_connections(self) -> int:
@@ -449,7 +471,7 @@ class HydrolixConfig:
         Only used when transport is "http" or "sse".
         Default: 100
         """
-        return int(os.getenv("HYDROLIX_MCP_WORKER_CONNECTIONS", 100))
+        return int(os.getenv(f"{self._prefix}MCP_WORKER_CONNECTIONS", 100))
 
     @property
     def max_raw_timerange(self) -> int:
@@ -457,7 +479,7 @@ class HydrolixConfig:
 
         Default: 21600 (6 hours)
         """
-        return int(os.getenv("HYDROLIX_MAX_RAW_TIMERANGE", "21600"))
+        return int(os.getenv(f"{self._prefix}MAX_RAW_TIMERANGE", "21600"))
 
     @property
     def mcp_graceful_timeout(self) -> int:
@@ -466,7 +488,7 @@ class HydrolixConfig:
         Only used when transport is "http" or "sse".
         Default: same as mcp_timeout
         """
-        return int(os.getenv("HYDROLIX_MCP_GRACEFUL_TIMEOUT", self.mcp_timeout))
+        return int(os.getenv(f"{self._prefix}MCP_GRACEFUL_TIMEOUT", self.mcp_timeout))
 
     @property
     def mcp_max_requests(self) -> int:
@@ -481,7 +503,7 @@ class HydrolixConfig:
 
         Set to 0 to disable. Default: 10000.
         """
-        return int(os.getenv("HYDROLIX_MCP_MAX_REQUESTS", 10000))
+        return int(os.getenv(f"{self._prefix}MCP_MAX_REQUESTS", 10000))
 
     @property
     def mcp_max_requests_jitter(self) -> int:
@@ -491,7 +513,7 @@ class HydrolixConfig:
         parallels gunicorn's ``max_requests_jitter``. Prevents all workers
         from recycling simultaneously (thundering herd). Default: 1000.
         """
-        return int(os.getenv("HYDROLIX_MCP_MAX_REQUESTS_JITTER", 1000))
+        return int(os.getenv(f"{self._prefix}MCP_MAX_REQUESTS_JITTER", 1000))
 
     @property
     def mcp_keepalive(self) -> int:
@@ -500,7 +522,7 @@ class HydrolixConfig:
         Only used when transport is "http" or "sse".
         Default: 10
         """
-        return int(os.getenv("HYDROLIX_MCP_MAX_KEEPALIVE", 10))
+        return int(os.getenv(f"{self._prefix}MCP_MAX_KEEPALIVE", 10))
 
     @property
     def mcp_worker_healthcheck_timeout(self) -> int:
@@ -512,7 +534,7 @@ class HydrolixConfig:
 
         Default: 15
         """
-        return int(os.getenv("HYDROLIX_MCP_WORKER_HEALTHCHECK_TIMEOUT", 15))
+        return int(os.getenv(f"{self._prefix}MCP_WORKER_HEALTHCHECK_TIMEOUT", 15))
 
     @property
     def metrics_enabled(self) -> bool:
@@ -520,7 +542,7 @@ class HydrolixConfig:
 
         Default: False
         """
-        return os.getenv("HYDROLIX_METRICS_ENABLED", "false").lower() == "true"
+        return os.getenv(f"{self._prefix}METRICS_ENABLED", "false").lower() == "true"
 
     def get_client_config(self, request_credential: Optional[HydrolixCredential]) -> dict:
         """
@@ -545,7 +567,9 @@ class HydrolixConfig:
             "connect_timeout": self.connect_timeout,
             "send_receive_timeout": self.send_receive_timeout,
             "executor_threads": self.query_pool_size,
-            "client_name": "mcp_hydrolix",
+            # Leading token of the clickhouse-connect User-Agent on outbound
+            # query requests; brand-baked so the TP wheel reports mcp-trafficpeak.
+            "client_name": USER_AGENT,
             # clickhouse-connect's default tz_mode ("naive_utc") is broken
             # for zoneless DateTime columns: it strips tzinfo when the server
             # is UTC, and silently falls back to the *client's* local timezone
@@ -571,34 +595,42 @@ class HydrolixConfig:
         Raises:
             ValueError: If any required environment variable is missing.
         """
-        # HYDROLIX_USER and HYDROLIX_PASSWORD must either be both present or both absent
-        if ("HYDROLIX_USER" in os.environ) != ("HYDROLIX_PASSWORD" in os.environ):
+        # <prefix>USER and <prefix>PASSWORD must either be both present or both absent
+        user_var, password_var = f"{self._prefix}USER", f"{self._prefix}PASSWORD"
+        if (user_var in os.environ) != (password_var in os.environ):
             raise ValueError(
-                "User/password authentication is only partially configured: set both HYDROLIX_USER and HYDROLIX_PASSWORD"
+                "User/password authentication is only partially configured: "
+                f"set both {user_var} and {password_var}"
             )
 
-        # http/sse transports surface the cluster URL in OAuth metadata, so
-        # HYDROLIX_URL specifically (not HYDROLIX_HOST) is required for those.
-        transport = os.getenv("HYDROLIX_MCP_SERVER_TRANSPORT", TransportType.STDIO.value).lower()
+        # Transport is operational deployment config (not cluster identity) and is
+        # read from the HYDROLIX_ namespace regardless of brand.
+        url_var = f"{self._prefix}URL"
+        host_var = f"{self._prefix}HOST"
+        transport = os.getenv(
+            f"{self._prefix}MCP_SERVER_TRANSPORT", TransportType.STDIO.value
+        ).lower()
         if transport in (TransportType.HTTP.value, TransportType.SSE.value):
+            # http/sse transports surface the cluster URL in OAuth metadata, so
+            # <prefix>URL specifically (not the deprecated <prefix>HOST) is required.
             if self._parsed_url is None:
                 raise ValueError(
-                    "HYDROLIX_URL is required when HYDROLIX_MCP_SERVER_TRANSPORT is "
-                    f"{transport!r}. Set HYDROLIX_URL=https://<your-cluster-host>."
+                    f"{url_var} is required when {self._prefix}MCP_SERVER_TRANSPORT is "
+                    f"{transport!r}. Set {url_var}=https://<your-cluster-host>."
                 )
         else:
             # All other transports: a connection target is required. The deprecated
-            # HYDROLIX_HOST is still honored as a target, but we never recommend it --
-            # the error points operators only at HYDROLIX_URL. HYDROLIX_HTTP_QUERY_HOST
-            # is an override on top of the connection target and is never sufficient alone.
-            if self._parsed_url is None and "HYDROLIX_HOST" not in os.environ:
+            # <prefix>HOST is honored as a target only when the alias tier is enabled
+            # (Hydrolix namespace); for TrafficPeak, <prefix>URL is the sole anchor.
+            host_alias_set = self._allow_aliases and host_var in os.environ
+            if self._parsed_url is None and not host_alias_set:
                 raise ValueError(
-                    "Missing Hydrolix connection target: set HYDROLIX_URL "
+                    f"Missing Hydrolix connection target: set {url_var} "
                     "(e.g. https://mycluster.hydrolix.live)."
                 )
 
         # Validate HYDROLIX_MAX_RESULT_CELLS: must be a positive integer if set.
-        raw_cells = os.getenv("HYDROLIX_MAX_RESULT_CELLS")
+        raw_cells = os.getenv(f"{self._prefix}MAX_RESULT_CELLS")
         if raw_cells is not None:
             try:
                 val = int(raw_cells)
@@ -611,7 +643,7 @@ class HydrolixConfig:
                 )
 
         # Validate HYDROLIX_MAX_RESULT_CELLS_LIMIT: must be a non-negative integer if set.
-        raw_limit = os.getenv("HYDROLIX_MAX_RESULT_CELLS_LIMIT")
+        raw_limit = os.getenv(f"{self._prefix}MAX_RESULT_CELLS_LIMIT")
         if raw_limit is not None:
             try:
                 val = int(raw_limit)
@@ -622,6 +654,63 @@ class HydrolixConfig:
                     f"Invalid HYDROLIX_MAX_RESULT_CELLS_LIMIT={raw_limit!r}: "
                     "must be a non-negative integer (0 means no cap)."
                 )
+
+
+def _anchor_present(prefix: str, allow_aliases: bool) -> bool:
+    """Return True if the namespace has a layer-1 connection anchor.
+
+    For TrafficPeak (``allow_aliases=False``) the sole anchor is ``TRAFFICPEAK_URL``.
+    For Hydrolix the deprecated ``HYDROLIX_HOST`` also counts (stdio transport).
+    """
+    if (raw := os.environ.get(f"{prefix}URL")) and raw.strip():
+        return True
+    if allow_aliases and (raw := os.environ.get(f"{prefix}HOST")) and raw.strip():
+        return True
+    return False
+
+
+def _effective_target(cfg: "HydrolixConfig") -> tuple:
+    """The resolved cluster identity used to detect cross-namespace conflicts."""
+    return (cfg.host, cfg.port, cfg.secure)
+
+
+def resolve_config() -> "HydrolixConfig":
+    """Resolve the effective config with whole-chain TrafficPeak-then-Hydrolix precedence.
+
+    The same four-tier resolver runs over each namespace as a whole chain -- never
+    interleaved per-variable. ``TRAFFICPEAK_URL`` present -> use TrafficPeak and
+    ignore ``HYDROLIX_*`` entirely; otherwise resolve over ``HYDROLIX_*``. If both
+    namespaces anchor to different effective clusters, TrafficPeak wins and exactly
+    one WARNING is logged. Neither anchor -> exit-worthy ValueError.
+    """
+    tp_anchor = _anchor_present("TRAFFICPEAK_", allow_aliases=False)
+    hdx_anchor = _anchor_present("HYDROLIX_", allow_aliases=True)
+
+    if not tp_anchor and not hdx_anchor:
+        raise ValueError(
+            "Missing connection target: set TRAFFICPEAK_URL or HYDROLIX_URL "
+            "(e.g. https://mycluster.hydrolix.live)."
+        )
+
+    if not tp_anchor:
+        return HydrolixConfig(prefix="HYDROLIX_", allow_deprecated_aliases=True)
+
+    cfg = HydrolixConfig(prefix="TRAFFICPEAK_", allow_deprecated_aliases=False)
+    if hdx_anchor:
+        try:
+            hdx_cfg = HydrolixConfig(prefix="HYDROLIX_", allow_deprecated_aliases=True)
+        except ValueError:
+            # The Hydrolix namespace can't fully resolve on its own (e.g. http
+            # transport without HYDROLIX_URL); there is nothing to conflict with.
+            hdx_cfg = None
+        if hdx_cfg is not None and _effective_target(cfg) != _effective_target(hdx_cfg):
+            hdx_anchor_var = "HYDROLIX_URL" if os.environ.get("HYDROLIX_URL") else "HYDROLIX_HOST"
+            logger.warning(
+                "Both TRAFFICPEAK_URL and %s are set and resolve to different "
+                "clusters; using TRAFFICPEAK_* and ignoring HYDROLIX_*.",
+                hdx_anchor_var,
+            )
+    return cfg
 
 
 # Global instance placeholder for the singleton pattern
@@ -636,5 +725,5 @@ def get_config():
     global _CONFIG_INSTANCE
     if _CONFIG_INSTANCE is None:
         # Instantiate the config object here, ensuring load_dotenv() has likely run
-        _CONFIG_INSTANCE = HydrolixConfig()
+        _CONFIG_INSTANCE = resolve_config()
     return _CONFIG_INSTANCE
