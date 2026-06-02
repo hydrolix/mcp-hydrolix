@@ -21,7 +21,7 @@ CONFIG = {
     "command": "uvx",
     "args": ["--python", "3.13", "--refresh-package", "mcp-hydrolix", "mcp-hydrolix"],
     "env": {
-        "HYDROLIX_HOST": "${input:hydrolix_host}",
+        "HYDROLIX_URL": "${input:hydrolix_url}",
         "HYDROLIX_USER": "${input:hydrolix_user}",
         "HYDROLIX_PASSWORD": "${input:hydrolix_password}",
     },
@@ -29,9 +29,9 @@ CONFIG = {
 
 INPUTS = [
     {
-        "id": "hydrolix_host",
+        "id": "hydrolix_url",
         "type": "promptString",
-        "description": "Hydrolix hostname (e.g. mycluster.hydrolix.live)",
+        "description": "Hydrolix URL (e.g. https://mycluster.hydrolix.live)",
     },
     {
         "id": "hydrolix_user",
