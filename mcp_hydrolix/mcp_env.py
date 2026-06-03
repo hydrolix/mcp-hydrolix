@@ -119,7 +119,7 @@ class HydrolixConfig:
         HYDROLIX_HOST (deprecated alias): Hostname of the Hydrolix HTTP query
             endpoint. Accepted as a connection target only for stdio transport.
 
-    Endpoint overrides (ClickHouse HTTP query endpoint):
+    Endpoint overrides (Hydrolix HTTP query endpoint):
         HYDROLIX_HTTP_QUERY_HOST: Override the query hostname
             (precedence: this > HYDROLIX_HOST > URL hostname).
         HYDROLIX_HTTP_QUERY_PORT: Override the query port
