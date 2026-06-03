@@ -403,9 +403,13 @@ def test_release_tag_publishes_both_pypi_distributions_at_the_same_version():
 def test_sibling_repo_dispatch_failure_fails_the_release():
     wf = _publish_yml()
     # `gh workflow run` exits non-zero on dispatch failure, failing the step (and
-    # thus the publish job) -- it runs inside the `publish` job after the upload.
+    # thus the publish job) -- it runs inside the `publish` job after the upload,
+    # using a GitHub App token scoped to mcp-trafficpeak minted from the AWS
+    # Secrets Manager dispatch credential.
     assert "gh workflow run publish.yml" in wf
-    assert "TP_DISPATCH_TOKEN" in wf
+    assert "actions/create-github-app-token" in wf
+    assert "repositories: mcp-trafficpeak" in wf
+    assert "steps.tp-token.outputs.token" in wf
 
 
 def test_release_tag_publishes_both_mcpb_bundles_at_the_same_version():

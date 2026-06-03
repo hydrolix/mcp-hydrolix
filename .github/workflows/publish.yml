@@ -41,11 +41,55 @@ jobs:
       # and publish mcp-trafficpeak from this same tag. `gh workflow run` exits
       # non-zero if the dispatch API call fails, which fails the release (the
       # sibling's own publish completion is verified post-release; it is async).
-      # TP_DISPATCH_TOKEN is a GitHub App / PAT secret with `actions: write` on
-      # hydrolix/mcp-trafficpeak (provisioned out-of-band).
+      #
+      # The dispatch credential is a GitHub App with `actions: write` on
+      # hydrolix/mcp-trafficpeak, stored in AWS Secrets Manager as JSON
+      # {"APP_ID", "PRIVATE_KEY"} -- same convention as the bump-version job's
+      # APP_SECRET. Update --secret-id below to the ARN DevOps provisions.
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a  # v4
+        with:
+          role-to-assume: arn:aws:iam::471112700926:role/github-actions-lke-secrets-role
+          aws-region: us-east-2
+      - name: Retrieve TrafficPeak dispatch App secret
+        id: tp-secret
+        run: |
+          secret=$(aws secretsmanager get-secret-value \
+            --secret-id ci/development/mcp-hydrolix/TP_DISPATCH_APP \
+            --output text --query SecretString)
+          while IFS= read -r line; do
+            [[ -n "$line" ]] && echo "::add-mask::$line"
+          done <<< "$secret"
+          app_id=$(jq -rn --argjson s "$secret" '$s.APP_ID')
+          private_key=$(jq -rn --argjson s "$secret" '$s.PRIVATE_KEY')
+          if [[ -z "$app_id" || "$app_id" == "null" ]]; then
+            echo "::error::APP_ID is missing or null in the retrieved secret"
+            exit 1
+          fi
+          if [[ -z "$private_key" || "$private_key" == "null" ]]; then
+            echo "::error::PRIVATE_KEY is missing or null in the retrieved secret"
+            exit 1
+          fi
+          while IFS= read -r line; do
+            [[ -n "$line" ]] && echo "::add-mask::$line"
+          done <<< "$private_key"
+          echo "app-id=$app_id" >> "$GITHUB_OUTPUT"
+          {
+            echo 'private-key<<PRIVATE_KEY_EOF'
+            echo "$private_key"
+            echo 'PRIVATE_KEY_EOF'
+          } >> "$GITHUB_OUTPUT"
+      - name: Generate dispatch token (scoped to mcp-trafficpeak)
+        id: tp-token
+        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547  # v1
+        with:
+          app-id: ${{ steps.tp-secret.outputs.app-id }}
+          private-key: ${{ steps.tp-secret.outputs.private-key }}
+          owner: hydrolix
+          repositories: mcp-trafficpeak
       - name: Dispatch TrafficPeak sibling publish
         env:
-          GH_TOKEN: ${{ secrets.TP_DISPATCH_TOKEN }}
+          GH_TOKEN: ${{ steps.tp-token.outputs.token }}
         run: |
           TAG="${GITHUB_REF_NAME}"
           echo "::notice::Dispatching mcp-trafficpeak publish for tag ${TAG}"
