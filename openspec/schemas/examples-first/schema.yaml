@@ -67,6 +67,37 @@ artifacts:
       EXACT order. Examples replace prose: if a behavior is not captured in an
       example, it is not in the spec.
 
+      STEP 0 — Grill the operator first (INTERACTIVE, REQUIRED).
+      Do NOT draft spec.md until you have run an interactive Q&A with the
+      operator. This is the highest-leverage step in this schema: the four
+      sections are only as good as the examples and constraints you extract
+      here, and operators routinely under-specify edge cases, invalid inputs,
+      and the rules that "look like a mistake". Override the usual
+      keep-momentum bias — a few rounds of questions here are cheaper than a
+      wrong spec.
+        1. Read any context the operator gave and restate the behavior in one
+           sentence back to them to confirm scope.
+        2. Ask ONE OR A FEW questions at a time using the AskUserQuestion tool
+           (open-ended where preset options don't fit). DO NOT batch every
+           question into a single message — let each answer shape the next.
+        3. Grill specifically for what the four sections need:
+           - Intent: who/what CONSUMES this behavior, and what is out of scope?
+           - Examples: the happy path AND — pushed for explicitly — at least
+             one edge case and at least one invalid-input case (and the exact
+             error/exception each produces). If the operator offers only the
+             happy path, keep asking "what about when …?" until you have both.
+           - Constraints: fixed signatures/interfaces that MUST NOT change,
+             performance/concurrency bounds, purity/side-effect rules, and any
+             intentional code that LOOKS like a bug so it is not "cleaned up".
+           - Test plan: which test types matter (unit/regression/integration/
+             property) and any non-obvious case or real-world input to cover.
+        4. Stop when you can write all four sections WITHOUT guessing.
+        Escape hatch: if the operator explicitly says there is no ambiguity (or
+        declines to be grilled), proceed — but record that you asked.
+      Fold every answer directly into the relevant section below (Intent,
+      Examples, Constraints, Test plan). The Q&A is NOT a separate file — this
+      schema is single-template; spec.md is the only artifact.
+
       Required sections (all four, in order):
 
       ### 1. Intent (1-3 sentences)
