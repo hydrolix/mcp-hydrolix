@@ -41,7 +41,8 @@ from mcp_hydrolix.sa_attribution import ServiceAccountAttributionMiddleware
 from mcp_hydrolix import mcp_env
 from mcp_hydrolix.mcp_env import (
     HydrolixConfig,
-    _internal_deprecation_message,
+    _external_deprecation_instructions,
+    _internal_deprecation_log,
     get_config,
 )
 from mcp_hydrolix.column_analysis import (
@@ -89,7 +90,13 @@ HDX_ADMIN_COMMENT: Final[str] = (
 mcp = FastMCP(
     name=MCP_SERVER_NAME,
     auth=HydrolixCredentialChain(None),
-    instructions=HYDROLIX_CONFIG.deprecation_notice,
+    # External deployments with deprecated config get an LLM-visible nudge via the
+    # MCP ``instructions`` channel; internal/clean configs advertise no instructions.
+    instructions=(
+        _external_deprecation_instructions(HYDROLIX_CONFIG.deprecated_aliases)
+        if HYDROLIX_CONFIG.deprecation_audience == "external"
+        else None
+    ),
 )
 
 
@@ -164,7 +171,7 @@ def _maybe_emit_internal_deprecation_log(parsed_version: tuple[int, int]) -> Non
         return
     if mcp_env._internal_deprecation_warned:
         return
-    logger.error(_internal_deprecation_message(HYDROLIX_CONFIG.deprecated_aliases))
+    logger.error(_internal_deprecation_log(HYDROLIX_CONFIG.deprecated_aliases))
     mcp_env._internal_deprecation_warned = True
 
 

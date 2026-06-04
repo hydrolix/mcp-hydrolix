@@ -1,5 +1,5 @@
 """Tests for deprecated-alias detection, audience classification, and the
-external WARNING log / ``deprecation_notice`` channels.
+external WARNING log / ``deprecation_instructions`` channels.
 
 The version-gated *internal* probe log lives in ``test_internal_deprecation_version_gate.py``
 because it requires patching the ``/version`` HTTP probe.
@@ -18,6 +18,7 @@ from mcp_hydrolix.mcp_env import (
     HydrolixConfig,
     _classify_deprecation,
     _detect_deprecated_aliases,
+    _external_deprecation_instructions,
 )
 
 
@@ -116,26 +117,20 @@ class TestExternalWarningLog:
         assert warnings == []
 
 
-class TestDeprecationNotice:
-    def test_external_returns_message(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("HYDROLIX_HOST", "myhost")
-        c = HydrolixConfig()
-        notice = c.deprecation_notice
-        assert notice is not None
+class TestExternalDeprecationInstructions:
+    """The external LLM-visible instructions builder (FastMCP ``instructions``).
+
+    Audience gating (external vs internal vs none) is the consumer's job and is
+    covered by ``TestClassifyDeprecation``; here we only assert the string content.
+    """
+
+    def test_names_aliases_and_prompts_operator_contact(self) -> None:
+        notice = _external_deprecation_instructions(["HYDROLIX_HOST"])
         assert "HYDROLIX_HOST" in notice
         assert "HYDROLIX_URL" in notice
         # The LLM notice must prompt the user to reach their operator to migrate.
         assert "operator" in notice.lower()
         assert "contact" in notice.lower()
-
-    def test_internal_returns_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("HYDROLIX_HOST", "myhost")
-        monkeypatch.setenv("HYDROLIX_NAME", "mycluster")
-        assert HydrolixConfig().deprecation_notice is None
-
-    def test_no_deprecation_returns_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("HYDROLIX_URL", "https://cluster.example.com")
-        assert HydrolixConfig().deprecation_notice is None
 
 
 class TestNoDeprecationPath:
@@ -146,7 +141,6 @@ class TestNoDeprecationPath:
         monkeypatch.setenv("HYDROLIX_HTTP_QUERY_PORT", "8088")
         with caplog.at_level(logging.WARNING, logger="mcp-hydrolix"):
             c = HydrolixConfig()
-        assert c.deprecation_notice is None
         assert c.deprecation_audience is None
         warnings = [
             r
@@ -162,5 +156,4 @@ class TestNoDeprecationPath:
         monkeypatch.setenv("HYDROLIX_NAME", "mycluster")
         with caplog.at_level(logging.WARNING, logger="mcp-hydrolix"):
             c = HydrolixConfig()
-        assert c.deprecation_notice is None
         assert c.deprecation_audience is None

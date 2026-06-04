@@ -28,7 +28,7 @@ ALIAS_RENAMES: dict[str, str] = {
 DEPRECATED_ALIASES: tuple[str, ...] = tuple(ALIAS_RENAMES.keys())
 
 
-def _external_deprecation_message(aliases: list[str]) -> str:
+def _external_deprecation_log(aliases: list[str]) -> str:
     """Build the external-audience startup WARNING (server log; operator-facing)."""
     return (
         f"Deprecated Hydrolix environment variable(s) detected: {', '.join(aliases)}. "
@@ -39,7 +39,7 @@ def _external_deprecation_message(aliases: list[str]) -> str:
     )
 
 
-def _external_deprecation_notice(aliases: list[str]) -> str:
+def _external_deprecation_instructions(aliases: list[str]) -> str:
     """Build the LLM-visible external deprecation notice (FastMCP ``instructions``).
 
     Written as guidance for the assistant: surface the deprecation to the user
@@ -57,7 +57,7 @@ def _external_deprecation_notice(aliases: list[str]) -> str:
     )
 
 
-def _internal_deprecation_message(aliases: list[str]) -> str:
+def _internal_deprecation_log(aliases: list[str]) -> str:
     """Build the internal-audience deprecation message (OLD -> NEW pairs) for the given aliases."""
     pairs = ", ".join(f"{old} -> {ALIAS_RENAMES[old]}" for old in aliases)
     return (
@@ -191,23 +191,14 @@ class HydrolixConfig:
         self._parsed_url: Optional[ParseResult] = _parse_hydrolix_url()
         self._validate_required_vars()
 
-        # Snapshot deprecation state once so the LLM-visible notice and the
+        # Snapshot deprecation state once so the LLM-visible instructions and the
         # version-gated internal probe log agree on what was seen at startup.
         self._deprecated_aliases: list[str] = _detect_deprecated_aliases()
         self._deprecation_audience: Optional[str] = _classify_deprecation(self._deprecated_aliases)
-        # LLM-visible notice (FastMCP instructions), cached so the property is cheap.
-        # Distinct from the operator-facing startup log below: the notice tells the
-        # assistant to prompt the user to contact their operator; the log addresses
-        # the operator directly.
-        self._deprecation_notice: Optional[str] = (
-            _external_deprecation_notice(self._deprecated_aliases)
-            if self._deprecation_audience == "external"
-            else None
-        )
 
         global _external_deprecation_warned
         if self._deprecation_audience == "external" and not _external_deprecation_warned:
-            logger.warning(_external_deprecation_message(self._deprecated_aliases))
+            logger.warning(_external_deprecation_log(self._deprecated_aliases))
             _external_deprecation_warned = True
 
         # Credential to use for clickhouse connections when no per-request credential is provided
@@ -335,16 +326,6 @@ class HydrolixConfig:
     def deprecation_audience(self) -> Optional[str]:
         """``"external"``, ``"internal"``, or ``None`` -- determined at construction time."""
         return self._deprecation_audience
-
-    @property
-    def deprecation_notice(self) -> Optional[str]:
-        """LLM-visible deprecation advisory string, or ``None``.
-
-        Returns a non-empty message only for the ``"external"`` audience. Internal
-        operators are notified via the version-gated probe log, not via the MCP
-        ``instructions`` channel.
-        """
-        return self._deprecation_notice
 
     @property
     def database(self) -> Optional[str]:
