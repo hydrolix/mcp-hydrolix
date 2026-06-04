@@ -85,10 +85,11 @@ When a bearer token reaches the chain whose `iss` matches **neither** `OAuthConf
    - SHALL include the configured `OAuthConfig.issuer` value (so the operator can see the mismatch immediately).
    - SHALL include a short, fixed phrase identifying the failure mode (e.g. `"bearer iss matched no chain backend — likely IdP misconfiguration"`), greppable in log aggregation.
    - SHALL NOT include the raw JWT, the `Authorization` header value, the JWT signature segment, or any base64url-encoded JWT segment (covered by `oauth-log-redaction`'s invariant).
+3. Increment a counter `mcp_hydrolix_unrecognized_issuer_total` by 1, giving operators a numeric signal they can rate-alert on independently of log aggregation. The counter SHALL have no labels — an attacker-controlled `iss` value would otherwise explode label cardinality.
 
-The WARNING level (not ERROR) reflects that the worker still functioned correctly — it rejected an unauthenticatable request — but signals operator attention because the pattern usually means a config drift (wrong IdP URL, stale IdP after rotation, audience renamed, SA issuer suffix changed), not an attacker. The individual backends in the chain (`OAuthHydrolixAuthProvider`, `BearerAuthBackend`, `GetParamAuthBackend`) SHALL remain silent on their own deferrals; the consolidated WARNING is emitted **once**, at the chain boundary where the all-backends-deferred outcome is observable.
+The WARNING level (not ERROR) reflects that the worker still functioned correctly — it rejected an unauthenticatable request — but signals operator attention because the pattern usually means a config drift (wrong IdP URL, stale IdP after rotation, audience renamed, SA issuer suffix changed), not an attacker. The individual backends in the chain (`OAuthHydrolixAuthProvider`, `BearerAuthBackend`, `GetParamAuthBackend`) SHALL remain silent on their own deferrals; the consolidated WARNING and counter increment are emitted **once**, at the chain boundary where the all-backends-deferred outcome is observable.
 
-#### Scenario: Bearer With Unknown Issuer Yields 401 And WARNING
+#### Scenario: Bearer With Unknown Issuer Yields 401, WARNING, And Metric Increment
 
 - **WHEN** OAuth is active with `OAuthConfig.issuer="https://idp.example.com/realms/test"` and `HYDROLIX_URL="https://cluster.example.com"` (so the SA `iss` shape is `https://cluster.example.com/config`)
 - **AND** a request arrives with `Authorization: Bearer <jwt>` whose `iss="https://other-idp.example.com/realms/something"` (matches neither the configured OAuth issuer nor the SA `iss` shape)
@@ -97,11 +98,13 @@ The WARNING level (not ERROR) reflects that the worker still functioned correctl
 - **AND** that log record SHALL contain the unverified `iss` value `"https://other-idp.example.com/realms/something"`
 - **AND** that log record SHALL contain the configured `OAuthConfig.issuer` value `"https://idp.example.com/realms/test"`
 - **AND** that log record SHALL NOT contain the raw JWT or any of its base64url-encoded segments
+- **AND** the counter `mcp_hydrolix_unrecognized_issuer_total` SHALL have been incremented by exactly 1 for this request
 
 #### Scenario: Routine Deferrals Stay Silent
 
 - **WHEN** OAuth is active and a request arrives with a valid SA bearer (`iss` ends in `/config`, signature verifies) — i.e. `OAuthHydrolixAuthProvider` defers but `BearerAuthBackend` claims
 - **THEN** no WARNING-level "unrecognized issuer" log record SHALL be emitted
+- **AND** the counter `mcp_hydrolix_unrecognized_issuer_total` SHALL NOT be incremented for this request
 - **AND** the request SHALL be authenticated normally via the SA chain
 
 #### Scenario: Per-Backend Silent Deferral Preserved
