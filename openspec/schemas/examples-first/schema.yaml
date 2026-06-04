@@ -1,0 +1,201 @@
+name: examples-first
+version: 1
+description: >-
+  Lightweight, examples-first spec format — a single 4-section spec
+  (Intent → Examples → Constraints → Test plan) per change. Precise enough
+  to remove ambiguity for humans and AI tools, lean enough not to slow the
+  team down. Adapted from "Spec-Driven Development with Claude Code"
+  (Val Miscenko, 2026-05-27).
+
+# This schema is intentionally minimal: ONE artifact, ONE template. The whole
+# contract for a change lives in a single spec.md. Escalate to a heavier,
+# multi-artifact schema (e.g. interactive-spec-led) only when the triggers in
+# the "When To Add More Structure" note below actually fire. Default to less;
+# promotion is cheaper than demotion.
+#
+# Companion context (NOT part of this schema, but how it is meant to be used):
+# - Project-level `CLAUDE.md` at the repo root holds the standing context that
+#   applies to all work: architecture invariants, conventions, and the 10-20
+#   non-obvious rules AI tools consistently miss. Once a fact lives there it
+#   need not be repeated in a per-change spec.
+# - Promotion rule: when the same constraint shows up in two or three specs in
+#   a row, move it into `CLAUDE.md`. That keeps `CLAUDE.md` honest (only things
+#   that recur) and keeps each spec short (no restating what is already global).
+#
+# When To Add More Structure (escalate off this schema only when):
+# - The behavior is genuinely complex and discrete examples cannot capture it
+#   — add a short prose section ABOVE Examples, not below.
+# - Multiple teams must integrate against the same contract — write a separate,
+#   versioned API doc; the spec describes the CHANGE, not the contract.
+# - Compliance / audit requirements demand a paper trail — archive the spec
+#   under `docs/specs/` after merge.
+#
+# OpenSpec CLI usage (IMPORTANT — this schema is intentionally non-delta):
+# An examples-first change is a single flat spec.md (Intent / Examples /
+# Constraints / Test plan). It deliberately does NOT emit OpenSpec delta specs
+# (`specs/<cap>/spec.md` with `## ADDED|MODIFIED|REMOVED Requirements` +
+# `#### Scenario:`), because the durable contract is the TEST SUITE, not
+# `openspec/specs/`. Consequences for the native CLI (verified, v1.3.1):
+# - `openspec schema validate examples-first`  ✓ valid.
+# - `openspec new change <name> --schema examples-first`  ✓ scaffolds.
+# - `openspec instructions spec --change <name>`  ✓ (this is what the opsx
+#   generation skills call — fully supported).
+# - `openspec list` / artifact status  ✓.
+# - `openspec validate <change>`  ✗ ERROR "Change must have at least one
+#   delta." This is EXPECTED and not a defect of the change — the native
+#   validator only understands delta specs. Do NOT run `openspec validate`
+#   on an examples-first change; verify it via this schema's `apply` block
+#   (section/coverage/constraint checks + the test suite) instead.
+# - `openspec archive <change>`  use `--skip-specs`:
+#       openspec archive <change> --skip-specs -y
+#   (default archive runs validate and is blocked by the no-delta error;
+#   `--skip-specs` turns it into a non-blocking warning and archives cleanly.
+#   There are no deltas to merge into `openspec/specs/` by design.)
+# - Bulk `openspec validate --all` / `--changes` reports examples-first
+#   changes as invalid (the no-delta error) but does NOT abort the run or
+#   affect spec-driven / interactive-spec-led changes; it exits non-zero only
+#   because of those entries. If you gate CI on bulk validate, exclude
+#   examples-first changes or treat their no-delta error as expected.
+
+artifacts:
+  - id: spec
+    generates: spec.md
+    description: The whole contract for a change — Intent, Examples, Constraints, Test plan
+    template: spec.md
+    instruction: |
+      Write a single spec.md capturing the change. Four sections, in this
+      EXACT order. Examples replace prose: if a behavior is not captured in an
+      example, it is not in the spec.
+
+      STEP 0 — Grill the operator first (INTERACTIVE, REQUIRED).
+      Do NOT draft spec.md until you have run an interactive Q&A with the
+      operator. This is the highest-leverage step in this schema: the four
+      sections are only as good as the examples and constraints you extract
+      here, and operators routinely under-specify edge cases, invalid inputs,
+      and the rules that "look like a mistake". Override the usual
+      keep-momentum bias — a few rounds of questions here are cheaper than a
+      wrong spec.
+        1. Read any context the operator gave and restate the behavior in one
+           sentence back to them to confirm scope.
+        2. Ask ONE OR A FEW questions at a time using the AskUserQuestion tool
+           (open-ended where preset options don't fit). DO NOT batch every
+           question into a single message — let each answer shape the next.
+        3. Grill specifically for what the four sections need:
+           - Intent: who/what CONSUMES this behavior, and what is out of scope?
+           - Examples: the happy path AND — pushed for explicitly — at least
+             one edge case and at least one invalid-input case (and the exact
+             error/exception each produces). If the operator offers only the
+             happy path, keep asking "what about when …?" until you have both.
+           - Constraints: fixed signatures/interfaces that MUST NOT change,
+             performance/concurrency bounds, purity/side-effect rules, and any
+             intentional code that LOOKS like a bug so it is not "cleaned up".
+           - Test plan: which test types matter (unit/regression/integration/
+             property) and any non-obvious case or real-world input to cover.
+        4. Stop when you can write all four sections WITHOUT guessing.
+        Escape hatch: if the operator explicitly says there is no ambiguity (or
+        declines to be grilled), proceed — but record that you asked.
+      Fold every answer directly into the relevant section below (Intent,
+      Examples, Constraints, Test plan). The Q&A is NOT a separate file — this
+      schema is single-template; spec.md is the only artifact.
+
+      Required sections (all four, in order):
+
+      ### 1. Intent (1-3 sentences)
+        WHAT and WHY — never HOW. Name the consumer of this behavior so a
+        reviewer can sanity-check scope. Keep it to 1-3 sentences. If you
+        cannot say what consumes the behavior, the change is not scoped yet.
+
+      ### 2. Examples
+        Concrete `input -> output` pairs. MUST cover at minimum:
+        - the happy path,
+        - at least one edge case,
+        - at least one invalid-input case (name the error / exception).
+        Use a "Normal" base case, then show only the inputs that CHANGE from
+        Normal in each subsequent case (all unstated inputs stay at their
+        Normal values). One bold case name per example, then `in:` and `out:`
+        bullets with the values inline in backticks. Examples are the
+        behavioral source of truth — the implementation and the tests both
+        derive from them.
+
+      ### 3. Constraints
+        Explicit invariants and "do NOT" rules that examples cannot express.
+        This section is the highest value-per-line — spend effort here. Cover
+        as applicable:
+        - Interfaces / signatures that MUST NOT change (state them verbatim).
+        - Performance bounds, concurrency requirements.
+        - Purity / side-effect rules (e.g. "no I/O, no logging side effects").
+        - Intentional code that LOOKS like a mistake — flag it explicitly so
+          AI tools and refactors do not "clean it up" and break it.
+        Use uppercase MUST / MUST NOT / SHALL for binding rules so they read
+        unambiguously to both humans and AI tools.
+
+      ### 4. Test plan
+        Name the TYPES of tests required (unit, regression, integration,
+        property) and the non-obvious cases they must cover (boundaries,
+        each example as a case, real production-input regression where it
+        applies). Do NOT write test code here — the implementation derives it
+        from the Examples. Every example in section 2 MUST be reachable by at
+        least one test named in this plan.
+
+      Format:
+      - Start the file with a one-line italic summary (<= 25 words): what this
+        change does, so a reviewer can skim it at a glance.
+      - Use the section headings exactly: `### 1. Intent`, `### 2. Examples`,
+        `### 3. Constraints`, `### 4. Test plan`.
+
+      Do NOT write:
+      - Implementation steps or line-by-line how-to (that is the code's job).
+      - Long background sections restating context the reader already has.
+      - Prose where an example would be clearer (examples replace prose).
+
+      Target length: <= 1 page. If a single spec.md cannot hold the change,
+      that is a signal to either split the change or escalate to a heavier
+      schema — see the "When To Add More Structure" note in schema.yaml.
+    requires: []
+
+apply:
+  requires: [spec]
+  instruction: |
+    Runbook for implementing an examples-first spec. The spec is the contract;
+    the test suite is what encodes the durable version of it after merge.
+
+    Pre-flight (before touching code):
+    1. Read spec.md end to end.
+    2. Section presence check — confirm all four sections exist, in order:
+       `### 1. Intent`, `### 2. Examples`, `### 3. Constraints`,
+       `### 4. Test plan`. If any is missing or out of order, STOP and surface
+       to the operator.
+    3. Examples-coverage check — confirm Examples include at least one happy
+       path, at least one edge case, and at least one invalid-input case. If
+       any class is missing, STOP.
+    4. Constraints review — read every Constraint. Treat each `MUST` /
+       `MUST NOT` / fixed-signature / flagged-intentional-code line as
+       NON-NEGOTIABLE during implementation. In particular, do NOT "fix" code
+       the spec has flagged as intentional-but-mistake-looking.
+
+    Execution:
+    - Implement to satisfy every Example as written. Examples are the
+      behavioral source of truth; where the spec text and an example disagree,
+      STOP and ask rather than guessing.
+    - Honor every Constraint. If a Constraint forces a choice the spec did not
+      anticipate, STOP and ask — do not re-litigate it silently.
+    - Write the tests named in the Test plan. Every Example MUST be covered by
+      at least one test. Follow the repo's existing test layout and naming
+      convention.
+
+    Verify (after implementation):
+    - Run the project's test suite and confirm every Example passes as a case.
+    - Re-read the Constraints and confirm none were violated by the
+      implementation or by incidental refactors.
+    - Surface results to the operator. Report any Example or Constraint you
+      could not verify in this environment rather than silently skipping it.
+
+    Pause-and-ask conditions:
+    - An Example contradicts another Example, or the Intent.
+    - A Constraint cannot be honored as written.
+    - A test named in the Test plan cannot be run in this environment.
+
+    The implementing agent is "done" when every Example passes as a test and
+    every Constraint holds. The spec.md itself is disposable on merge — the
+    test suite is the durable contract. Do not archive or delete the spec
+    yourself; leave that to the operator.
