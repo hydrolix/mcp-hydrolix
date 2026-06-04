@@ -109,9 +109,9 @@ class TestTruststoreInjectedInWorkerProcess:
             env={
                 **os.environ,
                 # mcp_hydrolix/__init__.py imports mcp_server, which calls get_config()
-                # at module level and requires HYDROLIX_HOST. The value is unused here;
-                # we never connect.
-                "HYDROLIX_HOST": "localhost",
+                # at module level and requires a connection target (HYDROLIX_URL). The
+                # value is unused here; we never connect.
+                "HYDROLIX_URL": "http://localhost",
                 # Ensure no stray opt-out leaks from the parent test environment.
                 "MCP_HYDROLIX_TRUSTSTORE_DISABLE": "",
             },
@@ -142,7 +142,7 @@ class TestTruststoreInjectedInWorkerProcess:
         """)
         env = {
             **os.environ,
-            "HYDROLIX_HOST": "localhost",
+            "HYDROLIX_URL": "http://localhost",
             "MCP_HYDROLIX_TRUSTSTORE_DISABLE": "1",
         }
         result = subprocess.run(

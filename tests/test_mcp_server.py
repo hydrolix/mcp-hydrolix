@@ -694,7 +694,7 @@ class TestHydrolixConfigValidation:
     @pytest.fixture(autouse=True)
     def _base_env(self, monkeypatch):
         """Set the minimum required env vars for HydrolixConfig construction."""
-        monkeypatch.setenv("HYDROLIX_HOST", "localhost")
+        monkeypatch.setenv("HYDROLIX_URL", "http://localhost")
         monkeypatch.setenv("HYDROLIX_USER", "user")
         monkeypatch.setenv("HYDROLIX_PASSWORD", "pass")
 

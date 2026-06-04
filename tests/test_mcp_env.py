@@ -33,7 +33,7 @@ def _isolate_hydrolix_env(monkeypatch: pytest.MonkeyPatch) -> None:
 def config(monkeypatch: pytest.MonkeyPatch) -> HydrolixConfig:
     """Return a fresh ``HydrolixConfig`` with the minimal required env vars set."""
 
-    monkeypatch.setenv("HYDROLIX_HOST", "example.invalid")
+    monkeypatch.setenv("HYDROLIX_URL", "https://example.invalid")
     return HydrolixConfig()
 
 
@@ -98,7 +98,7 @@ class TestCredentialResolution:
 
     @pytest.fixture(autouse=True)
     def _base_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("HYDROLIX_HOST", "example.invalid")
+        monkeypatch.setenv("HYDROLIX_URL", "https://example.invalid")
         monkeypatch.delenv("HYDROLIX_TOKEN", raising=False)
         monkeypatch.delenv("HYDROLIX_USER", raising=False)
         monkeypatch.delenv("HYDROLIX_PASSWORD", raising=False)

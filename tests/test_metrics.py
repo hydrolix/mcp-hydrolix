@@ -64,7 +64,7 @@ def _probe_filesystem_no_side_effects() -> dict[str, list[str]]:
 
 
 def _set_child_env(monkeypatch, *, metrics_enabled: str) -> None:
-    monkeypatch.setenv("HYDROLIX_HOST", "example.invalid")
+    monkeypatch.setenv("HYDROLIX_URL", "https://example.invalid")
     monkeypatch.setenv("HYDROLIX_METRICS_ENABLED", metrics_enabled)
     monkeypatch.delenv("PROMETHEUS_MULTIPROC_DIR", raising=False)
 
