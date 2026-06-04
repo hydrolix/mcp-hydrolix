@@ -41,7 +41,7 @@ The ChainedAuthBackend utility is intended to be a general-purpose, N-ary chain.
 
 - **WHEN** OAuth has activated successfully for the worker
 - **AND** a request arrives with `Authorization: Bearer <invalid-jwt>` whose `iss` matches the OAuth issuer
-- **THEN** `OAuthHydrolixAuthProvider` SHALL claim the bearer and raise 401
+- **THEN** `OAuthHydrolixAuthProvider` SHALL claim the bearer
 - **AND** the response status SHALL be 401
 - **AND** the response SHALL include a `WWW-Authenticate: Bearer` header (with the `resource_metadata=` parameter per `oauth-resource-metadata`)
 
