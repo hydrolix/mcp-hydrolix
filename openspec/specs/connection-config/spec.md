@@ -333,11 +333,11 @@ The `/version` probe URL in `_check_parameterized_query_support` SHALL use `vers
 
 ### Requirement: deprecation_notice property for LLM delivery
 
-**(Transitional — will be REMOVED when the five deprecated aliases are dropped in a future change.)** `HydrolixConfig.deprecation_notice` SHALL return a non-empty string containing the external deprecation advisory when `deprecation_audience` is `"external"`. It SHALL return `None` when `deprecation_audience` is `"internal"` or `None`.
+**(Transitional — will be REMOVED when the five deprecated aliases are dropped in a future change.)** `HydrolixConfig.deprecation_notice` SHALL return a non-empty string containing the external deprecation advisory when `deprecation_audience` is `"external"`. It SHALL return `None` when `deprecation_audience` is `"internal"` or `None`. Because this notice is delivered to the LLM (not the operator), it SHALL be phrased as guidance for the assistant and SHALL explicitly encourage the assistant to inform the user and prompt them to contact their Hydrolix operator (whoever administers the MCP server's configuration) to replace the deprecated variables with `HYDROLIX_URL`.
 
 #### Scenario: External deprecation notice
 - **WHEN** `deprecation_audience` is `"external"`
-- **THEN** ✅ `deprecation_notice` returns a string mentioning the deprecated alias(es) and `HYDROLIX_URL` as the sufficient migration target
+- **THEN** ✅ `deprecation_notice` returns a string mentioning the deprecated alias(es) and `HYDROLIX_URL` as the sufficient migration target, and encouraging the assistant to prompt the user to contact their operator to make the change
 
 #### Scenario: Internal deprecation notice is None
 - **WHEN** `deprecation_audience` is `"internal"`

@@ -124,6 +124,9 @@ class TestDeprecationNotice:
         assert notice is not None
         assert "HYDROLIX_HOST" in notice
         assert "HYDROLIX_URL" in notice
+        # The LLM notice must prompt the user to reach their operator to migrate.
+        assert "operator" in notice.lower()
+        assert "contact" in notice.lower()
 
     def test_internal_returns_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("HYDROLIX_HOST", "myhost")

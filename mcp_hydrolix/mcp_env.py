@@ -29,13 +29,31 @@ DEPRECATED_ALIASES: tuple[str, ...] = tuple(ALIAS_RENAMES.keys())
 
 
 def _external_deprecation_message(aliases: list[str]) -> str:
-    """Build the external-audience deprecation advisory for the given deprecated aliases."""
+    """Build the external-audience startup WARNING (server log; operator-facing)."""
     return (
         f"Deprecated Hydrolix environment variable(s) detected: {', '.join(aliases)}. "
         "These will be removed in a future release. "
         "For typical external deployments, setting HYDROLIX_URL alone "
         "(e.g. HYDROLIX_URL=https://mycluster.hydrolix.live) is sufficient "
         "and replaces all of these variables."
+    )
+
+
+def _external_deprecation_notice(aliases: list[str]) -> str:
+    """Build the LLM-visible external deprecation notice (FastMCP ``instructions``).
+
+    Written as guidance for the assistant: surface the deprecation to the user
+    and prompt them to have whoever operates this server migrate the config. The
+    end user is usually not the operator, so the actionable step is to reach out.
+    """
+    return (
+        f"This Hydrolix MCP server is configured with deprecated environment "
+        f"variable(s): {', '.join(aliases)}. They will be removed in a future "
+        "release. Please tell the user about this and encourage them to contact "
+        "their Hydrolix operator (whoever administers this MCP server's "
+        "configuration) to replace these deprecated variables with HYDROLIX_URL "
+        "(e.g. HYDROLIX_URL=https://mycluster.hydrolix.live), which alone is "
+        "sufficient for typical external deployments."
     )
 
 
@@ -177,17 +195,19 @@ class HydrolixConfig:
         # version-gated internal probe log agree on what was seen at startup.
         self._deprecated_aliases: list[str] = _detect_deprecated_aliases()
         self._deprecation_audience: Optional[str] = _classify_deprecation(self._deprecated_aliases)
-        # Format the external advisory once; both the startup log and the
-        # deprecation_notice property read this cached value.
+        # LLM-visible notice (FastMCP instructions), cached so the property is cheap.
+        # Distinct from the operator-facing startup log below: the notice tells the
+        # assistant to prompt the user to contact their operator; the log addresses
+        # the operator directly.
         self._deprecation_notice: Optional[str] = (
-            _external_deprecation_message(self._deprecated_aliases)
+            _external_deprecation_notice(self._deprecated_aliases)
             if self._deprecation_audience == "external"
             else None
         )
 
         global _external_deprecation_warned
-        if self._deprecation_notice is not None and not _external_deprecation_warned:
-            logger.warning(self._deprecation_notice)
+        if self._deprecation_audience == "external" and not _external_deprecation_warned:
+            logger.warning(_external_deprecation_message(self._deprecated_aliases))
             _external_deprecation_warned = True
 
         # Credential to use for clickhouse connections when no per-request credential is provided
