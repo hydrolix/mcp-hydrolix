@@ -38,7 +38,13 @@ from mcp_hydrolix.auth import (
     get_request_credential,
 )
 from mcp_hydrolix.sa_attribution import ServiceAccountAttributionMiddleware
-from mcp_hydrolix.mcp_env import HydrolixConfig, get_config
+from mcp_hydrolix import mcp_env
+from mcp_hydrolix.mcp_env import (
+    HydrolixConfig,
+    _external_deprecation_instructions,
+    _internal_deprecation_log,
+    get_config,
+)
 from mcp_hydrolix.column_analysis import (
     _enrich_column_metadata,
     result_to_table,
@@ -84,6 +90,13 @@ HDX_ADMIN_COMMENT: Final[str] = (
 mcp = FastMCP(
     name=MCP_SERVER_NAME,
     auth=HydrolixCredentialChain(None),
+    # External deployments with deprecated config get an LLM-visible nudge via the
+    # MCP ``instructions`` channel; internal/clean configs advertise no instructions.
+    instructions=(
+        _external_deprecation_instructions(HYDROLIX_CONFIG.deprecated_aliases)
+        if HYDROLIX_CONFIG.deprecation_audience == "external"
+        else None
+    ),
 )
 
 
@@ -144,6 +157,24 @@ _parameterized_queries_supported: Optional[bool] = None
 _parameterized_queries_lock = asyncio.Lock()
 
 
+def _maybe_emit_internal_deprecation_log(parsed_version: tuple[int, int]) -> None:
+    """Emit an ERROR log for in-cluster operators on Hydrolix >= 6.1, exactly once.
+
+    Internal (o6r-managed) deployments don't see the LLM-visible advisory; the
+    `/version` probe is the only place we can know the cluster supports the new
+    env var names. Gated by version (6.1 is the first release whose o6r emits
+    the new names) and a process-level sentinel.
+    """
+    if HYDROLIX_CONFIG.deprecation_audience != "internal":
+        return
+    if parsed_version < (6, 1):
+        return
+    if mcp_env._internal_deprecation_warned:
+        return
+    logger.error(_internal_deprecation_log(HYDROLIX_CONFIG.deprecated_aliases))
+    mcp_env._internal_deprecation_warned = True
+
+
 def _parse_hydrolix_version(version_str: str) -> Optional[tuple[int, int]]:
     """Parse a Hydrolix version string into a (major, minor) tuple.
 
@@ -181,9 +212,11 @@ async def _check_parameterized_query_support() -> bool:
         else:
             headers = {"Authorization": f"Bearer {cast(ServiceAccountToken, creds).token}"}
 
-        scheme = "https" if HYDROLIX_CONFIG.secure else "http"
-        proxy = HYDROLIX_CONFIG.proxy_path or ""
-        url = f"{scheme}://{HYDROLIX_CONFIG.api_host}:{HYDROLIX_CONFIG.api_port}{proxy}/version"
+        scheme = "https" if HYDROLIX_CONFIG.version_api_secure else "http"
+        url = (
+            f"{scheme}://{HYDROLIX_CONFIG.version_api_host}:"
+            f"{HYDROLIX_CONFIG.version_api_port}/version"
+        )
 
         try:
             response = await asyncio.to_thread(
@@ -215,6 +248,7 @@ async def _check_parameterized_query_support() -> bool:
             f"Hydrolix version {version_str!r}: parameterized queries "
             f"{'supported' if _parameterized_queries_supported else 'not supported'}"
         )
+        _maybe_emit_internal_deprecation_log(parsed)
 
     return _parameterized_queries_supported
 

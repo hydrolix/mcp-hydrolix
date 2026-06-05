@@ -69,7 +69,8 @@ This will:
 7. Verify that every pod backing the Deployment is running the expected
    image. This catches edge cases where Deployment status counters look
    healthy but k8s never cut traffic from old pods to new ones.
-8. Log in via `POST https://{HYDROLIX_HOST}/config/v1/login` for a bearer token.
+8. Log in via `POST https://<cluster-host>/config/v1/login` for a bearer token
+   (the host is derived from `HYDROLIX_URL` or the CR's `spec.hydrolix_url`).
 9. Run the smoke tests over `/mcp`.
 10. Restore the snapshotted CR state and drop the advisory lock — even on
     failure or interrupt.

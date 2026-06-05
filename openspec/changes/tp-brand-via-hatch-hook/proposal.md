@@ -8,7 +8,7 @@ TrafficPeak launches must be self-contained — no Hydrolix branding visible to 
 
 - Add a TP-branded PyPI distribution `mcp-trafficpeak` built from the same source as `mcp-hydrolix` at the same version, published from a minimal sibling repo that checks out this repo at the release tag.
 - Source every customer-visible MCP-server identifier (startup log, outbound `User-Agent`, FastMCP server name, query admin-comment User token) from a build-time-baked constant, not from runtime signals.
-- Accept a parallel `TRAFFICPEAK_*` runtime env-var namespace mirroring the full `HYDROLIX_*` namespace; resolve as full-chain TP-then-Hydrolix, never per-variable interleaved.
+- Accept a parallel `TRAFFICPEAK_*` runtime env-var namespace mirroring the modern `HYDROLIX_*` variables (the deprecated aliases are not mirrored); resolve as full-chain TP-then-Hydrolix, never per-variable interleaved.
 - Enforce an **artifact-parity invariant**: every Hydrolix release artifact MUST have a same-version TrafficPeak counterpart produced in the same workflow run.
 - Brand-parameterize the mcpb bundle.
 - Customer-facing docs in this repo stay Hydrolix-only; the TP PyPI landing page is generated from this repo's `README.md` at build time via a brand-substitution filter.

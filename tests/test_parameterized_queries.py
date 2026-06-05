@@ -153,10 +153,9 @@ class TestCheckParameterizedQuerySupport:
     @patch("mcp_hydrolix.mcp_server.asyncio.to_thread")
     async def test_username_password_sends_basic_auth(self, mock_to_thread, mock_cred, mock_config):
         mock_config.creds_with.return_value = UsernamePassword(username="user", password="s3cr3t")
-        mock_config.secure = False
-        mock_config.api_host = "localhost"
-        mock_config.api_port = 80
-        mock_config.proxy_path = ""
+        mock_config.version_api_secure = False
+        mock_config.version_api_host = "localhost"
+        mock_config.version_api_port = 80
         mock_to_thread.return_value = _make_urllib3_response("v5.12.0")
 
         result = await server._check_parameterized_query_support()
@@ -175,10 +174,9 @@ class TestCheckParameterizedQuerySupport:
         mock_token = MagicMock()
         mock_token.token = "my-bearer-token"
         mock_config.creds_with.return_value = mock_token
-        mock_config.secure = True
-        mock_config.api_host = "hydrolix.example.com"
-        mock_config.api_port = 443
-        mock_config.proxy_path = ""
+        mock_config.version_api_secure = True
+        mock_config.version_api_host = "hydrolix.example.com"
+        mock_config.version_api_port = 443
         mock_to_thread.return_value = _make_urllib3_response("v5.12.0")
 
         result = await server._check_parameterized_query_support()
@@ -191,14 +189,13 @@ class TestCheckParameterizedQuerySupport:
     @patch("mcp_hydrolix.mcp_server.get_request_credential", return_value=None)
     @patch("mcp_hydrolix.mcp_server.asyncio.to_thread")
     async def test_version_url_out_of_cluster(self, mock_to_thread, mock_cred, mock_config):
-        """Out-of-cluster: api_host matches HYDROLIX_HOST, api_port is 443."""
+        """Out-of-cluster: version_api_host matches the cluster host, version_api_port is 443."""
         mock_token = MagicMock()
         mock_token.token = "tok"
         mock_config.creds_with.return_value = mock_token
-        mock_config.secure = True
-        mock_config.api_host = "qe-innovations-3.hydrolix.dev"
-        mock_config.api_port = 443
-        mock_config.proxy_path = ""
+        mock_config.version_api_secure = True
+        mock_config.version_api_host = "qe-innovations-3.hydrolix.dev"
+        mock_config.version_api_port = 443
         mock_to_thread.return_value = _make_urllib3_response("v5.12.0")
 
         await server._check_parameterized_query_support()
@@ -210,14 +207,13 @@ class TestCheckParameterizedQuerySupport:
     @patch("mcp_hydrolix.mcp_server.get_request_credential", return_value=None)
     @patch("mcp_hydrolix.mcp_server.asyncio.to_thread")
     async def test_version_url_in_cluster(self, mock_to_thread, mock_cred, mock_config):
-        """In-cluster pod: api_host='version', api_port=23925, scheme http."""
+        """In-cluster pod: version_api_host='version', version_api_port=23925, scheme http."""
         mock_token = MagicMock()
         mock_token.token = "tok"
         mock_config.creds_with.return_value = mock_token
-        mock_config.secure = False
-        mock_config.api_host = "version"
-        mock_config.api_port = 23925
-        mock_config.proxy_path = ""
+        mock_config.version_api_secure = False
+        mock_config.version_api_host = "version"
+        mock_config.version_api_port = 23925
         mock_to_thread.return_value = _make_urllib3_response("v5.12.0")
 
         await server._check_parameterized_query_support()

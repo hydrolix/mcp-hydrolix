@@ -3,10 +3,11 @@
 ## ADDED Requirements
 
 ### Requirement: Two PyPI Distributions Built From One Source Via A Build-Time Brand Flag
-<!-- settle: explore/approach-hatchling-hook -->
-<!-- settle: explore/tp-pypi-via-sibling-repo -->
 
 Two PyPI distributions, `mcp-hydrolix` and `mcp-trafficpeak`, SHALL be released together at the same version string, both built from the same source revision *of this repository*. The selection between brands at build time SHALL be controlled exclusively by an environment variable `MCP_BRAND` with the literal values `hydrolix` or `trafficpeak` (default: `hydrolix`). A custom Hatchling build hook (in `hatch_build.py` adjacent to `pyproject.toml`) SHALL be the single chokepoint that mutates wheel metadata based on `MCP_BRAND`. Sibling or parallel `pyproject.toml` files MUST NOT be introduced; the two distributions MUST NOT diverge in dependencies, version, or any other shared field. The `mcp-hydrolix` distribution is published by this repo's release workflow; the `mcp-trafficpeak` distribution is published by the sibling repo `hydrolix/mcp-trafficpeak` (which checks out this repo at the release tag) per Requirement: Only Pypi Publishing Goes Through The Sibling Repo.
+
+<!-- settle: explore/approach-hatchling-hook -->
+<!-- settle: explore/tp-pypi-via-sibling-repo -->
 
 #### Scenario: Default Build Produces The Hydrolix Wheel
 
@@ -31,9 +32,10 @@ Two PyPI distributions, `mcp-hydrolix` and `mcp-trafficpeak`, SHALL be released 
 - **AND** no source file under `mcp_hydrolix/` was loaded from the sibling repo's own contents
 
 ### Requirement: Brand-Appropriate Distribution Metadata With Zero Cross-Brand Leakage
-<!-- settle: explore/approach-hatchling-hook -->
 
 The Hatchling build hook SHALL set `project.name`, `[project.scripts]` console-script name, `project.urls`, `project.description`, and `Author`/`Maintainer` fields to brand-appropriate values for the wheel being built. The TrafficPeak wheel's distribution metadata MUST NOT contain the literal string `hydrolix` (case-insensitive) in any user-visible field, with the sole exception of internal Python module / import paths which are not user-visible. The Hydrolix wheel's distribution metadata MUST NOT contain the literal string `trafficpeak` (case-insensitive) in any field.
+
+<!-- settle: explore/approach-hatchling-hook -->
 
 #### Scenario: Pip Show On Tp Wheel Has No Hydrolix String
 
@@ -69,7 +71,6 @@ The Hatchling build hook SHALL set `project.name`, `[project.scripts]` console-s
 - **AND** the prose brand name `Hydrolix` has been substituted per the per-brand substitution table
 
 ### Requirement: Runtime Brand Identifier Baked At Build Time
-<!-- settle: explore/approach-hatchling-hook -->
 
 The build hook SHALL write a module (e.g. `mcp_hydrolix/_brand.py`) into the wheel containing at minimum two constants: `__brand__` equal to either `"hydrolix"` or `"trafficpeak"` (the short identifier) and `__dist_name__` equal to the matching PyPI distribution name (`"mcp-hydrolix"` or `"mcp-trafficpeak"`). The server SHALL determine its runtime brand identifier and runtime distribution name exclusively from these baked constants. The distribution name MUST be used wherever the server identifies itself in customer-visible output:
 
@@ -79,6 +80,8 @@ The build hook SHALL write a module (e.g. `mcp_hydrolix/_brand.py`) into the whe
 - the `User` token of the `hdx_query_admin_comment` setting attached to outbound SQL queries
 
 These values MUST NOT be derived from `sys.argv[0]`, from which environment-variable namespace supplied credentials, or from any other runtime-detectable signal. The literal string `"mcp-hydrolix"` MUST NOT appear in customer-visible runtime output produced by a wheel built with `MCP_BRAND=trafficpeak`.
+
+<!-- settle: explore/approach-hatchling-hook -->
 
 #### Scenario: Brand Identifier In Startup Log Reflects Baked Constant
 
@@ -119,9 +122,10 @@ These values MUST NOT be derived from `sys.argv[0]`, from which environment-vari
 - **THEN** none of those outputs contains the substring `mcp-hydrolix` (case-insensitive)
 
 ### Requirement: Dual-Namespace Env-Var Contract With Whole-Chain Precedence
-<!-- settle: explore/env-var-namespace-chain -->
 
-The server SHALL accept a `TRAFFICPEAK_*` environment-variable namespace that mirrors the entire `HYDROLIX_*` namespace one-for-one — every variable consumed by the configuration resolver (including but not limited to `URL`, `HOST`, `TOKEN`, `HTTP_QUERY_HOST` / `PORT` / `SECURE`, `VERSION_API_HOST` / `PORT` / `SECURE`, `VERIFY`, `USER`, `PASSWORD`) MUST be accepted under both prefixes with identical semantics, including identical within-namespace precedence rules. At startup, the server SHALL resolve its effective configuration by first running the full resolver over the `TRAFFICPEAK_*` namespace; if a layer-1 anchor (`TRAFFICPEAK_URL` or `TRAFFICPEAK_HOST`) is present the result MUST be used and `HYDROLIX_*` MUST be ignored entirely; otherwise the server SHALL re-run the same resolver over `HYDROLIX_*`. The two namespaces MUST NOT interleave on a per-variable basis. If both namespaces independently resolve to different effective values, the server SHALL prefer the TrafficPeak resolution and SHALL emit exactly one WARNING-level log line at startup naming the conflicting layer-1 variables and identifying `TRAFFICPEAK_*` as the winner. Identical effective values → silent. Neither namespace resolves → exit non-zero with an error message naming `TRAFFICPEAK_URL` / `TRAFFICPEAK_HOST` and `HYDROLIX_URL` / `HYDROLIX_HOST` as acceptable layer-1 anchors.
+The server SHALL accept a `TRAFFICPEAK_*` environment-variable namespace that mirrors the **modern** `HYDROLIX_*` variables one-for-one — every non-deprecated variable consumed by the configuration resolver (including but not limited to `URL`, `TOKEN`, `HTTP_QUERY_HOST` / `PORT` / `SECURE`, `VERSION_API_HOST` / `PORT` / `SECURE`, `VERIFY`, `USER`, `PASSWORD`) MUST be accepted under both prefixes with identical semantics, including identical within-namespace precedence rules. The deprecated `HYDROLIX_*` aliases (`HYDROLIX_HOST`, `HYDROLIX_PORT`, `HYDROLIX_SECURE`, `HYDROLIX_API_HOST`, `HYDROLIX_API_PORT`) are NOT mirrored under `TRAFFICPEAK_*`; the TrafficPeak namespace supports only the modern variable scheme, so `TRAFFICPEAK_URL` is its sole layer-1 anchor. At startup, the server SHALL resolve its effective configuration by first running the full resolver over the `TRAFFICPEAK_*` namespace; if the layer-1 anchor `TRAFFICPEAK_URL` is present the result MUST be used and `HYDROLIX_*` MUST be ignored entirely; otherwise the server SHALL re-run the same resolver over `HYDROLIX_*` (whose layer-1 anchor is `HYDROLIX_URL`, or the deprecated `HYDROLIX_HOST` alias accepted only for stdio transport). The two namespaces MUST NOT interleave on a per-variable basis. If both namespaces independently resolve to different effective values, the server SHALL prefer the TrafficPeak resolution and SHALL emit exactly one WARNING-level log line at startup naming the conflicting layer-1 variables and identifying `TRAFFICPEAK_*` as the winner. Identical effective values → silent. Neither namespace resolves → exit non-zero with an error message naming `TRAFFICPEAK_URL` and `HYDROLIX_URL` as the acceptable layer-1 anchors.
+
+<!-- settle: explore/env-var-namespace-chain -->
 
 #### Scenario: Only Trafficpeak Env Vars Provided
 
@@ -137,7 +141,7 @@ The server SHALL accept a `TRAFFICPEAK_*` environment-variable namespace that mi
 
 #### Scenario: Partial Trafficpeak Config Falls Through To Hydrolix
 
-- **GIVEN** `TRAFFICPEAK_HTTP_QUERY_HOST` is set, no `TRAFFICPEAK_URL` / `TRAFFICPEAK_HOST` anchor is set, and `HYDROLIX_URL` is set
+- **GIVEN** `TRAFFICPEAK_HTTP_QUERY_HOST` is set, no `TRAFFICPEAK_URL` anchor is set, and `HYDROLIX_URL` is set
 - **WHEN** the server starts
 - **THEN** the server falls through to the `HYDROLIX_*` namespace, uses `HYDROLIX_URL` and Hydrolix-namespace overrides, and ignores the stray `TRAFFICPEAK_HTTP_QUERY_HOST`
 
@@ -155,9 +159,9 @@ The server SHALL accept a `TRAFFICPEAK_*` environment-variable namespace that mi
 
 #### Scenario: Neither Namespace Provides An Anchor
 
-- **GIVEN** none of `TRAFFICPEAK_URL`, `TRAFFICPEAK_HOST`, `HYDROLIX_URL`, `HYDROLIX_HOST` are set
+- **GIVEN** none of `TRAFFICPEAK_URL`, `HYDROLIX_URL`, or the deprecated `HYDROLIX_HOST` are set
 - **WHEN** the server starts
-- **THEN** the server exits non-zero with an error message naming all four acceptable layer-1 variables
+- **THEN** the server exits non-zero with an error message naming `TRAFFICPEAK_URL` and `HYDROLIX_URL` as the acceptable layer-1 anchors
 
 ### Requirement: Existing Hydrolix-Branded Surface Is Preserved
 
@@ -176,9 +180,10 @@ This change MUST NOT remove, rename, or behaviorally alter the `mcp-hydrolix` Py
 - **THEN** the import succeeds and resolves to the same Python module in both cases
 
 ### Requirement: This Repository's Customer-Facing Documentation References Only The Hydrolix Brand
-<!-- settle: explore/docs-hydrolix-only-in-repo -->
 
 `README.md` and any other customer-facing documentation files co-located in this repository SHALL reference only the Hydrolix-branded install snippet (`mcp-hydrolix` distribution name, `mcp-hydrolix` console-script) and only the `HYDROLIX_*` environment-variable namespace. TrafficPeak-branded install snippets and the `TRAFFICPEAK_*` namespace MUST NOT appear in any customer-facing doc in this repository. Internal engineering documentation (the `openspec/` tree, `CONTRIBUTING.md`, source comments) MAY reference both brands.
+
+<!-- settle: explore/docs-hydrolix-only-in-repo -->
 
 #### Scenario: Readme Does Not Mention Trafficpeak
 
@@ -192,9 +197,10 @@ This change MUST NOT remove, rename, or behaviorally alter the `mcp-hydrolix` Py
 - **THEN** matches are permitted (this requirement does not constrain those surfaces)
 
 ### Requirement: Artifact Parity Invariant
-<!-- settle: explore/artifact-parity-invariant -->
 
 For every release artifact this repository emits under the `mcp-hydrolix` brand at version V, the same release workflow run SHALL emit a corresponding `mcp-trafficpeak` artifact at the identical version V, built from the same source commit. This invariant SHALL hold for the PyPI wheel + sdist, the mcpb bundle, the Docker image pushed to GAR, and any future release-time artifact type introduced to this repository. The release workflow MUST fail before any partial-brand upload completes if either brand's counterpart is missing.
+
+<!-- settle: explore/artifact-parity-invariant -->
 
 #### Scenario: Release Tag Publishes Both Pypi Distributions At The Same Version
 
@@ -229,9 +235,10 @@ For every release artifact this repository emits under the `mcp-hydrolix` brand 
 - **THEN** the parity assertion fails before any artifact is published, and no partial release is published
 
 ### Requirement: Mcpb Bundle Is Brand-Parameterized
-<!-- settle: explore/artifact-parity-invariant -->
 
 `mcpb/build.sh`, `mcpb/manifest.json.tmpl`, and `mcpb/pyproject.toml.tmpl` SHALL accept the same `MCP_BRAND` env var (default `hydrolix`) as the Hatchling build hook. In TrafficPeak mode the produced bundle MUST have `name: mcp-trafficpeak`, brand-appropriate `display_name`, `description`, `long_description`, `author`, `homepage`, `repository`, and `keywords` fields, and a `user_config` block whose field keys and titles reference TrafficPeak (not Hydrolix). The `server.mcp_config.env` block MUST set `TRAFFICPEAK_*` keys (which the server then resolves per the Dual-Namespace Env-Var Contract).
+
+<!-- settle: explore/artifact-parity-invariant -->
 
 #### Scenario: Tp Mode Mcpb Build Emits A Tp-Branded Bundle
 
@@ -248,9 +255,10 @@ For every release artifact this repository emits under the `mcp-hydrolix` brand 
 - **AND** its content is equivalent to today's Hydrolix-branded bundle (modulo the version string)
 
 ### Requirement: Only Pypi Publishing Goes Through The Sibling Repo
-<!-- settle: explore/tp-pypi-via-sibling-repo -->
 
 **The TP PyPI wheel — and the PyPI landing-page content rendered for it — is the ONLY release artifact published through the sibling repository `hydrolix/mcp-trafficpeak`. Every other TP-branded release artifact (mcpb bundle, Docker image, and any future artifact whose distribution surface does not bind the `mcp-trafficpeak` name) MUST publish directly from this repository, paired with its Hydrolix counterpart in the same workflow run.**
+
+<!-- settle: explore/tp-pypi-via-sibling-repo -->
 
 The sibling exists only because PyPI's Trusted Publisher binds project name to source-repo name. The test for whether a future publishing surface joins the sibling is whether that surface binds the `mcp-trafficpeak` *repository name* in the same way; if not, the surface's publishing step stays in this repo.
 

@@ -47,7 +47,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 class E2EConfig:
     hydrolix_user: str
     hydrolix_password: str
-    hydrolix_host_override: str | None
+    hydrolix_url_override: str | None
     image_override: str | None
     image_tag_override: str | None
     skip_build: bool
@@ -85,8 +85,8 @@ def _e2e_env_guard() -> E2EConfig:
         print(f"[e2e] {_SKIP_MSG}", file=sys.stderr)
         pytest.skip(_SKIP_MSG)
     # override=True because tests/__init__.py calls load_dotenv() at package
-    # import time, which loads tests/.env (HYDROLIX_HOST=localhost for unit
-    # tests). Without override, that pre-set value wins and e2e tests would
+    # import time, which loads tests/.env (localhost connection vars for unit
+    # tests). Without override, those pre-set values win and e2e tests would
     # talk to localhost instead of the live cluster.
     load_dotenv(env_file, override=True)
     missing = [v for v in REQUIRED_VARS if not os.environ.get(v)]
@@ -103,7 +103,7 @@ def _e2e_env_guard() -> E2EConfig:
     return E2EConfig(
         hydrolix_user=os.environ["HYDROLIX_USER"],
         hydrolix_password=os.environ["HYDROLIX_PASSWORD"],
-        hydrolix_host_override=_opt("HYDROLIX_HOST"),
+        hydrolix_url_override=_opt("HYDROLIX_URL"),
         image_override=_opt("MCP_HYDROLIX_E2E_IMAGE"),
         image_tag_override=_opt("MCP_HYDROLIX_E2E_IMAGE_TAG"),
         skip_build=os.environ.get("MCP_HYDROLIX_E2E_SKIP_BUILD", "0") == "1",
@@ -170,16 +170,18 @@ def built_image(_e2e_env_guard: E2EConfig) -> tuple[str, str]:
 
 
 def _hydrolix_host_from_cr(cr: dict, override: str | None) -> str:
-    if override:
-        return override
-    spec = cr.get("spec") or {}
-    url = spec.get("hydrolix_url")
+    # The override (HYDROLIX_URL) and the CR's spec.hydrolix_url are both full
+    # URLs; parse whichever is present down to a bare host for endpoint building.
+    url = override
     if not url:
-        raise RuntimeError("spec.hydrolix_url not set on the CR and HYDROLIX_HOST not provided")
+        spec = cr.get("spec") or {}
+        url = spec.get("hydrolix_url")
+    if not url:
+        raise RuntimeError("spec.hydrolix_url not set on the CR and HYDROLIX_URL not provided")
     parsed = urlparse(url)
     host = parsed.netloc or parsed.path
     if not host:
-        raise RuntimeError(f"could not parse host from spec.hydrolix_url={url!r}")
+        raise RuntimeError(f"could not parse host from HYDROLIX_URL/spec.hydrolix_url={url!r}")
     return host.rstrip("/")
 
 
@@ -234,7 +236,7 @@ def cluster_state(
     clients = make_clients()
     cr = read_cr(clients.custom, ctx)
     assert_mcp_enabled(cr, ctx)
-    hydrolix_host = _hydrolix_host_from_cr(cr, cfg.hydrolix_host_override)
+    hydrolix_host = _hydrolix_host_from_cr(cr, cfg.hydrolix_url_override)
 
     # Acquire the advisory lock BEFORE any CR-mutating call (precleanup or
     # apply_image_override). Otherwise a concurrent run could clobber an active

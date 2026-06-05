@@ -18,7 +18,7 @@
       "command": "uv",
       "args": ["run", "--directory", "${__dirname}", "src/server.py"],
       "env": {
-        "HYDROLIX_HOST": "${user_config.hydrolix_host}",
+        "HYDROLIX_URL": "${user_config.hydrolix_url}",
         "HYDROLIX_TOKEN": "${user_config.hydrolix_token}",
         "HYDROLIX_USER": "${user_config.hydrolix_user}",
         "HYDROLIX_PASSWORD": "${user_config.hydrolix_password}",
@@ -35,10 +35,10 @@
   ],
   "tools_generated": false,
   "user_config": {
-    "hydrolix_host": {
+    "hydrolix_url": {
       "type": "string",
-      "title": "Hydrolix Host",
-      "description": "Hostname of your Hydrolix cluster (e.g. mycluster.hydrolix.live).",
+      "title": "Hydrolix URL",
+      "description": "Canonical URL of your Hydrolix cluster (e.g. https://mycluster.hydrolix.live).",
       "required": true
     },
     "hydrolix_token": {
