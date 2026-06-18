@@ -267,9 +267,9 @@ async def execute_query(
             settings: dict[str, Any] = {
                 "readonly": 1,
                 "hdx_query_max_execution_time": HYDROLIX_CONFIG.query_timeout_sec,
-                "hdx_query_max_attempts": 1,
-                "hdx_query_max_result_rows": 100_000,
-                "hdx_query_max_memory_usage": 2 * 1024 * 1024 * 1024,  # 2GiB
+                "hdx_query_max_attempts": HYDROLIX_CONFIG.query_max_attempts,
+                "hdx_query_max_result_rows": HYDROLIX_CONFIG.query_max_result_rows,
+                "hdx_query_max_memory_usage": HYDROLIX_CONFIG.query_max_memory_usage,
                 "hdx_query_admin_comment": HDX_ADMIN_COMMENT,
             } | (extra_settings or {})
             res = await client.query(
@@ -816,9 +816,11 @@ async def run_select_query(
 
     logger.info(f"Executing SELECT query: {effective_query}")
     try:
-        extra_settings: dict[str, Any] = {"hdx_query_timerange_required": True}
+        extra_settings: dict[str, Any] = {
+            "hdx_query_timerange_required": HYDROLIX_CONFIG.query_timerange_required
+        }
         if not await _query_targets_summary_table(query):
-            extra_settings["hdx_query_max_timerange_sec"] = get_config().max_raw_timerange
+            extra_settings["hdx_query_max_timerange_sec"] = HYDROLIX_CONFIG.max_raw_timerange
         result = await execute_query(query=effective_query, extra_settings=extra_settings)
     except ToolError:
         raise

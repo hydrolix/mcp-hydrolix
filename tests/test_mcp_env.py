@@ -81,6 +81,71 @@ class TestMaxRequestsRecycling:
         assert config.mcp_max_requests == 0
 
 
+class TestExecuteQuerySettings:
+    """The execute_query SETTINGS exposed as env vars (HDX-11673)."""
+
+    def test_timerange_required_default(self, config: HydrolixConfig) -> None:
+        assert config.query_timerange_required is True
+
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [("false", False), ("FALSE", False), ("true", True), ("True", True)],
+    )
+    def test_timerange_required_override(
+        self,
+        config: HydrolixConfig,
+        monkeypatch: pytest.MonkeyPatch,
+        raw: str,
+        expected: bool,
+    ) -> None:
+        monkeypatch.setenv("HYDROLIX_QUERY_TIMERANGE_REQUIRED", raw)
+        assert config.query_timerange_required is expected
+
+    def test_max_memory_usage_default(self, config: HydrolixConfig) -> None:
+        assert config.query_max_memory_usage == 2 * 1024 * 1024 * 1024
+
+    def test_max_memory_usage_override(
+        self, config: HydrolixConfig, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("HYDROLIX_QUERY_MAX_MEMORY_USAGE", "1073741824")
+        assert config.query_max_memory_usage == 1073741824
+
+    def test_max_attempts_default(self, config: HydrolixConfig) -> None:
+        assert config.query_max_attempts == 1
+
+    def test_max_attempts_override(
+        self, config: HydrolixConfig, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("HYDROLIX_QUERY_MAX_ATTEMPTS", "3")
+        assert config.query_max_attempts == 3
+
+    def test_max_result_rows_default(self, config: HydrolixConfig) -> None:
+        assert config.query_max_result_rows == 100000
+
+    def test_max_result_rows_override(
+        self, config: HydrolixConfig, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("HYDROLIX_QUERY_MAX_RESULT_ROWS", "250")
+        assert config.query_max_result_rows == 250
+
+    @pytest.mark.parametrize(
+        "var",
+        [
+            "HYDROLIX_QUERY_MAX_MEMORY_USAGE",
+            "HYDROLIX_QUERY_MAX_ATTEMPTS",
+            "HYDROLIX_QUERY_MAX_RESULT_ROWS",
+        ],
+    )
+    @pytest.mark.parametrize("bad", ["0", "-1", "notanint"])
+    def test_positive_int_validation_rejects_bad_values(
+        self, monkeypatch: pytest.MonkeyPatch, var: str, bad: str
+    ) -> None:
+        monkeypatch.setenv("HYDROLIX_URL", "https://example.invalid")
+        monkeypatch.setenv(var, bad)
+        with pytest.raises(ValueError, match=var):
+            HydrolixConfig()
+
+
 # A long-lived JWT (expires 2094) used to exercise ServiceAccountToken credential resolution.
 # Signature verification is disabled in ServiceAccountToken.__init__, so only the structure
 # and claims matter.
