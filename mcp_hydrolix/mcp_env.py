@@ -183,6 +183,12 @@ class HydrolixConfig:
             0 means no limit is enforced (default: 0). Set this in multi-tenant HTTP/SSE
             deployments to prevent a single session from materialising very large result sets.
         HYDROLIX_MAX_RAW_TIMERANGE: Max timerange in seconds for non-summary queries (default: 21600 = 6 hours)
+        HYDROLIX_QUERY_POOL: Name of the Hydrolix query pool to route queries to. When set, every
+            query the server issues carries the ``hdx_query_pool_name`` setting instead of using
+            the cluster's default pool. The named pool must already exist on the cluster. In
+            platform-managed (in-cluster) deployments the cluster tunable is mapped onto this
+            same variable; since the platform owns the process environment there, its value is
+            authoritative. (default: None -- use the cluster default pool)
     """
 
     def __init__(self) -> None:
@@ -459,6 +465,25 @@ class HydrolixConfig:
         Default: 21600 (6 hours)
         """
         return int(os.getenv("HYDROLIX_MAX_RAW_TIMERANGE", "21600"))
+
+    @property
+    def query_pool(self) -> Optional[str]:
+        """Get the Hydrolix query pool name to route queries to.
+
+        When set, every query/command the server issues carries the
+        ``hdx_query_pool_name`` setting, directing it to the named query pool
+        instead of the cluster's default pool. The named pool must already exist.
+
+        In platform-managed (in-cluster) deployments the cluster tunable is mapped
+        onto this same variable; the platform owns the process environment there,
+        so its value is authoritative. A remote MCP client has no channel to set
+        this -- env vars are fixed by the deployment -- so the deployment value
+        always wins by construction.
+
+        A blank/whitespace value is treated as unset so that MCPB hosts injecting
+        empty user_config fields do not send an empty pool name.
+        """
+        return os.getenv("HYDROLIX_QUERY_POOL", "").strip() or None
 
     @property
     def mcp_graceful_timeout(self) -> int:

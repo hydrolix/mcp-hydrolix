@@ -170,6 +170,96 @@ class TestQuerySettings:
         assert "hdx_query_max_timerange_sec" not in settings
 
 
+class TestQueryPoolSetting:
+    """Verify HYDROLIX_QUERY_POOL is threaded into the settings of every query and
+    command the server issues, and that it never leaks when unconfigured.
+
+    These exercise the real wiring in execute_query / execute_cmd (the config property
+    itself is covered separately in test_mcp_env.py), so they assert on the settings
+    dict actually handed to the clickhouse-connect client.
+    """
+
+    @staticmethod
+    def _mock_client_ctx():
+        """Build an async-context-manager mock yielding a client whose query/command
+        calls are recorded. Mirrors the setup in test_base_settings_exclude_timerange_keys.
+        """
+        mock_client = AsyncMock()
+        mock_query_result = AsyncMock()
+        mock_query_result.column_names = ["id"]
+        mock_query_result.result_rows = [[1]]
+        mock_client.query.return_value = mock_query_result
+        mock_client.command.return_value = "ok"
+
+        mock_ctx = AsyncMock()
+        mock_ctx.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_ctx.__aexit__ = AsyncMock(return_value=False)
+        return mock_ctx, mock_client
+
+    async def test_execute_query_includes_pool_when_configured(self, monkeypatch):
+        monkeypatch.setenv("HYDROLIX_QUERY_POOL", "high-capacity")
+        from mcp_hydrolix.mcp_server import execute_query
+
+        mock_ctx, mock_client = self._mock_client_ctx()
+        with patch("mcp_hydrolix.mcp_server.create_hydrolix_client", return_value=mock_ctx):
+            await execute_query("SELECT 1")
+
+        _, kwargs = mock_client.query.call_args
+        assert kwargs["settings"]["hdx_query_pool_name"] == "high-capacity"
+
+    async def test_execute_query_omits_pool_when_unconfigured(self, monkeypatch):
+        monkeypatch.delenv("HYDROLIX_QUERY_POOL", raising=False)
+        from mcp_hydrolix.mcp_server import execute_query
+
+        mock_ctx, mock_client = self._mock_client_ctx()
+        with patch("mcp_hydrolix.mcp_server.create_hydrolix_client", return_value=mock_ctx):
+            await execute_query("SELECT 1")
+
+        _, kwargs = mock_client.query.call_args
+        assert "hdx_query_pool_name" not in kwargs["settings"]
+
+    async def test_pool_coexists_with_extra_settings(self, monkeypatch):
+        """The pool setting and run_select_query's extra_settings must both survive the
+        merge -- a regression guard since both share the final settings dict."""
+        monkeypatch.setenv("HYDROLIX_QUERY_POOL", "high-capacity")
+        from mcp_hydrolix.mcp_server import execute_query
+
+        mock_ctx, mock_client = self._mock_client_ctx()
+        with patch("mcp_hydrolix.mcp_server.create_hydrolix_client", return_value=mock_ctx):
+            await execute_query(
+                "SELECT 1",
+                extra_settings={"hdx_query_timerange_required": True},
+            )
+
+        settings = mock_client.query.call_args.kwargs["settings"]
+        assert settings["hdx_query_pool_name"] == "high-capacity"
+        assert settings["hdx_query_timerange_required"] is True
+
+    async def test_execute_cmd_includes_pool_when_configured(self, monkeypatch):
+        monkeypatch.setenv("HYDROLIX_QUERY_POOL", "high-capacity")
+        from mcp_hydrolix.mcp_server import execute_cmd
+
+        mock_ctx, mock_client = self._mock_client_ctx()
+        with patch("mcp_hydrolix.mcp_server.create_hydrolix_client", return_value=mock_ctx):
+            await execute_cmd("SHOW DATABASES")
+
+        _, kwargs = mock_client.command.call_args
+        assert kwargs["settings"]["hdx_query_pool_name"] == "high-capacity"
+
+    async def test_execute_cmd_omits_pool_when_unconfigured(self, monkeypatch):
+        """Default config must leave execute_cmd's command call free of the pool key,
+        preserving the prior behavior of SHOW DATABASES."""
+        monkeypatch.delenv("HYDROLIX_QUERY_POOL", raising=False)
+        from mcp_hydrolix.mcp_server import execute_cmd
+
+        mock_ctx, mock_client = self._mock_client_ctx()
+        with patch("mcp_hydrolix.mcp_server.create_hydrolix_client", return_value=mock_ctx):
+            await execute_cmd("SHOW DATABASES")
+
+        _, kwargs = mock_client.command.call_args
+        assert "hdx_query_pool_name" not in kwargs.get("settings", {})
+
+
 class TestStripConflictingSettingsIntegration:
     """execute_query must strip inline SETTINGS that collide with the transport-level
     guardrail settings dict, so our values win de facto (HDX-11717)."""
