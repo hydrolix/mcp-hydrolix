@@ -3,7 +3,12 @@ import pytest
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 
-from mcp_hydrolix.utils import coerce_cell, coerce_rows, inject_limit
+from mcp_hydrolix.utils import (
+    coerce_cell,
+    coerce_rows,
+    inject_limit,
+    strip_conflicting_settings,
+)
 
 
 class TestCoerceCell:
@@ -201,6 +206,70 @@ class TestInjectLimit:
         bad_sql = "THIS IS NOT VALID SQL @@@@"
         result = inject_limit(bad_sql, 10)
         assert result == bad_sql
+
+
+class TestStripConflictingSettings:
+    """Strip inline SETTINGS that collide with our transport-level guardrails (HDX-11717)."""
+
+    GUARDRAILS = {"readonly", "hdx_query_max_attempts", "hdx_query_max_execution_time"}
+
+    def test_removes_single_conflicting_setting(self):
+        result = strip_conflicting_settings("SELECT a FROM t SETTINGS readonly=0", self.GUARDRAILS)
+        # Whole clause dropped because only conflicting key was present.
+        assert "readonly" not in result.lower()
+        assert "settings" not in result.lower()
+
+    def test_preserves_non_conflicting_settings(self):
+        result = strip_conflicting_settings(
+            "SELECT a FROM t SETTINGS readonly=0, max_threads=4", self.GUARDRAILS
+        )
+        assert "readonly" not in result.lower()
+        assert "max_threads" in result.lower()
+
+    def test_matching_is_case_insensitive(self):
+        result = strip_conflicting_settings(
+            "SELECT a FROM t SETTINGS READONLY=0, max_threads=4", self.GUARDRAILS
+        )
+        assert "readonly" not in result.lower()
+        assert "max_threads" in result.lower()
+
+    def test_strips_conflicts_inside_subqueries(self):
+        query = (
+            "SELECT * FROM (SELECT x FROM t SETTINGS readonly=0, max_threads=1) AS sub "
+            "SETTINGS readonly=0, max_threads=2"
+        )
+        result = strip_conflicting_settings(query, self.GUARDRAILS)
+        assert "readonly" not in result.lower()
+        # Non-conflicting settings preserved at both levels.
+        assert result.lower().count("max_threads") == 2
+
+    def test_no_settings_clause_returns_verbatim(self):
+        # Queries without a SETTINGS clause must be returned byte-for-byte, NOT
+        # round-tripped through sqlglot (which would, e.g., inject a space into
+        # ClickHouse parameter placeholders and break server-side substitution).
+        query = "DESCRIBE TABLE {db:Identifier}.{table:Identifier}"
+        assert strip_conflicting_settings(query, self.GUARDRAILS) == query
+
+    def test_non_conflicting_settings_returned_verbatim(self):
+        # A SETTINGS clause with only caller-tunable keys must be returned unchanged,
+        # not reformatted by sqlglot.
+        query = "SELECT a FROM t SETTINGS max_threads=4"
+        assert strip_conflicting_settings(query, self.GUARDRAILS) == query
+
+    def test_empty_protected_keys_returns_original(self):
+        query = "SELECT a FROM t SETTINGS readonly=0"
+        assert strip_conflicting_settings(query, set()) == query
+
+    def test_unparseable_query_returned_unchanged(self):
+        bad_sql = "THIS IS NOT VALID SQL @@@@"
+        assert strip_conflicting_settings(bad_sql, self.GUARDRAILS) == bad_sql
+
+    def test_logs_warning_when_stripping(self, caplog):
+        import logging
+
+        with caplog.at_level(logging.WARNING):
+            strip_conflicting_settings("SELECT a FROM t SETTINGS readonly=0", self.GUARDRAILS)
+        assert any("readonly" in record.getMessage() for record in caplog.records)
 
 
 if __name__ == "__main__":
