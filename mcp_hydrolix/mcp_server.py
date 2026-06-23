@@ -59,7 +59,7 @@ from mcp_hydrolix.models import (
     Table,
     TableList,
 )
-from mcp_hydrolix.utils import coerce_rows, inject_limit
+from mcp_hydrolix.utils import coerce_rows, inject_limit, strip_conflicting_settings
 
 
 MCP_SERVER_NAME = "mcp-hydrolix"
@@ -287,6 +287,12 @@ async def execute_query(
                 | _pool_settings()
                 | (extra_settings or {})
             )
+            # Inline `SETTINGS` in the query text currently outrank the transport-level
+            # settings above on the Hydrolix HTTP path, which would let a caller override
+            # our guardrails. Strip any inline setting that collides with one we declare so
+            # our value wins de facto (HDX-11717). This is a temporary measure until the
+            # query head inverts that precedence.
+            query = strip_conflicting_settings(query, settings.keys())
             res = await client.query(
                 query,
                 parameters=parameters,
