@@ -51,16 +51,21 @@ must match the version currently on `main`.
    If it does not match, bump it on `main` first (`uv version <X.Y.Z>` followed
    by `uv lock --no-upgrade`, then commit and push).
 
-3. **Create an annotated tag** for that version and push it:
+3. **Write the release notes and put them in the annotated tag.** This is a
+   required, hand-crafted step — see [Release notes are
+   required](#release-notes-are-required) for the format. Author the curated
+   notes in the tag's annotation message (not a throwaway `-m "Release v0.3.4"`):
 
    ```bash
    git checkout main && git pull
-   git tag -a v0.3.4 -m "Release v0.3.4"
+   git tag -a v0.3.4 -F NOTES.md      # NOTES.md holds the curated changelog
    git push origin v0.3.4
    ```
 
    Use an *annotated* tag (`-a`), not a lightweight tag. The tag name must match
-   `v[0-9]+.[0-9]+.[0-9]+` exactly or the workflow will not trigger.
+   `v[0-9]+.[0-9]+.[0-9]+` exactly or the workflow will not trigger. Keep
+   `NOTES.md` around — you reuse the same text as the GitHub Release body in
+   step 4.
 
 4. **Watch the workflow.** The push fires `Publish release`, which (after
    `prove-main` passes) runs in parallel:
@@ -70,10 +75,11 @@ must match the version currently on `main`.
    - **`publish-docker`** — build and push the image to GAR as both
      `us-docker.pkg.dev/hdx-art/t/mcp-hydrolix:v0.3.4` and `:latest`.
    - **`publish-mcpb`** — build the MCPB bundle and attach it to a GitHub
-     Release for the tag. If no Release exists for the tag yet, it creates one
-     with **auto-generated notes** (`gh release create --generate-notes`). If a
-     Release already exists, it only uploads the bundle and **leaves the notes
-     untouched** — so a pre-existing empty Release stays empty.
+     Release for the tag. If no Release exists yet, it creates one with GitHub's
+     **auto-generated notes** (`gh release create --generate-notes`) — treat
+     these as a placeholder you overwrite with your curated notes (see [Release
+     notes are required](#release-notes-are-required)). If a Release already
+     exists, it only uploads the bundle and leaves the body untouched.
 
    ```bash
    gh run watch
@@ -87,49 +93,70 @@ must match the version currently on `main`.
 
 ### Release notes are required
 
-**Every release tag MUST have a populated GitHub Release with release notes.**
-This is non-negotiable: a tag with no notes (or a placeholder body such as the
-bare version string) is an incomplete release. Historically this slipped —
-`v0.3.3` carries proper "What's Changed" notes, but `v0.3.2` shipped with an
-empty body and the tags before it have no GitHub Release at all. Don't add to
-that list.
+**Every release MUST ship hand-crafted release notes.** This is the whole
+motivation for this section. The notes must be *curated by a human* — a grouped,
+readable changelog written for the reader — not an auto-generated PR-title dump
+and never empty.
 
-Notes are normally produced for you, but only under the right conditions:
+Both recent tags are **degenerate** and must not be used as templates:
 
-- **Let the workflow create the Release.** `publish-mcpb` generates notes via
-  `--generate-notes` *only when it creates the Release*. Do **not** pre-create
-  the Release or push the tag through the GitHub UI's "create release" flow with
-  an empty body — that leaves an empty Release the workflow won't backfill.
-- **Write good PR titles.** `--generate-notes` builds the changelog from the
-  titles of PRs merged since the previous tag, so the quality of the notes is
-  the quality of your PR titles. Squash-merge stray commits behind a clear PR
-  title rather than letting raw commit subjects leak in.
-- **Review and augment after the run.** Auto-generated notes are a starting
-  point, not the finished product. Once the Release exists, read it and add a
-  short human summary at the top — headline changes, any **breaking changes**,
-  and upgrade/migration steps (e.g. deprecated `HYDROLIX_*` env vars). Edit with:
+- `v0.3.2` — body is just the bare version string. Empty.
+- `v0.3.3` — GitHub's auto-generated "What's Changed" list (one line per merged
+  PR, including `Bump …` dependabot churn). This is a raw dump, not curated
+  notes.
 
-  ```bash
-  gh release view v0.3.4 --repo hydrolix/mcp-hydrolix              # inspect
-  gh release edit v0.3.4 --repo hydrolix/mcp-hydrolix --notes-file NOTES.md
-  ```
+The **required style** is the hand-written changelog used in the older tag
+annotations — see `v0.3.1`, `v0.3.0`, and `v0.2.4` (`git show v0.3.1`). It has:
 
-- **Backfill if a Release ended up empty.** If a tag landed without notes,
-  regenerate them rather than leaving it bare. `gh release edit` has no
-  `--generate-notes` flag, so generate via the API and pipe the body in:
+- A short heading line with the version.
+- Changes **grouped by category** — `Added` / `Changed` / `Removed` / `Fixed`
+  (Keep-a-Changelog style), or the equivalent `Bug fixes` / `Improvements` /
+  `Documentation` grouping in `v0.2.4`. Omit empty groups.
+- One bullet per user-visible change, written as a sentence, each citing its PR
+  (`(#88)`) and/or Jira ticket (`(HDX-11190)`).
+- **Breaking changes called out explicitly** — prefix the bullet with
+  `Breaking:` as in `v0.3.0`, and include the upgrade/migration step (e.g. a
+  removed or deprecated `HYDROLIX_*` env var).
 
-  ```bash
-  gh api repos/hydrolix/mcp-hydrolix/releases/generate-notes \
-    -f tag_name=v0.3.4 --jq .body |
-    gh release edit v0.3.4 --repo hydrolix/mcp-hydrolix --notes-file -
-  ```
+Example skeleton (`NOTES.md`):
+
+```markdown
+## v0.3.4
+
+### Added
+- New `…` capability. (#NNN, HDX-NNNNN)
+
+### Changed
+- Breaking: removed `HYDROLIX_OLD_VAR`; use `HYDROLIX_NEW_VAR` instead. (#NNN)
+
+### Fixed
+- … (#NNN)
+```
+
+Where the notes live:
+
+1. **In the annotated tag** — author them there at tag-creation time
+   (`git tag -a v0.3.4 -F NOTES.md`, step 3). The tag annotation is the
+   canonical record and the practice the older releases followed.
+2. **On the GitHub Release** — `publish-mcpb` creates the Release with GitHub's
+   `--generate-notes` (the v0.3.3-style dump), which is **not** acceptable as
+   the final body. After the run, overwrite it with your curated notes so the
+   Release matches the tag:
+
+   ```bash
+   gh release edit v0.3.4 --repo hydrolix/mcp-hydrolix --notes-file NOTES.md
+   ```
+
+Do not pre-create the GitHub Release with an empty body before the workflow runs
+(that is how `v0.3.2` ended up blank). Either let the workflow create it and then
+overwrite the body as above, or create it yourself with `--notes-file NOTES.md`.
 
 ### After the release
 
 - Confirm the new version is live on [PyPI](https://pypi.org/p/mcp-hydrolix) and
   that the [GitHub Release](https://github.com/hydrolix/mcp-hydrolix/releases)
-  exists for the tag, **has non-empty release notes**, and has the MCPB bundle
-  attached.
+  exists for the tag, carries your **curated release notes** (not the
+  auto-generated dump), and has the MCPB bundle attached.
 - Verify the install path works end to end:
 
   ```bash
