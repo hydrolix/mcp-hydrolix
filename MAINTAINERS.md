@@ -2,21 +2,8 @@
 
 This document covers tasks that require privileges held by Hydrolix maintainers
 — running the end-to-end suite against a live cluster, and cutting a release.
-Contributors do not need anything here; see the [README](README.md) to install
-and use the server, and `tests/e2e/README.md` for the full e2e runbook.
-
-## Who can do this
-
-Releasing and running the e2e suite require operational access that is not
-available to outside contributors:
-
-- **PyPI** — release publishing uses Trusted Publishing (OIDC) from the
-  `pypi` GitHub Environment; no long-lived token is needed, but the workflow
-  and environment are scoped to this repository.
-- **Google Artifact Registry** (`us-docker.pkg.dev/hdx-art`) — Docker images are
-  pushed using the `GCP_GKE_CI_KEY` repository secret.
-- **A live Hydrolix cluster** — the e2e suite deploys the working tree to a real
-  Kubernetes cluster and needs `kubectl` access plus query credentials.
+Contributors and users do not need anything here; see the [README](README.md) to
+install and use the server.
 
 ## End-to-end tests
 
@@ -51,10 +38,8 @@ must match the version currently on `main`.
 
 ### Steps
 
-1. **Pick the commit.** The tag must point at a commit that is **on `main`** —
-   the workflow's first job (`prove-main`) fails the release if the tagged
-   commit is not reachable from `origin/main`. Make sure `main` is up to date
-   and green.
+1. **Pick the commit.** The tag must point at a commit that is **on `main`**. Make
+   sure `main` is up to date and green.
 
 2. **Confirm the version.** Check that `pyproject.toml` holds the version you
    intend to release:
@@ -85,8 +70,10 @@ must match the version currently on `main`.
    - **`publish-docker`** — build and push the image to GAR as both
      `us-docker.pkg.dev/hdx-art/t/mcp-hydrolix:v0.3.4` and `:latest`.
    - **`publish-mcpb`** — build the MCPB bundle and attach it to a GitHub
-     Release for the tag (creating the Release with generated notes if it does
-     not already exist).
+     Release for the tag. If no Release exists for the tag yet, it creates one
+     with **auto-generated notes** (`gh release create --generate-notes`). If a
+     Release already exists, it only uploads the bundle and **leaves the notes
+     untouched** — so a pre-existing empty Release stays empty.
 
    ```bash
    gh run watch
@@ -98,11 +85,51 @@ must match the version currently on `main`.
    version in `pyproject.toml` and `uv.lock`. No manual follow-up is needed for
    the version bump; just `git pull` on `main` afterward.
 
+### Release notes are required
+
+**Every release tag MUST have a populated GitHub Release with release notes.**
+This is non-negotiable: a tag with no notes (or a placeholder body such as the
+bare version string) is an incomplete release. Historically this slipped —
+`v0.3.3` carries proper "What's Changed" notes, but `v0.3.2` shipped with an
+empty body and the tags before it have no GitHub Release at all. Don't add to
+that list.
+
+Notes are normally produced for you, but only under the right conditions:
+
+- **Let the workflow create the Release.** `publish-mcpb` generates notes via
+  `--generate-notes` *only when it creates the Release*. Do **not** pre-create
+  the Release or push the tag through the GitHub UI's "create release" flow with
+  an empty body — that leaves an empty Release the workflow won't backfill.
+- **Write good PR titles.** `--generate-notes` builds the changelog from the
+  titles of PRs merged since the previous tag, so the quality of the notes is
+  the quality of your PR titles. Squash-merge stray commits behind a clear PR
+  title rather than letting raw commit subjects leak in.
+- **Review and augment after the run.** Auto-generated notes are a starting
+  point, not the finished product. Once the Release exists, read it and add a
+  short human summary at the top — headline changes, any **breaking changes**,
+  and upgrade/migration steps (e.g. deprecated `HYDROLIX_*` env vars). Edit with:
+
+  ```bash
+  gh release view v0.3.4 --repo hydrolix/mcp-hydrolix              # inspect
+  gh release edit v0.3.4 --repo hydrolix/mcp-hydrolix --notes-file NOTES.md
+  ```
+
+- **Backfill if a Release ended up empty.** If a tag landed without notes,
+  regenerate them rather than leaving it bare. `gh release edit` has no
+  `--generate-notes` flag, so generate via the API and pipe the body in:
+
+  ```bash
+  gh api repos/hydrolix/mcp-hydrolix/releases/generate-notes \
+    -f tag_name=v0.3.4 --jq .body |
+    gh release edit v0.3.4 --repo hydrolix/mcp-hydrolix --notes-file -
+  ```
+
 ### After the release
 
 - Confirm the new version is live on [PyPI](https://pypi.org/p/mcp-hydrolix) and
   that the [GitHub Release](https://github.com/hydrolix/mcp-hydrolix/releases)
-  has the MCPB bundle attached.
+  exists for the tag, **has non-empty release notes**, and has the MCPB bundle
+  attached.
 - Verify the install path works end to end:
 
   ```bash
