@@ -248,6 +248,43 @@ def _patch_cr(api: client.CustomObjectsApi, ctx: KubeContext, body: dict[str, An
     )
 
 
+def read_mcp_hydrolix(api: client.CustomObjectsApi, ctx: KubeContext) -> Any:
+    """Return the whole spec.mcp_hydrolix block on the CR, or None if absent.
+
+    Captured before a test mutates a tunable so the exact original block can be
+    restored on teardown.
+    """
+    cr = read_cr(api, ctx)
+    return (cr.get("spec") or {}).get("mcp_hydrolix")
+
+
+def set_mcp_connection_tunable(
+    api: client.CustomObjectsApi, ctx: KubeContext, field: str, value: Any
+) -> None:
+    """Merge-patch a single spec.mcp_hydrolix.hydrolix_connection tunable.
+
+    On a CR with no mcp_hydrolix block this creates the nested path; pair it
+    with ``restore_mcp_hydrolix`` on teardown to put the block back exactly as it
+    was (including removing it entirely when it was originally absent).
+    """
+    _patch_cr(api, ctx, {"spec": {"mcp_hydrolix": {"hydrolix_connection": {field: value}}}})
+
+
+def restore_mcp_hydrolix(api: client.CustomObjectsApi, ctx: KubeContext, original: Any) -> None:
+    """Restore spec.mcp_hydrolix to a previously-captured value.
+
+    JSON merge-patch only deletes the keys it names and never prunes the empty
+    parent objects it leaves behind, so restoring a single leaf would leave
+    ``mcp_hydrolix.hydrolix_connection={}`` residue on a CR that originally had
+    no block. Null the whole block first (merge-patch delete), then re-apply the
+    captured original — when ``original`` is falsy this leaves the block absent,
+    matching the pre-test shape exactly.
+    """
+    _patch_cr(api, ctx, {"spec": {"mcp_hydrolix": None}})
+    if original:
+        _patch_cr(api, ctx, {"spec": {"mcp_hydrolix": original}})
+
+
 def read_deployment_generation(
     clients: KubeClients, ctx: KubeContext, deployment_name: str
 ) -> int | None:
