@@ -59,7 +59,7 @@ from mcp_hydrolix.models import (
     Table,
     TableList,
 )
-from mcp_hydrolix.utils import coerce_rows, inject_limit
+from mcp_hydrolix.utils import coerce_rows, inject_limit, strip_conflicting_settings
 
 
 MCP_SERVER_NAME = "mcp-hydrolix"
@@ -253,6 +253,17 @@ async def _check_parameterized_query_support() -> bool:
     return _parameterized_queries_supported
 
 
+def _pool_settings() -> dict[str, Any]:
+    """Return the query-pool routing setting, or an empty dict when unconfigured.
+
+    Applied to every query/command the server issues so all traffic honors the
+    HYDROLIX_QUERY_POOL setting. When no pool is configured the dict is empty,
+    leaving the cluster's default pool selection untouched.
+    """
+    pool = HYDROLIX_CONFIG.query_pool
+    return {"hdx_query_pool_name": pool} if pool else {}
+
+
 async def execute_query(
     query: str,
     parameters: Optional[Dict[str, Any]] = None,
@@ -264,14 +275,24 @@ async def execute_query(
         async with await create_hydrolix_client(
             client_shared_pool, get_request_credential()
         ) as client:
-            settings: dict[str, Any] = {
-                "readonly": 1,
-                "hdx_query_max_execution_time": HYDROLIX_CONFIG.query_timeout_sec,
-                "hdx_query_max_attempts": HYDROLIX_CONFIG.query_max_attempts,
-                "hdx_query_max_result_rows": HYDROLIX_CONFIG.query_max_result_rows,
-                "hdx_query_max_memory_usage": HYDROLIX_CONFIG.query_max_memory_usage,
-                "hdx_query_admin_comment": HDX_ADMIN_COMMENT,
-            } | (extra_settings or {})
+            settings: dict[str, Any] = (
+                {
+                    "readonly": 1,
+                    "hdx_query_max_execution_time": HYDROLIX_CONFIG.query_timeout_sec,
+                    "hdx_query_max_attempts": HYDROLIX_CONFIG.query_max_attempts,
+                    "hdx_query_max_result_rows": HYDROLIX_CONFIG.query_max_result_rows,
+                    "hdx_query_max_memory_usage": HYDROLIX_CONFIG.query_max_memory_usage,
+                    "hdx_query_admin_comment": HDX_ADMIN_COMMENT,
+                }
+                | _pool_settings()
+                | (extra_settings or {})
+            )
+            # Inline `SETTINGS` in the query text currently outrank the transport-level
+            # settings above on the Hydrolix HTTP path, which would let a caller override
+            # our guardrails. Strip any inline setting that collides with one we declare so
+            # our value wins de facto (HDX-11717). This is a temporary measure until the
+            # query head inverts that precedence.
+            query = strip_conflicting_settings(query, settings.keys())
             res = await client.query(
                 query,
                 parameters=parameters,
@@ -297,7 +318,7 @@ async def execute_cmd(query: str):
         async with await create_hydrolix_client(
             client_shared_pool, get_request_credential()
         ) as client:
-            res = await client.command(query)
+            res = await client.command(query, settings=_pool_settings())
             logger.info("Command executed successfully.")
             return res
     except Exception as err:

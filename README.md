@@ -412,6 +412,11 @@ If no credentials are provided via the environment or the request, the request w
 * `HYDROLIX_MAX_RAW_TIMERANGE`: Maximum time range in seconds allowed for queries against non-summary tables
   * Default: `21600` (6 hours)
   * Queries targeting summary tables are not affected by this limit
+* `HYDROLIX_QUERY_POOL`: Name of the Hydrolix query pool to route queries to (sets `hdx_query_pool_name`)
+  * Default: None (uses the cluster's default query pool)
+  * When set, every query the server issues is routed to the named pool; the pool must already exist on the cluster
+  * In platform-managed (in-cluster) deployments the cluster tunable is mapped onto this same variable; the deployment owns the environment, so its value is authoritative
+  * Note: this is unrelated to `HYDROLIX_QUERIES_POOL_SIZE`, which sizes the client-side query thread pool
 
 
 For MCP Inspector or remote access with HTTP transport:

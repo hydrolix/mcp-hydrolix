@@ -146,6 +146,35 @@ class TestExecuteQuerySettings:
             HydrolixConfig()
 
 
+class TestQueryPool:
+    """HYDROLIX_QUERY_POOL resolution.
+
+    None when unset (cluster default), the literal value when set, and -- the
+    edge case worth guarding -- None when MCPB injects a blank/whitespace value,
+    so an empty pool name is never sent to the cluster.
+    """
+
+    def test_default_is_none(self, config: HydrolixConfig) -> None:
+        assert config.query_pool is None
+
+    def test_explicit_value(self, config: HydrolixConfig, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("HYDROLIX_QUERY_POOL", "high-capacity")
+        assert config.query_pool == "high-capacity"
+
+    @pytest.mark.parametrize("blank", ["", "   ", "\t\n"], ids=["empty", "spaces", "ws"])
+    def test_blank_treated_as_unset(
+        self, config: HydrolixConfig, monkeypatch: pytest.MonkeyPatch, blank: str
+    ) -> None:
+        monkeypatch.setenv("HYDROLIX_QUERY_POOL", blank)
+        assert config.query_pool is None
+
+    def test_surrounding_whitespace_stripped(
+        self, config: HydrolixConfig, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("HYDROLIX_QUERY_POOL", "  analytics-pool  ")
+        assert config.query_pool == "analytics-pool"
+
+
 # A long-lived JWT (expires 2094) used to exercise ServiceAccountToken credential resolution.
 # Signature verification is disabled in ServiceAccountToken.__init__, so only the structure
 # and claims matter.
