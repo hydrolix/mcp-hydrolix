@@ -89,10 +89,10 @@ def read_cr(api: client.CustomObjectsApi, ctx: KubeContext) -> dict[str, Any]:
 def assert_mcp_enabled(cr: dict[str, Any], ctx: KubeContext) -> None:
     spec = cr.get("spec") or {}
     mcp = spec.get("mcp_hydrolix") or {}
-    if not mcp.get("enabled"):
+    if mcp.get("enabled") is False:
         raise RuntimeError(
-            f"MCP is disabled on cluster {ctx.cluster_name!r} (namespace "
-            f"{ctx.namespace!r}); either enable it via spec.mcp_hydrolix.enabled "
+            f"MCP is explicitly disabled on cluster {ctx.cluster_name!r} (namespace "
+            f"{ctx.namespace!r}, spec.mcp_hydrolix.enabled=false); re-enable it "
             f"or run against a different cluster."
         )
 
@@ -200,6 +200,43 @@ def restore_containers(api: client.CustomObjectsApi, ctx: KubeContext, original:
     _patch_cr(api, ctx, {"spec": {"containers": original}})
 
 
+def read_deployment_image(
+    clients: KubeClients, namespace: str, deployment_name: str, container_name: str
+) -> str | None:
+    """Return the current image of *container_name* in the named Deployment.
+
+    Returns None when the Deployment is absent (404) or has no container by
+    that name — both signal a misconfigured operator override, which the
+    caller surfaces as a hard error rather than silently proceeding.
+    """
+    try:
+        dep = clients.apps.read_namespaced_deployment(name=deployment_name, namespace=namespace)
+    except ApiException as exc:
+        if exc.status == 404:
+            return None
+        raise
+    for c in dep.spec.template.spec.containers:
+        if c.name == container_name:
+            return c.image
+    return None
+
+
+def patch_deployment_image(
+    clients: KubeClients, namespace: str, deployment_name: str, container_name: str, image: str
+) -> None:
+    """Set *container_name*'s image on the named Deployment.
+
+    Unlike the mcp-hydrolix container (overridden via the CR's spec.containers
+    and reconciled by the operator), the operator Deployment is patched
+    directly. Uses a strategic-merge patch so the containers list is merged by
+    the ``name`` key rather than wholesale-replaced.
+    """
+    body = {
+        "spec": {"template": {"spec": {"containers": [{"name": container_name, "image": image}]}}}
+    }
+    clients.apps.patch_namespaced_deployment(name=deployment_name, namespace=namespace, body=body)
+
+
 def _patch_cr(api: client.CustomObjectsApi, ctx: KubeContext, body: dict[str, Any]) -> None:
     api.patch_namespaced_custom_object(
         group=GROUP,
@@ -209,6 +246,43 @@ def _patch_cr(api: client.CustomObjectsApi, ctx: KubeContext, body: dict[str, An
         name=ctx.cluster_name,
         body=body,
     )
+
+
+def read_mcp_hydrolix(api: client.CustomObjectsApi, ctx: KubeContext) -> Any:
+    """Return the whole spec.mcp_hydrolix block on the CR, or None if absent.
+
+    Captured before a test mutates a tunable so the exact original block can be
+    restored on teardown.
+    """
+    cr = read_cr(api, ctx)
+    return (cr.get("spec") or {}).get("mcp_hydrolix")
+
+
+def set_mcp_connection_tunable(
+    api: client.CustomObjectsApi, ctx: KubeContext, field: str, value: Any
+) -> None:
+    """Merge-patch a single spec.mcp_hydrolix.hydrolix_connection tunable.
+
+    On a CR with no mcp_hydrolix block this creates the nested path; pair it
+    with ``restore_mcp_hydrolix`` on teardown to put the block back exactly as it
+    was (including removing it entirely when it was originally absent).
+    """
+    _patch_cr(api, ctx, {"spec": {"mcp_hydrolix": {"hydrolix_connection": {field: value}}}})
+
+
+def restore_mcp_hydrolix(api: client.CustomObjectsApi, ctx: KubeContext, original: Any) -> None:
+    """Restore spec.mcp_hydrolix to a previously-captured value.
+
+    JSON merge-patch only deletes the keys it names and never prunes the empty
+    parent objects it leaves behind, so restoring a single leaf would leave
+    ``mcp_hydrolix.hydrolix_connection={}`` residue on a CR that originally had
+    no block. Null the whole block first (merge-patch delete), then re-apply the
+    captured original — when ``original`` is falsy this leaves the block absent,
+    matching the pre-test shape exactly.
+    """
+    _patch_cr(api, ctx, {"spec": {"mcp_hydrolix": None}})
+    if original:
+        _patch_cr(api, ctx, {"spec": {"mcp_hydrolix": original}})
 
 
 def read_deployment_generation(
@@ -226,13 +300,21 @@ def read_deployment_generation(
 
 
 def _pods_fully_rolled(
-    clients: KubeClients, ctx: KubeContext, dep: Any, expected_image: str | None
+    clients: KubeClients,
+    ctx: KubeContext,
+    dep: Any,
+    expected_image: str | None,
+    container_name: str = CONTAINER_KEY,
 ) -> bool:
     """Return True only when every live pod matches the new rollout.
 
     Checks that no pods are terminating AND (when *expected_image* is given)
     that every non-terminating pod runs exactly that image.  This is the only
     reliable signal — Deployment status counters lag behind actual pod state.
+
+    *container_name* selects which container's image is compared; it defaults
+    to the mcp-hydrolix container but is overridable so the same machinery can
+    watch other Deployments (e.g. the operator) roll out.
     """
     selector_match = (dep.spec.selector.match_labels or {}) if dep.spec.selector else {}
     if not selector_match:
@@ -244,7 +326,7 @@ def _pods_fully_rolled(
             return False
         if expected_image is not None:
             for cs in pod.status.container_statuses or []:
-                if cs.name == CONTAINER_KEY and cs.image != expected_image:
+                if cs.name == container_name and cs.image != expected_image:
                     return False
     return True
 
@@ -257,6 +339,7 @@ def wait_for_rollout(
     poll_interval: float = 3.0,
     min_generation: int | None = None,
     expected_image: str | None = None,
+    container_name: str = CONTAINER_KEY,
 ) -> None:
     deadline = time.monotonic() + timeout
     last_status: dict[str, Any] | None = None
@@ -295,7 +378,7 @@ def wait_for_rollout(
             and (status.ready_replicas or 0) >= spec_replicas
             and (status.updated_replicas or 0) >= spec_replicas
             and (status.unavailable_replicas or 0) == 0
-            and _pods_fully_rolled(clients, ctx, dep, expected_image)
+            and _pods_fully_rolled(clients, ctx, dep, expected_image, container_name)
         ):
             return
         time.sleep(poll_interval)

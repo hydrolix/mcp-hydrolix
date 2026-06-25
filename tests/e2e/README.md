@@ -96,6 +96,47 @@ The fixture detects ttl.sh by prefix and switches conventions automatically:
 You can pin both `MCP_HYDROLIX_E2E_IMAGE` and `MCP_HYDROLIX_E2E_IMAGE_TAG`
 explicitly to bypass derivation.
 
+## Operator-version override (advanced)
+
+By default the suite overrides only the **mcp-hydrolix container image** (via
+the CR's `spec.containers`) and relies on whatever operator is already
+reconciling the cluster. To exercise operator changes that aren't deployed yet
+— e.g. new `mcp_hydrolix` tunables — you can pin the operator itself to a
+specific image for the run.
+
+This mutates shared cluster state, and not every operator upgrade is safe to
+apply automatically, so it is **gated so it can't be triggered by accident**.
+It engages only when all three are set:
+
+1. `MCP_HYDROLIX_E2E_OPERATOR_IMAGE` — the full operator image ref to deploy.
+   Unset (the default) means the operator is never touched.
+2. `MCP_HYDROLIX_E2E_OPERATOR_DEPLOYMENT` — the operator Deployment name.
+3. `MCP_HYDROLIX_E2E_OPERATOR_OVERRIDE_ACK` — must equal the resolved cluster
+   name.
+
+If `OPERATOR_IMAGE` is set without `OPERATOR_DEPLOYMENT` or a matching
+`OPERATOR_OVERRIDE_ACK`, the run hard-fails instead of silently proceeding. A
+bare `OPERATOR_IMAGE=...` can never engage the override, and the cluster-specific
+ACK stops a copy-pasted env file from mutating the wrong cluster.
+
+```bash
+MCP_HYDROLIX_E2E_OPERATOR_IMAGE=us-docker.pkg.dev/hdx-art/t/operator:branch-my-feature-abc1234 \
+MCP_HYDROLIX_E2E_OPERATOR_DEPLOYMENT=operator \
+MCP_HYDROLIX_E2E_OPERATOR_OVERRIDE_ACK=hdx \
+  uv run pytest -m end_to_end tests/e2e/
+```
+
+Optional knobs: `MCP_HYDROLIX_E2E_OPERATOR_NAMESPACE` (defaults to the CR
+namespace) and `MCP_HYDROLIX_E2E_OPERATOR_CONTAINER` (defaults to the
+Deployment name).
+
+When engaged, the suite snapshots the operator Deployment's current image,
+patches it to the override, waits for the operator to roll out (before the
+mcp-hydrolix CR patch, so the new operator is the one that reconciles it), runs
+the tests, then restores the original operator image on teardown. If the
+restore fails, the failure message prints the exact `kubectl set image` command
+to recover by hand.
+
 ## Cleanup behavior
 
 Cleanup is wrapped in `try/finally` and runs even on `SIGINT` or test crash.

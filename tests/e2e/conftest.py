@@ -29,8 +29,10 @@ from tests.e2e._kube import (
     load_snapshot_file,
     make_clients,
     make_owner_token,
+    patch_deployment_image,
     read_cr,
     read_deployment_generation,
+    read_deployment_image,
     release_advisory_lock,
     restore_containers,
     snapshot_path_for,
@@ -57,6 +59,12 @@ class E2EConfig:
     cluster_name: str | None
     deployment_name: str
     ready_timeout: float
+    # Operator-version override (deliberately gated; see operator_state).
+    operator_image: str | None
+    operator_deployment: str | None
+    operator_namespace: str | None
+    operator_container: str | None
+    operator_override_ack: str | None
 
 
 @dataclass(frozen=True)
@@ -68,6 +76,25 @@ class ClusterState:
     pre_patch_deployment_generation: int | None
     expected_image: str
     expected_tag: str
+
+
+def operator_override_missing_keys(
+    image: str | None, deployment: str | None, ack: str | None
+) -> list[str]:
+    """Names of safety-gate keys still missing for an operator-version override.
+
+    Empty when no override was requested (``image`` falsy) or the presence gate
+    is satisfied. The ACK's cluster-name match is enforced in ``operator_state``;
+    see tests/e2e/README.md ("Operator-version override") for the rationale.
+    """
+    if not image:
+        return []
+    missing: list[str] = []
+    if not deployment:
+        missing.append("MCP_HYDROLIX_E2E_OPERATOR_DEPLOYMENT")
+    if not ack:
+        missing.append("MCP_HYDROLIX_E2E_OPERATOR_OVERRIDE_ACK")
+    return missing
 
 
 _SKIP_MSG = (
@@ -100,6 +127,24 @@ def _e2e_env_guard() -> E2EConfig:
         v = os.environ.get(name)
         return v if v else None
 
+    operator_image = _opt("MCP_HYDROLIX_E2E_OPERATOR_IMAGE")
+    operator_deployment = _opt("MCP_HYDROLIX_E2E_OPERATOR_DEPLOYMENT")
+    operator_override_ack = _opt("MCP_HYDROLIX_E2E_OPERATOR_OVERRIDE_ACK")
+    # Presence half of the operator-version-override safety gate; the ACK's
+    # cluster-name match is enforced later in operator_state. Rationale and the
+    # full key reference live in tests/e2e/README.md ("Operator-version override").
+    missing_keys = operator_override_missing_keys(
+        operator_image, operator_deployment, operator_override_ack
+    )
+    if missing_keys:
+        pytest.fail(
+            "MCP_HYDROLIX_E2E_OPERATOR_IMAGE is set (operator-version override "
+            "requested) but the safety gate is incomplete. Also set: "
+            f"{', '.join(missing_keys)}. "
+            "OPERATOR_OVERRIDE_ACK must equal the target cluster name.",
+            pytrace=False,
+        )
+
     return E2EConfig(
         hydrolix_user=os.environ["HYDROLIX_USER"],
         hydrolix_password=os.environ["HYDROLIX_PASSWORD"],
@@ -113,6 +158,11 @@ def _e2e_env_guard() -> E2EConfig:
         cluster_name=_opt("MCP_HYDROLIX_E2E_CLUSTER_NAME"),
         deployment_name=os.environ.get("MCP_HYDROLIX_E2E_DEPLOYMENT_NAME", DEFAULT_DEPLOYMENT_NAME),
         ready_timeout=float(os.environ.get("MCP_HYDROLIX_E2E_READY_TIMEOUT", "180")),
+        operator_image=operator_image,
+        operator_deployment=operator_deployment,
+        operator_namespace=_opt("MCP_HYDROLIX_E2E_OPERATOR_NAMESPACE"),
+        operator_container=_opt("MCP_HYDROLIX_E2E_OPERATOR_CONTAINER"),
+        operator_override_ack=operator_override_ack,
     )
 
 
@@ -159,9 +209,24 @@ def built_image(_e2e_env_guard: E2EConfig) -> tuple[str, str]:
     if _e2e_env_guard.skip_build:
         print(f"[e2e] MCP_HYDROLIX_E2E_SKIP_BUILD=1; using {image}:{tag}", file=sys.stderr)
         return image, tag
-    print(f"[e2e] docker build -t {image}:{tag} .", file=sys.stderr)
+    # Per-run label gives byte-identical source a unique image digest, so
+    # content-addressed registries (ttl.sh) don't dedup re-pushes under a new tag
+    # and report a stale tag in containerStatuses — which would fail the rollout
+    # image check and cause spurious timeouts on repeated runs.
+    build_id = str(int(time.time()))
+    print(f"[e2e] docker build -t {image}:{tag} . (build-id={build_id})", file=sys.stderr)
     subprocess.check_call(
-        ["docker", "build", "--platform", "linux/amd64", "-t", f"{image}:{tag}", "."],
+        [
+            "docker",
+            "build",
+            "--platform",
+            "linux/amd64",
+            "--label",
+            f"com.hydrolix.mcp-e2e-test-build={build_id}",
+            "-t",
+            f"{image}:{tag}",
+            ".",
+        ],
         cwd=REPO_ROOT,
     )
     print(f"[e2e] docker push {image}:{tag}", file=sys.stderr)
@@ -227,8 +292,103 @@ def _idempotent_precleanup(
 
 
 @pytest.fixture(scope="session")
+def operator_state(_e2e_env_guard: E2EConfig) -> Generator[str | None, None, None]:
+    """Optionally pin the Hydrolix operator to a specific image for the run.
+
+    No-op unless MCP_HYDROLIX_E2E_OPERATOR_IMAGE is set (the common case). When
+    engaged it snapshots the operator Deployment's current image, patches it to
+    the override, waits for the operator to roll out, and restores the original
+    image on teardown.
+
+    Ordered before cluster_state (which depends on this fixture) so the
+    overridden operator is reconciling before the CR's mcp-hydrolix container is
+    patched — that is what lets the new operator inject its new tunables. The
+    override is gated so it can't fire by accident: the presence check is in
+    _e2e_env_guard and the cluster-name ACK match is below. See
+    tests/e2e/README.md ("Operator-version override") for the rationale.
+    """
+    cfg = _e2e_env_guard
+    if not cfg.operator_image:
+        yield None
+        return
+    op_image: str = cfg.operator_image
+
+    ctx = discover_kube_context(cfg.kubeconfig, cfg.kube_context, cfg.namespace, cfg.cluster_name)
+    if cfg.operator_override_ack != ctx.cluster_name:
+        pytest.fail(
+            "operator-version override refused: MCP_HYDROLIX_E2E_OPERATOR_OVERRIDE_ACK="
+            f"{cfg.operator_override_ack!r} does not match the resolved cluster name "
+            f"{ctx.cluster_name!r}. Set the ACK to the exact cluster you intend to mutate.",
+            pytrace=False,
+        )
+
+    clients = make_clients()
+    assert cfg.operator_deployment is not None  # guaranteed by the guard
+    op_deployment: str = cfg.operator_deployment
+    op_namespace: str = cfg.operator_namespace or ctx.namespace
+    # The container within the operator pod whose image we patch; defaults to
+    # the Deployment name, which is the usual convention.
+    op_container: str = cfg.operator_container or op_deployment
+
+    original_image = read_deployment_image(clients, op_namespace, op_deployment, op_container)
+    if original_image is None:
+        pytest.fail(
+            f"operator-version override: could not find container {op_container!r} on "
+            f"Deployment {op_deployment!r} in namespace {op_namespace!r}. Check "
+            "MCP_HYDROLIX_E2E_OPERATOR_DEPLOYMENT / _NAMESPACE / _CONTAINER.",
+            pytrace=False,
+        )
+    assert original_image is not None  # pytest.fail above is NoReturn at runtime
+
+    op_ctx = KubeContext(
+        kubeconfig=ctx.kubeconfig,
+        context=ctx.context,
+        namespace=op_namespace,
+        cluster_name=ctx.cluster_name,
+    )
+    print(
+        f"[e2e] !!! OPERATOR OVERRIDE ENGAGED on cluster {ctx.cluster_name!r}: patching "
+        f"{op_deployment!r}/{op_container!r} in {op_namespace!r} "
+        f"from {original_image!r} to {op_image!r}. The original image will be "
+        f"restored on teardown.",
+        file=sys.stderr,
+    )
+    pre_patch_gen = read_deployment_generation(clients, op_ctx, op_deployment)
+    try:
+        patch_deployment_image(clients, op_namespace, op_deployment, op_container, op_image)
+        wait_for_rollout(
+            clients,
+            op_ctx,
+            deployment_name=op_deployment,
+            timeout=cfg.ready_timeout,
+            min_generation=pre_patch_gen,
+            expected_image=op_image,
+            container_name=op_container,
+        )
+        yield op_image
+    finally:
+        try:
+            patch_deployment_image(
+                clients, op_namespace, op_deployment, op_container, original_image
+            )
+            print(
+                f"[e2e] restored operator image on {op_deployment!r} "
+                f"({op_namespace!r}) to {original_image!r}",
+                file=sys.stderr,
+            )
+        except Exception as exc:
+            print(
+                f"[e2e] FAILED to restore operator image on {op_deployment!r} "
+                f"({op_namespace!r}) to {original_image!r}: {exc}\n"
+                f"[e2e] Restore it manually with: kubectl -n {op_namespace} set image "
+                f"deployment/{op_deployment} {op_container}={original_image}",
+                file=sys.stderr,
+            )
+
+
+@pytest.fixture(scope="session")
 def cluster_state(
-    _e2e_env_guard: E2EConfig, built_image: tuple[str, str]
+    _e2e_env_guard: E2EConfig, operator_state: str | None, built_image: tuple[str, str]
 ) -> Generator[ClusterState, None, None]:
     cfg = _e2e_env_guard
     image, tag = built_image

@@ -170,6 +170,72 @@ class TestQuerySettings:
         assert "hdx_query_max_timerange_sec" not in settings
 
 
+async def _settings_from_execute_query() -> dict:
+    """Run execute_query against a mock client and return the SETTINGS dict."""
+    from mcp_hydrolix.mcp_server import execute_query
+
+    mock_client = AsyncMock()
+    mock_query_result = AsyncMock()
+    mock_query_result.column_names = ["id"]
+    mock_query_result.result_rows = [[1]]
+    mock_client.query.return_value = mock_query_result
+
+    mock_ctx = AsyncMock()
+    mock_ctx.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_ctx.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("mcp_hydrolix.mcp_server.create_hydrolix_client", return_value=mock_ctx):
+        await execute_query("SELECT 1")
+
+    mock_client.query.assert_awaited_once()
+    _, kwargs = mock_client.query.call_args
+    return kwargs["settings"]
+
+
+class TestExecuteQuerySettingsFromEnv:
+    """execute_query base SETTINGS reflect the HDX-11673 env vars."""
+
+    async def test_defaults_match_historical_literals(self):
+        """With no env overrides, defaults equal the previously-hardcoded values."""
+        settings = await _settings_from_execute_query()
+        assert settings["hdx_query_max_attempts"] == 1
+        assert settings["hdx_query_max_result_rows"] == 100_000
+        assert settings["hdx_query_max_memory_usage"] == 2 * 1024 * 1024 * 1024
+
+    async def test_overrides_flow_into_settings(self, monkeypatch):
+        monkeypatch.setenv("HYDROLIX_QUERY_MAX_ATTEMPTS", "5")
+        monkeypatch.setenv("HYDROLIX_QUERY_MAX_RESULT_ROWS", "42")
+        monkeypatch.setenv("HYDROLIX_QUERY_MAX_MEMORY_USAGE", "1073741824")
+        settings = await _settings_from_execute_query()
+        assert settings["hdx_query_max_attempts"] == 5
+        assert settings["hdx_query_max_result_rows"] == 42
+        assert settings["hdx_query_max_memory_usage"] == 1073741824
+
+
+class TestTimerangeRequiredFromEnv:
+    """run_select_query honors HYDROLIX_QUERY_TIMERANGE_REQUIRED."""
+
+    @patch(
+        "mcp_hydrolix.mcp_server._query_targets_summary_table",
+        new_callable=AsyncMock,
+        return_value=True,
+    )
+    @patch(
+        "mcp_hydrolix.mcp_server.execute_query",
+        new_callable=AsyncMock,
+        return_value=_fake_result(),
+    )
+    async def test_timerange_required_can_be_disabled(
+        self, mock_execute, mock_targets_summary, monkeypatch
+    ):
+        monkeypatch.setenv("HYDROLIX_QUERY_TIMERANGE_REQUIRED", "false")
+        await inspect.unwrap(run_select_query)(
+            "SELECT cnt_all FROM db.t WHERE ts > now() - INTERVAL 1 DAY"
+        )
+        _, kwargs = mock_execute.call_args
+        assert kwargs["extra_settings"]["hdx_query_timerange_required"] is False
+
+
 class TestQueryPoolSetting:
     """Verify HYDROLIX_QUERY_POOL is threaded into the settings of every query and
     command the server issues, and that it never leaks when unconfigured.

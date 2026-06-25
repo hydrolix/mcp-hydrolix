@@ -174,15 +174,15 @@ class HydrolixConfig:
         HYDROLIX_MCP_REQUEST_TIMEOUT 120
         HYDROLIX_MCP_WORKERS 1
         HYDROLIX_MCP_WORKER_CONNECTIONS 200
-        HYDROLIX_MCP_MAX_REQUESTS 10000
+        HYDROLIX_MCP_MAX_REQUESTS 10_000
         HYDROLIX_MCP_MAX_REQUESTS_JITTER 1000
         HYDROLIX_MCP_MAX_KEEPALIVE 10
         HYDROLIX_MAX_RESULT_CELLS: Maximum number of cells (rows × columns) to return in a
-            query result before truncating (default: 50000)
+            query result before truncating (default: 50_000)
         HYDROLIX_MAX_RESULT_CELLS_LIMIT: Hard upper bound on max_cells that callers may request.
             0 means no limit is enforced (default: 0). Set this in multi-tenant HTTP/SSE
             deployments to prevent a single session from materialising very large result sets.
-        HYDROLIX_MAX_RAW_TIMERANGE: Max timerange in seconds for non-summary queries (default: 21600 = 6 hours)
+        HYDROLIX_MAX_RAW_TIMERANGE: Max timerange in seconds for non-summary queries (default: 6 hours)
         HYDROLIX_QUERY_POOL: Name of the Hydrolix query pool to route queries to. When set, every
             query the server issues carries the ``hdx_query_pool_name`` setting instead of using
             the cluster's default pool. The named pool must already exist on the cluster. In
@@ -352,7 +352,7 @@ class HydrolixConfig:
 
         Default: 30
         """
-        return int(os.getenv("HYDROLIX_CONNECT_TIMEOUT", "30"))
+        return int(os.getenv("HYDROLIX_CONNECT_TIMEOUT", 30))
 
     @property
     def send_receive_timeout(self) -> int:
@@ -360,7 +360,7 @@ class HydrolixConfig:
 
         Default: 300 (Hydrolix default)
         """
-        return int(os.getenv("HYDROLIX_SEND_RECEIVE_TIMEOUT", "300"))
+        return int(os.getenv("HYDROLIX_SEND_RECEIVE_TIMEOUT", 300))
 
     @property
     def query_pool_size(self) -> int:
@@ -379,12 +379,49 @@ class HydrolixConfig:
         return int(os.getenv("HYDROLIX_QUERY_TIMEOUT_SECS", 30))
 
     @property
+    def query_timerange_required(self) -> bool:
+        """Whether SELECT queries must constrain their primary timestamp range.
+
+        Maps to the ``hdx_query_timerange_required`` Hydrolix query setting.
+        Default: True (queries without a timerange filter are rejected). Only an
+        explicit "false" disables it, so a typo'd value keeps the guard on.
+        """
+        return os.getenv("HYDROLIX_QUERY_TIMERANGE_REQUIRED", "true").lower() != "false"
+
+    @property
+    def query_max_memory_usage(self) -> int:
+        """Max bytes of memory a single query may use.
+
+        Maps to the ``hdx_query_max_memory_usage`` Hydrolix query setting.
+        Default: 2 GiB.
+        """
+        return int(os.getenv("HYDROLIX_QUERY_MAX_MEMORY_USAGE", 2 * 1024 * 1024 * 1024))
+
+    @property
+    def query_max_attempts(self) -> int:
+        """Max number of times Hydrolix retries a query.
+
+        Maps to the ``hdx_query_max_attempts`` Hydrolix query setting.
+        Default: 1 (no retries).
+        """
+        return int(os.getenv("HYDROLIX_QUERY_MAX_ATTEMPTS", 1))
+
+    @property
+    def query_max_result_rows(self) -> int:
+        """Max number of rows a query may return.
+
+        Maps to the ``hdx_query_max_result_rows`` Hydrolix query setting.
+        Default: 100_000.
+        """
+        return int(os.getenv("HYDROLIX_QUERY_MAX_RESULT_ROWS", 100_000))
+
+    @property
     def max_result_cells(self) -> int:
         """Get the default cell budget (rows × columns) for query result truncation.
 
-        Configured via HYDROLIX_MAX_RESULT_CELLS (default: 50000).
+        Configured via HYDROLIX_MAX_RESULT_CELLS (default: 50_000).
         """
-        return int(os.getenv("HYDROLIX_MAX_RESULT_CELLS", "50000"))
+        return int(os.getenv("HYDROLIX_MAX_RESULT_CELLS", 50_000))
 
     @property
     def max_result_cells_limit(self) -> int:
@@ -396,7 +433,7 @@ class HydrolixConfig:
         Configured via HYDROLIX_MAX_RESULT_CELLS_LIMIT (default: 0, no cap enforced).
         Set to a positive integer to enforce a cap in multi-tenant HTTP/SSE deployments.
         """
-        return int(os.getenv("HYDROLIX_MAX_RESULT_CELLS_LIMIT", "0"))
+        return int(os.getenv("HYDROLIX_MAX_RESULT_CELLS_LIMIT", 0))
 
     @property
     def mcp_server_transport(self) -> str:
@@ -429,7 +466,7 @@ class HydrolixConfig:
         Only used when transport is "http" or "sse".
         Default: 8000
         """
-        return int(os.getenv("HYDROLIX_MCP_BIND_PORT", "8000"))
+        return int(os.getenv("HYDROLIX_MCP_BIND_PORT", 8000))
 
     @property
     def mcp_timeout(self) -> int:
@@ -462,9 +499,9 @@ class HydrolixConfig:
     def max_raw_timerange(self) -> int:
         """Get the max timerange in seconds for non-summary queries.
 
-        Default: 21600 (6 hours)
+        Default: 6 hours.
         """
-        return int(os.getenv("HYDROLIX_MAX_RAW_TIMERANGE", "21600"))
+        return int(os.getenv("HYDROLIX_MAX_RAW_TIMERANGE", 6 * 60 * 60))
 
     @property
     def query_pool(self) -> Optional[str]:
@@ -505,9 +542,9 @@ class HydrolixConfig:
         to respawn the process, so ``main.py`` passes ``None`` to uvicorn in
         that case.
 
-        Set to 0 to disable. Default: 10000.
+        Set to 0 to disable. Default: 10_000.
         """
-        return int(os.getenv("HYDROLIX_MCP_MAX_REQUESTS", 10000))
+        return int(os.getenv("HYDROLIX_MCP_MAX_REQUESTS", 10_000))
 
     @property
     def mcp_max_requests_jitter(self) -> int:
@@ -633,7 +670,7 @@ class HydrolixConfig:
             except (ValueError, TypeError):
                 raise ValueError(
                     f"Invalid HYDROLIX_MAX_RESULT_CELLS={raw_cells!r}: "
-                    "must be a positive integer (e.g. 50000)."
+                    "must be a positive integer (e.g. 50_000)."
                 )
 
         # Validate HYDROLIX_MAX_RESULT_CELLS_LIMIT: must be a non-negative integer if set.
@@ -648,6 +685,23 @@ class HydrolixConfig:
                     f"Invalid HYDROLIX_MAX_RESULT_CELLS_LIMIT={raw_limit!r}: "
                     "must be a non-negative integer (0 means no cap)."
                 )
+
+        # Validate the execute_query SETTINGS overrides: each must be a positive
+        # integer if set (they map to Hydrolix per-query limits).
+        for var_name, example in (
+            ("HYDROLIX_QUERY_MAX_MEMORY_USAGE", "2_147_483_648"),
+            ("HYDROLIX_QUERY_MAX_ATTEMPTS", "1"),
+            ("HYDROLIX_QUERY_MAX_RESULT_ROWS", "100_000"),
+        ):
+            raw = os.getenv(var_name)
+            if raw is not None:
+                try:
+                    if int(raw) <= 0:
+                        raise ValueError()
+                except (ValueError, TypeError):
+                    raise ValueError(
+                        f"Invalid {var_name}={raw!r}: must be a positive integer (e.g. {example})."
+                    )
 
 
 # Global instance placeholder for the singleton pattern
