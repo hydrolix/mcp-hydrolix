@@ -7,25 +7,18 @@ install and use the server.
 
 ## End-to-end tests
 
-A separate suite under `tests/e2e/` deploys the local working tree to a live
-Hydrolix Kubernetes cluster and smoke-tests the MCP tools against the running
-pod. It exercises **environmental integration** — container config, ingress
-auth, ClickHouse reachability from the pod — not deep business logic.
+The suite under `tests/e2e/` deploys your local working tree to a live Hydrolix
+Kubernetes cluster and smoke-tests the MCP tools against the running pod. It
+requires `kubectl` access to a deployed cluster with
+`spec.mcp_hydrolix.enabled = true`, plus credentials for that cluster. It is
+excluded from default test runs and the pre-push hook, and opts in via the
+`end_to_end` pytest marker.
 
-It is excluded from default test runs and from the pre-push hook; running it
-requires explicit opt-in via the `end_to_end` pytest marker plus credentials and
-`kubectl` access to a cluster with `spec.mcp_hydrolix.enabled = true`.
-
-```bash
-cp .env.e2e.example .env.e2e
-$EDITOR .env.e2e   # HYDROLIX_USER, HYDROLIX_PASSWORD, MCP_HYDROLIX_E2E_KUBE_CONTEXT
-uv run pytest -m end_to_end tests/e2e/
-```
-
-See [`tests/e2e/README.md`](tests/e2e/README.md) for the full runbook:
-prerequisites, the default build-and-deploy flow, the
-`publish-feature.yml`-published-image alternative, the gated operator-version
-override, cleanup behavior, manual recovery, and troubleshooting.
+[`tests/e2e/README.md`](tests/e2e/README.md) is the full runbook — what the
+suite covers and the guards that keep it out of normal runs, prerequisites and
+one-time setup, the default build-and-deploy flow, the `publish-feature.yml`
+alternative, the gated operator-version override, cleanup, manual recovery, and
+troubleshooting.
 
 ## Releasing a new version
 
@@ -93,30 +86,17 @@ must match the version currently on `main`.
 
 ### Release notes are required
 
-**Every release MUST ship hand-crafted release notes.** This is the whole
-motivation for this section. The notes must be *curated by a human* — a grouped,
-readable changelog written for the reader — not an auto-generated PR-title dump
-and never empty.
+**Every release MUST ship release notes.** The notes must be *curated by a
+human* — a grouped, readable changelog written for the reader — not an
+auto-generated PR-title dump and never empty.
 
-Both recent tags are **degenerate** and must not be used as templates:
-
-- `v0.3.2` — body is just the bare version string. Empty.
-- `v0.3.3` — GitHub's auto-generated "What's Changed" list (one line per merged
-  PR, including `Bump …` dependabot churn). This is a raw dump, not curated
-  notes.
-
-The **required style** is the hand-written changelog used in the older tag
-annotations — see `v0.3.1`, `v0.3.0`, and `v0.2.4` (`git show v0.3.1`). It has:
-
-- A short heading line with the version.
-- Changes **grouped by category** — `Added` / `Changed` / `Removed` / `Fixed`
-  (Keep-a-Changelog style), or the equivalent `Bug fixes` / `Improvements` /
-  `Documentation` grouping in `v0.2.4`. Omit empty groups.
-- One bullet per user-visible change, written as a sentence, each citing its PR
-  (`(#88)`) and/or Jira ticket (`(HDX-11190)`).
-- **Breaking changes called out explicitly** — prefix the bullet with
-  `Breaking:` as in `v0.3.0`, and include the upgrade/migration step (e.g. a
-  removed or deprecated `HYDROLIX_*` env var).
+Follow [Keep a Changelog](https://keepachangelog.com/) — changes grouped under
+`Added` / `Changed` / `Removed` / `Fixed`, one bullet per user-visible change
+written as a sentence and citing its PR (`(#88)`) and/or Jira ticket
+(`(HDX-11190)`), with breaking changes prefixed `Breaking:` and carrying their
+upgrade/migration step (e.g. a removed or deprecated `HYDROLIX_*` env var). The
+older tag annotations (`v0.3.1`, `v0.3.0`, `v0.2.4`; e.g. `git show v0.3.1`) are
+good examples to follow.
 
 Example skeleton (`NOTES.md`):
 
@@ -139,17 +119,16 @@ Where the notes live:
    (`git tag -a v0.3.4 -F NOTES.md`, step 3). The tag annotation is the
    canonical record and the practice the older releases followed.
 2. **On the GitHub Release** — `publish-mcpb` creates the Release with GitHub's
-   `--generate-notes` (the v0.3.3-style dump), which is **not** acceptable as
-   the final body. After the run, overwrite it with your curated notes so the
-   Release matches the tag:
+   `--generate-notes`, which is **not** acceptable as the final body. After the
+   run, overwrite it with your curated notes so the Release matches the tag:
 
    ```bash
    gh release edit v0.3.4 --repo hydrolix/mcp-hydrolix --notes-file NOTES.md
    ```
 
-Do not pre-create the GitHub Release with an empty body before the workflow runs
-(that is how `v0.3.2` ended up blank). Either let the workflow create it and then
-overwrite the body as above, or create it yourself with `--notes-file NOTES.md`.
+Do not pre-create the GitHub Release with an empty body before the workflow runs.
+Either let the workflow create it and then overwrite the body as above, or create
+it yourself with `--notes-file NOTES.md`.
 
 ### After the release
 
@@ -162,16 +141,6 @@ overwrite the body as above, or create it yourself with `--notes-file NOTES.md`.
   ```bash
   uvx --python 3.13 --refresh-package mcp-hydrolix mcp-hydrolix --help
   ```
-
-### Rolling back
-
-PyPI releases cannot be overwritten — a version number, once published, is
-permanent. If a release is broken:
-
-- **Yank** the bad version on PyPI (it stays downloadable for existing pins but
-  is hidden from new resolutions), then release a fixed `PATCH` bump.
-- For Docker, the GAR `:latest` tag follows the most recent successful release;
-  re-running a good release (or pushing a corrected tag) moves it back.
 
 ## Publishing a feature-branch image (non-release)
 
