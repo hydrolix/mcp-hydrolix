@@ -461,10 +461,8 @@ Though not part of the MCP specification, many MCP clients allow adding headers 
 
 Note: The bind host and port settings are only used when transport is set to "http" or "sse".
 
-## End-to-end tests
+## Maintainers
 
-A separate suite under `tests/e2e/` deploys the local working tree to a live
-Hydrolix Kubernetes cluster and smoke-tests the MCP tools against the running
-pod. It is excluded from default test runs and from the pre-push hook; running
-it requires explicit opt-in via the `end_to_end` pytest marker plus
-credentials. See [`tests/e2e/README.md`](tests/e2e/README.md) for the runbook.
+Tasks that need operational privileges — running the end-to-end suite against a
+live Hydrolix cluster, and cutting a release — are documented separately in
+[`MAINTAINERS.md`](MAINTAINERS.md).
