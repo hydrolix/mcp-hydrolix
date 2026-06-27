@@ -91,7 +91,15 @@ jobs:
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" dist/*.mcpb --clobber
           else
-            gh release create "$TAG" dist/*.mcpb --generate-notes --title "$TAG"
+            # The Release body comes from the annotated tag message. Fall back to
+            # auto-generated notes only when the annotation has no body, so a
+            # release is never published with completely empty notes.
+            if [[ -n "$(git tag -l --format='%(contents)' "$TAG")" ]]; then
+              gh release create "$TAG" dist/*.mcpb --notes-from-tag --title "$TAG"
+            else
+              echo "::warning::Tag $TAG has no annotation body; falling back to --generate-notes"
+              gh release create "$TAG" dist/*.mcpb --generate-notes --title "$TAG"
+            fi
           fi
   bump-version:
     name: Bump to next patch version

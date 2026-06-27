@@ -1,20 +1,20 @@
 # Maintainers' guide
 
-This document covers tasks that require privileges held by Hydrolix maintainers
-— running the end-to-end suite against a live cluster, and cutting a release.
-Contributors and users do not need anything here; see the [README](README.md) to
-install and use the server.
+This document covers tasks that require Hydrolix maintainer privileges: running
+the end-to-end suite against a live cluster, and cutting a release. Contributors
+and users do not need anything here; see the [README](README.md) to install and
+use the server.
 
 ## End-to-end tests
 
 The suite under `tests/e2e/` deploys your local working tree to a live Hydrolix
 Kubernetes cluster and smoke-tests the MCP tools against the running pod. It
 requires `kubectl` access to a deployed cluster with
-`spec.mcp_hydrolix.enabled = true`, plus credentials for that cluster. It is
-excluded from default test runs and the pre-push hook, and opts in via the
-`end_to_end` pytest marker.
+`spec.mcp_hydrolix.enabled = true`, plus credentials for that cluster. The
+`end_to_end` pytest marker keeps it out of default test runs and the pre-push
+hook; pass `-m end_to_end` to opt in.
 
-[`tests/e2e/README.md`](tests/e2e/README.md) is the full runbook — what the
+[`tests/e2e/README.md`](tests/e2e/README.md) is the full runbook: what the
 suite covers and the guards that keep it out of normal runs, prerequisites and
 one-time setup, the default build-and-deploy flow, the `publish-feature.yml`
 alternative, the gated operator-version override, cleanup, manual recovery, and
@@ -44,61 +44,59 @@ must match the version currently on `main`.
    If it does not match, bump it on `main` first (`uv version <X.Y.Z>` followed
    by `uv lock --no-upgrade`, then commit and push).
 
-3. **Write the release notes and put them in the annotated tag.** This is a
-   required, hand-crafted step — see [Release notes are
-   required](#release-notes-are-required) for the format. Author the curated
-   notes in the tag's annotation message (not a throwaway `-m "Release v0.3.4"`):
+3. **Write the release notes into the annotated tag.** The tag annotation is the
+   source of truth for the notes (see [Release notes are
+   required](#release-notes-are-required) for the format). `git tag -a` opens
+   your editor so you write them inline:
 
    ```bash
    git checkout main && git pull
-   git tag -a v0.3.4 -F NOTES.md      # NOTES.md holds the curated changelog
+   git tag -a v0.3.4        # opens $EDITOR; write the curated notes as the message
    git push origin v0.3.4
    ```
 
    Use an *annotated* tag (`-a`), not a lightweight tag. The tag name must match
-   `v[0-9]+.[0-9]+.[0-9]+` exactly or the workflow will not trigger. Keep
-   `NOTES.md` around — you reuse the same text as the GitHub Release body in
-   step 4.
+   `v[0-9]+.[0-9]+.[0-9]+` or the workflow will not trigger.
 
 4. **Watch the workflow.** The push fires `Publish release`, which (after
    `prove-main` passes) runs in parallel:
 
-   - **`publish`** — `uv build` and upload to
+   - **`publish`**: `uv build` and upload to
      [PyPI](https://pypi.org/p/mcp-hydrolix) via Trusted Publishing.
-   - **`publish-docker`** — build and push the image to GAR as both
+   - **`publish-docker`**: build and push the image to GAR as both
      `us-docker.pkg.dev/hdx-art/t/mcp-hydrolix:v0.3.4` and `:latest`.
-   - **`publish-mcpb`** — build the MCPB bundle and attach it to a GitHub
-     Release for the tag. If no Release exists yet, it creates one with GitHub's
-     **auto-generated notes** (`gh release create --generate-notes`) — treat
-     these as a placeholder you overwrite with your curated notes (see [Release
-     notes are required](#release-notes-are-required)). If a Release already
-     exists, it only uploads the bundle and leaves the body untouched.
-
-   ```bash
-   gh run watch
-   ```
+   - **`publish-mcpb`**: build the MCPB bundle and attach it to the GitHub
+     Release for the tag. If no Release exists yet, it creates one with the body
+     taken from your tag annotation (`--notes-from-tag`). If a Release already
+     exists, it uploads the bundle and leaves the body untouched.
 
 5. **Automatic version bump.** Once `publish`, `publish-docker`, and
    `publish-mcpb` all succeed, the `bump-version` job commits a
    `Prepare <next> development cycle` change to `main` that bumps the patch
-   version in `pyproject.toml` and `uv.lock`. No manual follow-up is needed for
-   the version bump; just `git pull` on `main` afterward.
+   version in `pyproject.toml` and `uv.lock`. The bump needs no manual
+   follow-up.
 
 ### Release notes are required
 
-**Every release MUST ship release notes.** The notes must be *curated by a
-human* — a grouped, readable changelog written for the reader — not an
-auto-generated PR-title dump and never empty.
+**Every release MUST ship release notes.** Curate them by hand into a grouped,
+readable changelog written for the reader, not an auto-generated PR-title dump
+or an empty body.
 
-Follow [Keep a Changelog](https://keepachangelog.com/) — changes grouped under
+> [!IMPORTANT]
+> The notes have a single source: the **annotated tag message**. Write them
+> there and the rest follows: `publish-mcpb` creates the GitHub Release with its
+> body taken from the tag annotation (`--notes-from-tag`). You do not set notes
+> anywhere else, and there is nothing to copy or re-paste after the run.
+
+Follow [Keep a Changelog](https://keepachangelog.com/): group changes under
 `Added` / `Changed` / `Removed` / `Fixed`, one bullet per user-visible change
 written as a sentence and citing its PR (`(#88)`) and/or Jira ticket
-(`(HDX-11190)`), with breaking changes prefixed `Breaking:` and carrying their
+(`(HDX-11190)`). Prefix breaking changes with `Breaking:` and include the
 upgrade/migration step (e.g. a removed or deprecated `HYDROLIX_*` env var). The
 older tag annotations (`v0.3.1`, `v0.3.0`, `v0.2.4`; e.g. `git show v0.3.1`) are
-good examples to follow.
+good examples.
 
-Example skeleton (`NOTES.md`):
+Example annotation:
 
 ```markdown
 ## v0.3.4
@@ -113,40 +111,26 @@ Example skeleton (`NOTES.md`):
 - … (#NNN)
 ```
 
-Where the notes live:
-
-1. **In the annotated tag** — author them there at tag-creation time
-   (`git tag -a v0.3.4 -F NOTES.md`, step 3). The tag annotation is the
-   canonical record and the practice the older releases followed.
-2. **On the GitHub Release** — `publish-mcpb` creates the Release with GitHub's
-   `--generate-notes`, which is **not** acceptable as the final body. After the
-   run, overwrite it with your curated notes so the Release matches the tag:
-
-   ```bash
-   gh release edit v0.3.4 --repo hydrolix/mcp-hydrolix --notes-file NOTES.md
-   ```
-
-Do not pre-create the GitHub Release with an empty body before the workflow runs.
-Either let the workflow create it and then overwrite the body as above, or create
-it yourself with `--notes-file NOTES.md`.
+> [!WARNING]
+> Do not pre-create the GitHub Release before the workflow runs. The workflow
+> only sets the body when it creates the Release, so a Release you make by hand
+> keeps whatever body you gave it. You only need to push an annotated tag with
+> curated notes; let the workflow create the Release.
 
 ### After the release
 
 - Confirm the new version is live on [PyPI](https://pypi.org/p/mcp-hydrolix) and
   that the [GitHub Release](https://github.com/hydrolix/mcp-hydrolix/releases)
-  exists for the tag, carries your **curated release notes** (not the
-  auto-generated dump), and has the MCPB bundle attached.
-- Verify the install path works end to end:
+  exists for the tag, carries your curated release notes, and has the MCPB
+  bundle attached.
+- Verify the install path works end to end: install the published version from
+  PyPI in a clean environment and confirm the server starts.
 
-  ```bash
-  uvx --python 3.13 --refresh-package mcp-hydrolix mcp-hydrolix --help
-  ```
+## Publishing a feature-branch image (for testing)
 
-## Publishing a feature-branch image (non-release)
-
-To get a Docker image for a branch without cutting a release — e.g. to run the
-e2e suite against a pre-built image — trigger
-[`publish-feature.yml`](.github/workflows/publish-feature.yml) manually:
+To get a Docker image for a branch without cutting a release (e.g. to run the
+e2e suite against a pre-built image), trigger
+[`publish-feature.yml`](.github/workflows/publish-feature.yml) by hand:
 
 ```bash
 gh workflow run publish-feature.yml --ref <your-branch>
@@ -154,4 +138,5 @@ gh run watch
 ```
 
 It pushes `us-docker.pkg.dev/hdx-art/t/mcp-hydrolix:branch-<branch>-<shortsha>`.
-This never touches PyPI, `:latest`, or the version number.
+This never touches PyPI, `:latest`, or the version number. The built image can
+be deployed to a Hydrolix cluster for manual testing.
