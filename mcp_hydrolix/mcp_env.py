@@ -8,7 +8,7 @@ import logging
 import os
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional
+from typing import Any, Optional
 from urllib.parse import ParseResult, urlparse
 
 from mcp_hydrolix.auth.credentials import HydrolixCredential, ServiceAccountToken, UsernamePassword
@@ -557,6 +557,22 @@ class HydrolixConfig:
         if http_proxy := os.getenv("HYDROLIX_HTTP_PROXY", "").strip():
             return {"http_proxy": http_proxy}
         return {}
+
+    def client_pool_kwargs(self) -> dict[str, Any]:
+        """Kwargs for the shared ``get_pool_manager`` call that backs every client.
+
+        Single source of truth for how the shared urllib3 pool is built, so the
+        proxy wiring (``proxy_pool_kwargs``) cannot silently drop out of the real
+        connection path without a test noticing. ``mcp_server`` builds the shared
+        pool from exactly this dict.
+        """
+        return {
+            "maxsize": self.query_pool_size,
+            "num_pools": 1,
+            "verify": self.verify,
+            # Outbound proxy when configured; empty -> plain PoolManager (direct).
+            **self.proxy_pool_kwargs(),
+        }
 
     @property
     def mcp_graceful_timeout(self) -> int:

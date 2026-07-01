@@ -597,27 +597,19 @@ class TestProxyPoolKwargs:
 
 
 class TestProxyPoolWiring:
-    """End-to-end: the resolver output must actually build a proxied urllib3 pool.
+    """End-to-end: the shared pool actually becomes a ProxyManager when configured.
 
-    The unit tests above pin the returned dict; these pin the *contract* with
-    clickhouse-connect -- that feeding proxy_pool_kwargs() through the same
-    get_pool_manager() construction mcp_server uses yields a ProxyManager when a
-    proxy is set and a plain PoolManager when it is not. This is what actually
-    breaks proxy-only deployments if the wiring regresses.
+    These build the pool from ``config.client_pool_kwargs()`` -- the exact dict
+    ``mcp_server`` feeds to ``get_pool_manager`` -- so the proxy spread cannot
+    silently drop out of the real connection path without failing here. Pins the
+    contract with clickhouse-connect: ProxyManager when a proxy is set, plain
+    PoolManager when it is not.
     """
 
     def _build_pool(self, config: HydrolixConfig):
         from clickhouse_connect.driver import httputil
 
-        # Mirror mcp_server.py's pool_kwargs construction (minus the proxy spread,
-        # which is exactly what we're exercising here).
-        pool_kwargs = {
-            "maxsize": config.query_pool_size,
-            "num_pools": 1,
-            "verify": config.verify,
-            **config.proxy_pool_kwargs(),
-        }
-        return httputil.get_pool_manager(**pool_kwargs)
+        return httputil.get_pool_manager(**config.client_pool_kwargs())
 
     def test_no_proxy_builds_plain_pool_manager(self, config: HydrolixConfig) -> None:
         from urllib3.poolmanager import PoolManager, ProxyManager
