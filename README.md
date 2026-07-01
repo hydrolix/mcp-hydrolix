@@ -416,6 +416,11 @@ If no credentials are provided via the environment or the request, the request w
   * Default: None (uses the cluster's default query pool)
   * When set, every query the server issues is routed to the named pool; the pool must already exist on the cluster
   * In platform-managed (in-cluster) deployments the cluster tunable is mapped onto this same variable; the deployment owns the environment, so its value is authoritative
+* `HYDROLIX_HTTPS_PROXY` / `HYDROLIX_HTTP_PROXY`: Outbound proxy for reaching the Hydrolix cluster
+  * Default: None (connect directly)
+  * Set one to route the connection through a corporate proxy; include the scheme, e.g. `http://proxy.corp:8080`. If both are set, `HYDROLIX_HTTPS_PROXY` wins
+  * The standard `HTTP_PROXY`/`HTTPS_PROXY` environment variables are **not** used — the server needs these explicit `HYDROLIX_`-prefixed vars
+  * This is the single egress proxy for all cluster traffic, including the internal `/version` capability probe; the proxy must permit that request, or the server silently falls back to non-parameterized queries
   * Note: this is unrelated to `HYDROLIX_QUERIES_POOL_SIZE`, which sizes the client-side query thread pool
 
 

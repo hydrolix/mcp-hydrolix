@@ -141,6 +141,9 @@ pool_kwargs: dict[str, Any] = {
     "maxsize": HYDROLIX_CONFIG.query_pool_size,
     "num_pools": 1,
     "verify": HYDROLIX_CONFIG.verify,
+    # Outbound proxy when configured; empty -> plain PoolManager (direct).
+    # See HydrolixConfig.proxy_pool_kwargs for the contract and caveats.
+    **HYDROLIX_CONFIG.proxy_pool_kwargs(),
 }
 
 if HYDROLIX_CONFIG.verify:

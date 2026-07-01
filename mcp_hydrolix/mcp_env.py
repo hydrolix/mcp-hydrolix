@@ -189,6 +189,11 @@ class HydrolixConfig:
             platform-managed (in-cluster) deployments the cluster tunable is mapped onto this
             same variable; since the platform owns the process environment there, its value is
             authoritative. (default: None -- use the cluster default pool)
+        HYDROLIX_HTTPS_PROXY / HYDROLIX_HTTP_PROXY: Outbound proxy for reaching the cluster.
+            Set one (https wins if both are set) to route the connection through a corporate
+            proxy; include the scheme (e.g. http://proxy.corp:8080). This is the single egress
+            proxy for all cluster traffic. See ``proxy_pool_kwargs`` for the full contract.
+            (default: None -- connect directly)
     """
 
     def __init__(self) -> None:
@@ -521,6 +526,37 @@ class HydrolixConfig:
         empty user_config fields do not send an empty pool name.
         """
         return os.getenv("HYDROLIX_QUERY_POOL", "").strip() or None
+
+    def proxy_pool_kwargs(self) -> dict[str, str]:
+        """Outbound-proxy kwargs for the shared urllib3 pool (``get_pool_manager``).
+
+        We hand clickhouse-connect a pre-built ``pool_mgr``, so it skips its own
+        ``HTTP(S)_PROXY`` detection, and urllib3's ``PoolManager`` ignores proxy
+        env too -- this is the only place the connection learns about a proxy.
+
+        Precedence: ``HYDROLIX_HTTPS_PROXY`` -> ``{"https_proxy": ...}``, else
+        ``HYDROLIX_HTTP_PROXY`` -> ``{"http_proxy": ...}``, else ``{}`` (direct).
+        ``https`` wins because ``get_pool_manager`` raises ``ProgrammingError``
+        if both are passed. Blank/whitespace is treated as unset (MCPB hosts
+        inject empty user_config fields as empty strings).
+
+        Operational notes:
+          * The value is the single egress proxy for ALL cluster traffic --
+            queries *and* the ``/version`` capability probe -- regardless of
+            target scheme. The proxy must permit both; if it blocks the probe,
+            the server silently falls back to non-parameterized queries.
+          * Include the scheme (``http://proxy:8080``). ``get_pool_manager``
+            normalizes a bare ``host:port`` to ``https://`` for HYDROLIX_HTTPS_PROXY
+            and ``http://`` for HYDROLIX_HTTP_PROXY, which can surprise (e.g. TLS
+            attempted against a plaintext proxy port).
+          * ``HYDROLIX_VERIFY=false`` also disables TLS verification on an
+            ``https://`` proxy leg (clickhouse-connect uses one cert_reqs flag).
+        """
+        if https_proxy := os.getenv("HYDROLIX_HTTPS_PROXY", "").strip():
+            return {"https_proxy": https_proxy}
+        if http_proxy := os.getenv("HYDROLIX_HTTP_PROXY", "").strip():
+            return {"http_proxy": http_proxy}
+        return {}
 
     @property
     def mcp_graceful_timeout(self) -> int:

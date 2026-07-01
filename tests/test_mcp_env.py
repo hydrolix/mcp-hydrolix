@@ -547,3 +547,99 @@ class TestConnectionTargetValidation:
         monkeypatch.setenv("HYDROLIX_MCP_SERVER_TRANSPORT", "stdio")
         monkeypatch.setenv("HYDROLIX_HOST", "myhost")
         HydrolixConfig()  # no raise
+
+
+class TestProxyPoolKwargs:
+    """``proxy_pool_kwargs()`` resolves the outbound proxy for the shared urllib3 pool.
+
+    Because mcp-hydrolix passes clickhouse-connect a pre-built ``pool_mgr``,
+    clickhouse-connect's own env-proxy detection is skipped and urllib3 does not
+    read proxy env vars. This method is the explicit, HYDROLIX-namespaced hook
+    that lets a proxy-bound deployment route the connection. It feeds a single
+    proxy into ``get_pool_manager`` (which raises ``ProgrammingError`` if both
+    ``http_proxy`` and ``https_proxy`` are passed), so at most one key is emitted.
+    """
+
+    def test_no_proxy_returns_empty(self, config: HydrolixConfig) -> None:
+        # Default: no proxy configured -> empty kwargs -> plain PoolManager (direct).
+        assert config.proxy_pool_kwargs() == {}
+
+    def test_https_proxy(self, config: HydrolixConfig, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("HYDROLIX_HTTPS_PROXY", "http://proxy.corp:8080")
+        assert config.proxy_pool_kwargs() == {"https_proxy": "http://proxy.corp:8080"}
+
+    def test_http_proxy(self, config: HydrolixConfig, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("HYDROLIX_HTTP_PROXY", "http://proxy.corp:8080")
+        assert config.proxy_pool_kwargs() == {"http_proxy": "http://proxy.corp:8080"}
+
+    def test_https_wins_when_both_set(
+        self, config: HydrolixConfig, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Both set: emit only https_proxy -- never both, which would make
+        # clickhouse-connect's get_pool_manager raise ProgrammingError.
+        monkeypatch.setenv("HYDROLIX_HTTPS_PROXY", "http://secure.corp:8080")
+        monkeypatch.setenv("HYDROLIX_HTTP_PROXY", "http://plain.corp:8080")
+        assert config.proxy_pool_kwargs() == {"https_proxy": "http://secure.corp:8080"}
+
+    def test_blank_https_proxy_is_unset(
+        self, config: HydrolixConfig, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # MCPB hosts inject empty user_config fields as blank strings.
+        monkeypatch.setenv("HYDROLIX_HTTPS_PROXY", "   ")
+        assert config.proxy_pool_kwargs() == {}
+
+    def test_blank_https_falls_through_to_http(
+        self, config: HydrolixConfig, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("HYDROLIX_HTTPS_PROXY", "")
+        monkeypatch.setenv("HYDROLIX_HTTP_PROXY", "http://plain.corp:8080")
+        assert config.proxy_pool_kwargs() == {"http_proxy": "http://plain.corp:8080"}
+
+
+class TestProxyPoolWiring:
+    """End-to-end: the resolver output must actually build a proxied urllib3 pool.
+
+    The unit tests above pin the returned dict; these pin the *contract* with
+    clickhouse-connect -- that feeding proxy_pool_kwargs() through the same
+    get_pool_manager() construction mcp_server uses yields a ProxyManager when a
+    proxy is set and a plain PoolManager when it is not. This is what actually
+    breaks proxy-only deployments if the wiring regresses.
+    """
+
+    def _build_pool(self, config: HydrolixConfig):
+        from clickhouse_connect.driver import httputil
+
+        # Mirror mcp_server.py's pool_kwargs construction (minus the proxy spread,
+        # which is exactly what we're exercising here).
+        pool_kwargs = {
+            "maxsize": config.query_pool_size,
+            "num_pools": 1,
+            "verify": config.verify,
+            **config.proxy_pool_kwargs(),
+        }
+        return httputil.get_pool_manager(**pool_kwargs)
+
+    def test_no_proxy_builds_plain_pool_manager(self, config: HydrolixConfig) -> None:
+        from urllib3.poolmanager import PoolManager, ProxyManager
+
+        pool = self._build_pool(config)
+        assert isinstance(pool, PoolManager)
+        assert not isinstance(pool, ProxyManager)
+
+    def test_https_proxy_builds_proxy_manager(
+        self, config: HydrolixConfig, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from urllib3.poolmanager import ProxyManager
+
+        monkeypatch.setenv("HYDROLIX_HTTPS_PROXY", "http://proxy.corp:8080")
+        pool = self._build_pool(config)
+        assert isinstance(pool, ProxyManager)
+
+    def test_http_proxy_builds_proxy_manager(
+        self, config: HydrolixConfig, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from urllib3.poolmanager import ProxyManager
+
+        monkeypatch.setenv("HYDROLIX_HTTP_PROXY", "http://proxy.corp:8080")
+        pool = self._build_pool(config)
+        assert isinstance(pool, ProxyManager)
