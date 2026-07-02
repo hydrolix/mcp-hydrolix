@@ -595,21 +595,36 @@ class TestProxyPoolKwargs:
         monkeypatch.setenv("HYDROLIX_HTTP_PROXY", "http://plain.corp:8080")
         assert config.proxy_pool_kwargs() == {"http_proxy": "http://plain.corp:8080"}
 
+    @pytest.mark.parametrize(
+        "bad",
+        ["proxy.corp:8080", "proxy.corp", "ftp://proxy.corp:8080", "http://"],
+        ids=["no-scheme", "host-only", "bad-scheme", "no-host"],
+    )
+    def test_malformed_proxy_url_raises(
+        self, config: HydrolixConfig, monkeypatch: pytest.MonkeyPatch, bad: str
+    ) -> None:
+        # Validated like HYDROLIX_URL: scheme (http/https) + host required.
+        monkeypatch.setenv("HYDROLIX_HTTPS_PROXY", bad)
+        with pytest.raises(ValueError, match="HYDROLIX_HTTPS_PROXY"):
+            config.proxy_pool_kwargs()
+
 
 class TestProxyPoolWiring:
     """End-to-end: the shared pool actually becomes a ProxyManager when configured.
 
-    These build the pool from ``config.client_pool_kwargs()`` -- the exact dict
-    ``mcp_server`` feeds to ``get_pool_manager`` -- so the proxy spread cannot
-    silently drop out of the real connection path without failing here. Pins the
-    contract with clickhouse-connect: ProxyManager when a proxy is set, plain
-    PoolManager when it is not.
+    These build the pool from ``mcp_server.client_pool_kwargs(config)`` -- the
+    exact dict ``mcp_server`` feeds to ``get_pool_manager`` -- so the proxy spread
+    cannot silently drop out of the real connection path without failing here.
+    Pins the contract with clickhouse-connect: ProxyManager when a proxy is set,
+    plain PoolManager when it is not.
     """
 
     def _build_pool(self, config: HydrolixConfig):
         from clickhouse_connect.driver import httputil
 
-        return httputil.get_pool_manager(**config.client_pool_kwargs())
+        from mcp_hydrolix.mcp_server import client_pool_kwargs
+
+        return httputil.get_pool_manager(**client_pool_kwargs(config))
 
     def test_no_proxy_builds_plain_pool_manager(self, config: HydrolixConfig) -> None:
         from urllib3.poolmanager import PoolManager, ProxyManager

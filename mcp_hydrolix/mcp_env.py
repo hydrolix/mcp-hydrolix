@@ -8,7 +8,7 @@ import logging
 import os
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Optional
+from typing import Optional, TypedDict
 from urllib.parse import ParseResult, urlparse
 
 from mcp_hydrolix.auth.credentials import HydrolixCredential, ServiceAccountToken, UsernamePassword
@@ -105,6 +105,17 @@ def _parse_hydrolix_url() -> Optional[ParseResult]:
     if not parsed.hostname:
         raise ValueError(f"Invalid HYDROLIX_URL={raw!r}: missing hostname.")
     return parsed
+
+
+class ProxyPoolKwargs(TypedDict, total=False):
+    """Outbound-proxy kwargs for ``get_pool_manager``. At most one key is set.
+
+    ``https_proxy`` wins when both env vars are present; ``get_pool_manager``
+    raises if both are passed together.
+    """
+
+    https_proxy: str
+    http_proxy: str
 
 
 class TransportType(str, Enum):
@@ -527,7 +538,7 @@ class HydrolixConfig:
         """
         return os.getenv("HYDROLIX_QUERY_POOL", "").strip() or None
 
-    def proxy_pool_kwargs(self) -> dict[str, str]:
+    def proxy_pool_kwargs(self) -> ProxyPoolKwargs:
         """Outbound-proxy kwargs for the shared urllib3 pool (``get_pool_manager``).
 
         We hand clickhouse-connect a pre-built ``pool_mgr``, so it skips its own
@@ -538,41 +549,31 @@ class HydrolixConfig:
         ``HYDROLIX_HTTP_PROXY`` -> ``{"http_proxy": ...}``, else ``{}`` (direct).
         ``https`` wins because ``get_pool_manager`` raises ``ProgrammingError``
         if both are passed. Blank/whitespace is treated as unset (MCPB hosts
-        inject empty user_config fields as empty strings).
+        inject empty user_config fields as empty strings). The value is validated
+        like ``HYDROLIX_URL`` (scheme + host required), so a scheme-less
+        ``host:port`` is rejected up front rather than silently normalized.
 
         Operational notes:
           * The value is the single egress proxy for ALL cluster traffic --
             queries *and* the ``/version`` capability probe -- regardless of
             target scheme. The proxy must permit both; if it blocks the probe,
             the server silently falls back to non-parameterized queries.
-          * Include the scheme (``http://proxy:8080``). ``get_pool_manager``
-            normalizes a bare ``host:port`` to ``https://`` for HYDROLIX_HTTPS_PROXY
-            and ``http://`` for HYDROLIX_HTTP_PROXY, which can surprise (e.g. TLS
-            attempted against a plaintext proxy port).
           * ``HYDROLIX_VERIFY=false`` also disables TLS verification on an
             ``https://`` proxy leg (clickhouse-connect uses one cert_reqs flag).
         """
         if https_proxy := os.getenv("HYDROLIX_HTTPS_PROXY", "").strip():
-            return {"https_proxy": https_proxy}
-        if http_proxy := os.getenv("HYDROLIX_HTTP_PROXY", "").strip():
-            return {"http_proxy": http_proxy}
-        return {}
+            key, var, value = "https_proxy", "HYDROLIX_HTTPS_PROXY", https_proxy
+        elif http_proxy := os.getenv("HYDROLIX_HTTP_PROXY", "").strip():
+            key, var, value = "http_proxy", "HYDROLIX_HTTP_PROXY", http_proxy
+        else:
+            return {}
 
-    def client_pool_kwargs(self) -> dict[str, Any]:
-        """Kwargs for the shared ``get_pool_manager`` call that backs every client.
-
-        Single source of truth for how the shared urllib3 pool is built, so the
-        proxy wiring (``proxy_pool_kwargs``) cannot silently drop out of the real
-        connection path without a test noticing. ``mcp_server`` builds the shared
-        pool from exactly this dict.
-        """
-        return {
-            "maxsize": self.query_pool_size,
-            "num_pools": 1,
-            "verify": self.verify,
-            # Outbound proxy when configured; empty -> plain PoolManager (direct).
-            **self.proxy_pool_kwargs(),
-        }
+        parsed = urlparse(value)
+        if parsed.scheme not in ("http", "https") or not parsed.hostname:
+            raise ValueError(
+                f"Invalid {var}={value!r}: include a scheme, e.g. http://proxy.corp:8080."
+            )
+        return {key: value}
 
     @property
     def mcp_graceful_timeout(self) -> int:
