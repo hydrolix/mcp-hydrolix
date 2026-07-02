@@ -8,7 +8,7 @@ import logging
 import os
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional
+from typing import Optional, TypedDict
 from urllib.parse import ParseResult, urlparse
 
 from mcp_hydrolix.auth.credentials import HydrolixCredential, ServiceAccountToken, UsernamePassword
@@ -107,6 +107,17 @@ def _parse_hydrolix_url() -> Optional[ParseResult]:
     return parsed
 
 
+class ProxyPoolKwargs(TypedDict, total=False):
+    """Outbound-proxy kwargs for ``get_pool_manager``. At most one key is set.
+
+    ``https_proxy`` wins when both env vars are present; ``get_pool_manager``
+    raises if both are passed together.
+    """
+
+    https_proxy: str
+    http_proxy: str
+
+
 class TransportType(str, Enum):
     """Supported MCP server transport types."""
 
@@ -189,6 +200,11 @@ class HydrolixConfig:
             platform-managed (in-cluster) deployments the cluster tunable is mapped onto this
             same variable; since the platform owns the process environment there, its value is
             authoritative. (default: None -- use the cluster default pool)
+        HYDROLIX_HTTPS_PROXY / HYDROLIX_HTTP_PROXY: Outbound proxy for reaching the cluster.
+            Set one (https wins if both are set) to route the connection through a corporate
+            proxy; include the scheme (e.g. http://proxy.corp:8080). This is the single egress
+            proxy for all cluster traffic. See ``proxy_pool_kwargs`` for the full contract.
+            (default: None -- connect directly)
     """
 
     def __init__(self) -> None:
@@ -521,6 +537,43 @@ class HydrolixConfig:
         empty user_config fields do not send an empty pool name.
         """
         return os.getenv("HYDROLIX_QUERY_POOL", "").strip() or None
+
+    def proxy_pool_kwargs(self) -> ProxyPoolKwargs:
+        """Outbound-proxy kwargs for the shared urllib3 pool (``get_pool_manager``).
+
+        We hand clickhouse-connect a pre-built ``pool_mgr``, so it skips its own
+        ``HTTP(S)_PROXY`` detection, and urllib3's ``PoolManager`` ignores proxy
+        env too -- this is the only place the connection learns about a proxy.
+
+        Precedence: ``HYDROLIX_HTTPS_PROXY`` -> ``{"https_proxy": ...}``, else
+        ``HYDROLIX_HTTP_PROXY`` -> ``{"http_proxy": ...}``, else ``{}`` (direct).
+        ``https`` wins because ``get_pool_manager`` raises ``ProgrammingError``
+        if both are passed. Blank/whitespace is treated as unset (MCPB hosts
+        inject empty user_config fields as empty strings). The value is validated
+        like ``HYDROLIX_URL`` (scheme + host required), so a scheme-less
+        ``host:port`` is rejected up front rather than silently normalized.
+
+        Operational notes:
+          * The value is the single egress proxy for ALL cluster traffic --
+            queries *and* the ``/version`` capability probe -- regardless of
+            target scheme. The proxy must permit both; if it blocks the probe,
+            the server silently falls back to non-parameterized queries.
+          * ``HYDROLIX_VERIFY=false`` also disables TLS verification on an
+            ``https://`` proxy leg (clickhouse-connect uses one cert_reqs flag).
+        """
+        if https_proxy := os.getenv("HYDROLIX_HTTPS_PROXY", "").strip():
+            key, var, value = "https_proxy", "HYDROLIX_HTTPS_PROXY", https_proxy
+        elif http_proxy := os.getenv("HYDROLIX_HTTP_PROXY", "").strip():
+            key, var, value = "http_proxy", "HYDROLIX_HTTP_PROXY", http_proxy
+        else:
+            return {}
+
+        parsed = urlparse(value)
+        if parsed.scheme not in ("http", "https") or not parsed.hostname:
+            raise ValueError(
+                f"Invalid {var}={value!r}: include a scheme, e.g. http://proxy.corp:8080."
+            )
+        return {key: value}
 
     @property
     def mcp_graceful_timeout(self) -> int:

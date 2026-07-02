@@ -137,11 +137,24 @@ async def create_hydrolix_client(pool_mgr, request_credential: Optional[Hydrolix
 common.set_setting("invalid_setting_action", "send")
 common.set_setting("autogenerate_session_id", False)
 
-pool_kwargs: dict[str, Any] = {
-    "maxsize": HYDROLIX_CONFIG.query_pool_size,
-    "num_pools": 1,
-    "verify": HYDROLIX_CONFIG.verify,
-}
+
+def client_pool_kwargs(config: HydrolixConfig) -> dict[str, Any]:
+    """Kwargs for the shared ``get_pool_manager`` call that backs every client.
+
+    Single source of truth for how the shared urllib3 pool is built, so the proxy
+    wiring (``config.proxy_pool_kwargs``) cannot silently drop out of the real
+    connection path without a test noticing.
+    """
+    return {
+        "maxsize": config.query_pool_size,
+        "num_pools": 1,
+        "verify": config.verify,
+        # Outbound proxy when configured; empty -> plain PoolManager (direct).
+        **config.proxy_pool_kwargs(),
+    }
+
+
+pool_kwargs: dict[str, Any] = client_pool_kwargs(HYDROLIX_CONFIG)
 
 if HYDROLIX_CONFIG.verify:
     import urllib3
