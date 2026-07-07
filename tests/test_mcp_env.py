@@ -231,6 +231,13 @@ class TestQueryHeadPool:
         monkeypatch.setenv("HYDROLIX_DATABASE", "actual_db")
         assert self._client_config(monkeypatch)["database"] == "actual_db"
 
+    def test_blank_head_pool_falls_back_to_database(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A blank head pool (the MCPB empty-field case) is unset, so HYDROLIX_DATABASE
+        still drives the connection default rather than a blank routing key winning."""
+        monkeypatch.setenv("HYDROLIX_QUERY_HEAD_POOL", "   ")
+        monkeypatch.setenv("HYDROLIX_DATABASE", "actual_db")
+        assert self._client_config(monkeypatch)["database"] == "actual_db"
+
     def test_database_absent_when_neither_set(self, monkeypatch: pytest.MonkeyPatch) -> None:
         assert "database" not in self._client_config(monkeypatch)
 
