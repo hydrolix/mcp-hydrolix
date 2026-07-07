@@ -204,7 +204,7 @@ class HydrolixConfig:
             to. Unlike HYDROLIX_QUERY_POOL (a per-query ``hdx_query_pool_name`` setting selecting
             the query *peer* pool), query-head pool selection is connection-time routing keyed on
             the *database name*: the value is sent as the connection's default database (the
-            ``?database=`` parameter on the HTTP path), which CHProxy/ClickProx match against the
+            ``?database=`` parameter on the HTTP path), which CHProxy matches against the
             operator-configured routing rules to pick a query-head pool. It is therefore a
             database name that those rules map to a pool, not necessarily a literal pool name.
             When set it takes precedence over HYDROLIX_DATABASE for the connection default; this
@@ -557,8 +557,8 @@ class HydrolixConfig:
         name, not a per-query setting (contrast :pyattr:`query_pool`, which selects
         the query *peer* pool via ``hdx_query_pool_name``). The value is sent as the
         connection's default database -- the ``?database=`` parameter on the HTTP
-        path -- and CHProxy/ClickProx match it against the operator-configured
-        routing rules to select a query-head pool. It is thus a database name the
+        path -- and CHProxy matches it against the operator-configured routing
+        rules to select a query-head pool. It is thus a database name the
         routing rules map to a pool, not necessarily a literal pool name.
 
         When set, this wins over :pyattr:`database` (HYDROLIX_DATABASE) for the
