@@ -364,9 +364,7 @@ When `HYDROLIX_MCP_SERVER_TRANSPORT` is `http` or `sse`, `HYDROLIX_URL` *specifi
 These override the values derived from `HYDROLIX_URL`. They are useful for in-cluster deployments where the HTTP query endpoint and the version-API live at different internal hostnames or ports. Override precedence: explicit new var > deprecated alias > `HYDROLIX_URL`-derived > hard default.
 
 * `HYDROLIX_HTTP_QUERY_HOST` / `HYDROLIX_HTTP_QUERY_PORT` / `HYDROLIX_HTTP_QUERY_SECURE`: override the ClickHouse HTTP query endpoint.
-* `HYDROLIX_HTTP_QUERY_PATH`: override the request path for the ClickHouse HTTP query endpoint.
-  * Default: `/query`. Reaching a cluster from *outside* goes through Traefik, which serves the query engine under `/query`; the default means `HYDROLIX_URL` alone works for external deployments.
-  * Set to `/` (or empty) for direct / in-cluster targets that serve queries at the root.
+* `HYDROLIX_HTTP_QUERY_PATH`: override the request path for the ClickHouse HTTP query endpoint (default `/query`, matching Traefik's external routing; set to `/` for in-cluster targets that serve queries at the root).
 * `HYDROLIX_VERSION_API_HOST` / `HYDROLIX_VERSION_API_PORT` / `HYDROLIX_VERSION_API_SECURE`: override the REST `/version` probe endpoint. `HYDROLIX_VERSION_API_SECURE` inherits from the resolved HTTP-query secure value by default.
 
 #### Deprecated variables
