@@ -249,6 +249,7 @@ class TestExternalSufficiency:
         assert c.version_api_host == "cluster.example.com"
         assert c.version_api_port == 443
         assert c.version_api_secure is True
+        assert c.query_path == "/query"
 
     def test_url_alone_http_scheme(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("HYDROLIX_URL", "http://cluster.example.com")
@@ -346,6 +347,44 @@ class TestSecurePrecedence:
         monkeypatch.setenv("HYDROLIX_URL", "https://cluster.example.com")
         monkeypatch.setenv("HYDROLIX_SECURE", "false")
         assert HydrolixConfig().secure is False
+
+
+class TestQueryPath:
+    def test_default_is_query(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("HYDROLIX_URL", "https://cluster.example.com")
+        assert HydrolixConfig().query_path == "/query"
+
+    def test_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("HYDROLIX_URL", "https://cluster.example.com")
+        monkeypatch.setenv("HYDROLIX_HTTP_QUERY_PATH", "/custom/query")
+        assert HydrolixConfig().query_path == "/custom/query"
+
+    def test_override_to_root(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("HYDROLIX_URL", "https://cluster.example.com")
+        monkeypatch.setenv("HYDROLIX_HTTP_QUERY_PATH", "/")
+        assert HydrolixConfig().query_path == "/"
+
+    def test_override_to_empty(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # Empty string is an explicit override (falls back to the default only
+        # when the var is unset), letting root-path targets opt out of "/query".
+        monkeypatch.setenv("HYDROLIX_URL", "https://cluster.example.com")
+        monkeypatch.setenv("HYDROLIX_HTTP_QUERY_PATH", "")
+        assert HydrolixConfig().query_path == ""
+
+    def test_included_in_client_config(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("HYDROLIX_URL", "https://cluster.example.com")
+        monkeypatch.setenv("HYDROLIX_USER", "u")
+        monkeypatch.setenv("HYDROLIX_PASSWORD", "p")
+        cfg = HydrolixConfig().get_client_config(None)
+        assert cfg["proxy_path"] == "/query"
+
+    def test_client_config_reflects_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("HYDROLIX_URL", "https://cluster.example.com")
+        monkeypatch.setenv("HYDROLIX_USER", "u")
+        monkeypatch.setenv("HYDROLIX_PASSWORD", "p")
+        monkeypatch.setenv("HYDROLIX_HTTP_QUERY_PATH", "/query-head")
+        cfg = HydrolixConfig().get_client_config(None)
+        assert cfg["proxy_path"] == "/query-head"
 
 
 class TestVersionApiHostAndPort:

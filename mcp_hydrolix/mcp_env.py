@@ -144,6 +144,9 @@ class HydrolixConfig:
             (precedence: this > HYDROLIX_PORT > URL scheme default > 8088).
         HYDROLIX_HTTP_QUERY_SECURE: Override the query TLS flag
             (precedence: this > HYDROLIX_SECURE > URL scheme == "https" > True).
+        HYDROLIX_HTTP_QUERY_PATH: Override the query request path
+            (precedence: this > hard default "/query"). Set to "/" (or empty) for
+            direct / in-cluster targets that serve queries at the root.
 
     Endpoint overrides (REST ``/version`` probe):
         HYDROLIX_VERSION_API_HOST: Override the version-api hostname
@@ -279,6 +282,22 @@ class HydrolixConfig:
         if self._parsed_url is not None:
             return self._parsed_url.scheme == "https"
         return True
+
+    @property
+    def query_path(self) -> str:
+        """Get the HTTP request path for the ClickHouse query endpoint.
+
+        When mcp-hydrolix is used from *outside* the cluster, traffic goes through
+        Traefik, which serves the ClickHouse HTTP query engine under ``/query``
+        rather than at the root ``/``. Defaulting to ``/query`` means
+        ``HYDROLIX_URL`` alone works for external deployments; set to ``/`` (or
+        empty) for direct / in-cluster targets that serve queries at the root.
+        Leading slashes are normalized by clickhouse-connect, so ``/query`` and
+        ``query`` are equivalent.
+
+        Precedence: HYDROLIX_HTTP_QUERY_PATH > hard default "/query".
+        """
+        return os.getenv("HYDROLIX_HTTP_QUERY_PATH", "/query")
 
     @property
     def version_api_host(self) -> str:
@@ -567,6 +586,11 @@ class HydrolixConfig:
             "host": self.host,
             "port": self.port,
             "secure": self.secure,
+            # clickhouse-connect appends proxy_path to the base URL for every
+            # request (self.url = "{scheme}://{host}:{port}{proxy_path}"), so this
+            # is how we route queries to Hydrolix's Traefik "/query" path when
+            # reaching the cluster from outside. See the query_path property.
+            "proxy_path": self.query_path,
             "verify": self.verify,
             "connect_timeout": self.connect_timeout,
             "send_receive_timeout": self.send_receive_timeout,
