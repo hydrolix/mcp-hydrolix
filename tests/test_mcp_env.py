@@ -386,6 +386,24 @@ class TestQueryPath:
         cfg = HydrolixConfig().get_client_config(None)
         assert cfg["proxy_path"] == "/query-head"
 
+    def test_deprecated_alias_honored(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # A pre-#133 config using HYDROLIX_PROXY_PATH still works.
+        monkeypatch.setenv("HYDROLIX_URL", "https://cluster.example.com")
+        monkeypatch.setenv("HYDROLIX_PROXY_PATH", "/legacy")
+        assert HydrolixConfig().query_path == "/legacy"
+
+    def test_new_var_wins_over_deprecated_alias(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("HYDROLIX_URL", "https://cluster.example.com")
+        monkeypatch.setenv("HYDROLIX_HTTP_QUERY_PATH", "/query")
+        monkeypatch.setenv("HYDROLIX_PROXY_PATH", "/legacy")
+        assert HydrolixConfig().query_path == "/query"
+
+    def test_deprecated_alias_empty_is_honored(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # Empty string is an explicit value for the alias too (root path).
+        monkeypatch.setenv("HYDROLIX_URL", "https://cluster.example.com")
+        monkeypatch.setenv("HYDROLIX_PROXY_PATH", "")
+        assert HydrolixConfig().query_path == ""
+
 
 class TestVersionApiHostAndPort:
     def test_inherits_from_url(self, monkeypatch: pytest.MonkeyPatch) -> None:

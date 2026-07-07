@@ -17,25 +17,27 @@ logger = logging.getLogger("mcp-hydrolix")
 
 
 # Mapping of deprecated env var names to their replacements.
-# Transitional — will be REMOVED when the five deprecated aliases are dropped.
+# Transitional — will be REMOVED when the deprecated aliases are dropped.
 ALIAS_RENAMES: dict[str, str] = {
     "HYDROLIX_HOST": "HYDROLIX_HTTP_QUERY_HOST",
     "HYDROLIX_PORT": "HYDROLIX_HTTP_QUERY_PORT",
     "HYDROLIX_SECURE": "HYDROLIX_HTTP_QUERY_SECURE",
     "HYDROLIX_API_HOST": "HYDROLIX_VERSION_API_HOST",
     "HYDROLIX_API_PORT": "HYDROLIX_VERSION_API_PORT",
+    "HYDROLIX_PROXY_PATH": "HYDROLIX_HTTP_QUERY_PATH",
 }
 DEPRECATED_ALIASES: tuple[str, ...] = tuple(ALIAS_RENAMES.keys())
 
 
 def _external_deprecation_log(aliases: list[str]) -> str:
     """Build the external-audience startup WARNING (server log; operator-facing)."""
+    pairs = ", ".join(f"{old} -> {ALIAS_RENAMES[old]}" for old in aliases)
     return (
         f"Deprecated Hydrolix environment variable(s) detected: {', '.join(aliases)}. "
-        "These will be removed in a future release. "
+        f"These will be removed in a future release; each has a direct replacement ({pairs}). "
         "For typical external deployments, setting HYDROLIX_URL alone "
-        "(e.g. HYDROLIX_URL=https://mycluster.hydrolix.live) is sufficient "
-        "and replaces all of these variables."
+        "(e.g. HYDROLIX_URL=https://mycluster.hydrolix.live) covers the "
+        "connection-target variables (host, port, TLS)."
     )
 
 
@@ -51,9 +53,10 @@ def _external_deprecation_instructions(aliases: list[str]) -> str:
         f"variable(s): {', '.join(aliases)}. They will be removed in a future "
         "release. Please tell the user about this and encourage them to contact "
         "their Hydrolix operator (whoever administers this MCP server's "
-        "configuration) to replace these deprecated variables with HYDROLIX_URL "
-        "(e.g. HYDROLIX_URL=https://mycluster.hydrolix.live), which alone is "
-        "sufficient for typical external deployments."
+        "configuration) to migrate to the current variable names. For typical "
+        "external deployments, HYDROLIX_URL alone "
+        "(e.g. HYDROLIX_URL=https://mycluster.hydrolix.live) covers the "
+        "connection target (host, port, TLS)."
     )
 
 
@@ -145,8 +148,9 @@ class HydrolixConfig:
         HYDROLIX_HTTP_QUERY_SECURE: Override the query TLS flag
             (precedence: this > HYDROLIX_SECURE > URL scheme == "https" > True).
         HYDROLIX_HTTP_QUERY_PATH: Override the query request path
-            (precedence: this > hard default "/query"). Set to "/" (or empty) for
-            direct / in-cluster targets that serve queries at the root.
+            (precedence: this > HYDROLIX_PROXY_PATH > hard default "/query"). Set
+            to "/" (or empty) for direct / in-cluster targets that serve queries
+            at the root.
 
     Endpoint overrides (REST ``/version`` probe):
         HYDROLIX_VERSION_API_HOST: Override the version-api hostname
@@ -159,7 +163,7 @@ class HydrolixConfig:
 
     Deprecated environment variables (still honored during the transition window):
         HYDROLIX_HOST, HYDROLIX_PORT, HYDROLIX_SECURE,
-        HYDROLIX_API_HOST, HYDROLIX_API_PORT
+        HYDROLIX_API_HOST, HYDROLIX_API_PORT, HYDROLIX_PROXY_PATH
 
     Optional environment variables (with defaults):
         HYDROLIX_TOKEN: Service account token to the Hydrolix Server (this or user+password is required)
@@ -295,9 +299,14 @@ class HydrolixConfig:
         Leading slashes are normalized by clickhouse-connect, so ``/query`` and
         ``query`` are equivalent.
 
-        Precedence: HYDROLIX_HTTP_QUERY_PATH > hard default "/query".
+        Precedence: HYDROLIX_HTTP_QUERY_PATH > HYDROLIX_PROXY_PATH (deprecated) >
+        hard default "/query".
         """
-        return os.getenv("HYDROLIX_HTTP_QUERY_PATH", "/query")
+        if (raw := os.getenv("HYDROLIX_HTTP_QUERY_PATH")) is not None:
+            return raw
+        if (raw := os.getenv("HYDROLIX_PROXY_PATH")) is not None:
+            return raw
+        return "/query"
 
     @property
     def version_api_host(self) -> str:

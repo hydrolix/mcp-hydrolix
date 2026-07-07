@@ -378,6 +378,7 @@ The following are still honored during the transition window but will be removed
 | `HYDROLIX_SECURE` | `HYDROLIX_HTTP_QUERY_SECURE` |
 | `HYDROLIX_API_HOST` | `HYDROLIX_VERSION_API_HOST` |
 | `HYDROLIX_API_PORT` | `HYDROLIX_VERSION_API_PORT` |
+| `HYDROLIX_PROXY_PATH` | `HYDROLIX_HTTP_QUERY_PATH` |
 
 External operators using any of these will see a one-time startup warning advising the migration to `HYDROLIX_URL`. In-cluster (o6r-managed) deployments will not see this warning; their migration is handled by the platform.
 
