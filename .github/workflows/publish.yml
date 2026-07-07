@@ -92,9 +92,13 @@ jobs:
             gh release upload "$TAG" dist/*.mcpb --clobber
           else
             # The Release body comes from the annotated tag message. Fall back to
-            # auto-generated notes only when the annotation has no body, so a
-            # release is never published with completely empty notes.
-            if [[ -n "$(git tag -l --format='%(contents)' "$TAG")" ]]; then
+            # auto-generated notes when the tag is lightweight or its annotation
+            # has no body, so a release is never published with empty notes.
+            # `%(contents)` returns the *commit* message for a lightweight tag,
+            # so gate on the ref being a real tag object (cat-file -t == tag)
+            # before trusting its contents.
+            if [[ "$(git cat-file -t "$TAG")" == "tag" \
+                  && -n "$(git tag -l --format='%(contents)' "$TAG")" ]]; then
               gh release create "$TAG" dist/*.mcpb --notes-from-tag --title "$TAG"
             else
               echo "::warning::Tag $TAG has no annotation body; falling back to --generate-notes"
