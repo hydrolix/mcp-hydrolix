@@ -175,6 +175,66 @@ class TestQueryPool:
         assert config.query_pool == "analytics-pool"
 
 
+class TestQueryHeadPool:
+    """HYDROLIX_QUERY_HEAD_POOL resolution and its effect on the connection's
+    default database (the ?database= routing key).
+
+    The property itself mirrors query_pool (None/value/blank/whitespace). The
+    routing tests exercise get_client_config, where the head pool -- when set --
+    wins the ``database`` slot over HYDROLIX_DATABASE.
+    """
+
+    def test_default_is_none(self, config: HydrolixConfig) -> None:
+        assert config.query_head_pool is None
+
+    def test_explicit_value(self, config: HydrolixConfig, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("HYDROLIX_QUERY_HEAD_POOL", "logs")
+        assert config.query_head_pool == "logs"
+
+    @pytest.mark.parametrize("blank", ["", "   ", "\t\n"], ids=["empty", "spaces", "ws"])
+    def test_blank_treated_as_unset(
+        self, config: HydrolixConfig, monkeypatch: pytest.MonkeyPatch, blank: str
+    ) -> None:
+        monkeypatch.setenv("HYDROLIX_QUERY_HEAD_POOL", blank)
+        assert config.query_head_pool is None
+
+    def test_surrounding_whitespace_stripped(
+        self, config: HydrolixConfig, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("HYDROLIX_QUERY_HEAD_POOL", "  logs  ")
+        assert config.query_head_pool == "logs"
+
+    @staticmethod
+    def _client_config(monkeypatch: pytest.MonkeyPatch) -> dict:
+        """Build a token-authed config from the current env and return its client config.
+
+        A credential must exist at construction time, so set HYDROLIX_TOKEN before
+        constructing. query_head_pool / database are read lazily inside
+        get_client_config, so env set here is honored.
+        """
+        monkeypatch.setenv("HYDROLIX_URL", "https://example.invalid")
+        monkeypatch.setenv("HYDROLIX_TOKEN", _TEST_JWT)
+        return HydrolixConfig().get_client_config(request_credential=None)
+
+    def test_head_pool_sets_connection_database(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("HYDROLIX_QUERY_HEAD_POOL", "logs")
+        assert self._client_config(monkeypatch)["database"] == "logs"
+
+    def test_head_pool_wins_over_database(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """When both are set, the head-pool routing key wins the ``database`` slot."""
+        monkeypatch.setenv("HYDROLIX_QUERY_HEAD_POOL", "logs")
+        monkeypatch.setenv("HYDROLIX_DATABASE", "actual_db")
+        assert self._client_config(monkeypatch)["database"] == "logs"
+
+    def test_database_used_when_no_head_pool(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Without a head pool, HYDROLIX_DATABASE still drives the connection default."""
+        monkeypatch.setenv("HYDROLIX_DATABASE", "actual_db")
+        assert self._client_config(monkeypatch)["database"] == "actual_db"
+
+    def test_database_absent_when_neither_set(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        assert "database" not in self._client_config(monkeypatch)
+
+
 # A long-lived JWT (expires 2094) used to exercise ServiceAccountToken credential resolution.
 # Signature verification is disabled in ServiceAccountToken.__init__, so only the structure
 # and claims matter.
