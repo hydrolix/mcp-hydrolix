@@ -79,6 +79,15 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
+        with:
+          # Check out by tag ref (not the default SHA-pinned checkout) so the
+          # annotated tag *object* lands locally. The default checkout fetches
+          # `+<sha>:refs/tags/<tag>`, leaving the ref pointing at the commit, so
+          # `git cat-file -t <tag>` reports `commit` and the --notes-from-tag
+          # guard below never fires. Passing an explicit ref drops the SHA pin,
+          # producing a by-name refspec that pulls the tag object. fetch-depth
+          # stays at the default 1 -- no full history needed.
+          ref: ${{ github.ref }}
       - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86  # v5
       - run: uv python install
       - name: Build MCPB bundle
