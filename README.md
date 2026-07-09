@@ -364,6 +364,7 @@ When `HYDROLIX_MCP_SERVER_TRANSPORT` is `http` or `sse`, `HYDROLIX_URL` *specifi
 These override the values derived from `HYDROLIX_URL`. They are useful for in-cluster deployments where the HTTP query endpoint and the version-API live at different internal hostnames or ports. Override precedence: explicit new var > deprecated alias > `HYDROLIX_URL`-derived > hard default.
 
 * `HYDROLIX_HTTP_QUERY_HOST` / `HYDROLIX_HTTP_QUERY_PORT` / `HYDROLIX_HTTP_QUERY_SECURE`: override the ClickHouse HTTP query endpoint.
+* `HYDROLIX_HTTP_QUERY_PATH`: override the request path for the ClickHouse HTTP query endpoint (default `/query`, matching Traefik's external routing; set to `/` for in-cluster targets that serve queries at the root).
 * `HYDROLIX_VERSION_API_HOST` / `HYDROLIX_VERSION_API_PORT` / `HYDROLIX_VERSION_API_SECURE`: override the REST `/version` probe endpoint. `HYDROLIX_VERSION_API_SECURE` inherits from the resolved HTTP-query secure value by default.
 
 #### Deprecated variables
@@ -377,6 +378,7 @@ The following are still honored during the transition window but will be removed
 | `HYDROLIX_SECURE` | `HYDROLIX_HTTP_QUERY_SECURE` |
 | `HYDROLIX_API_HOST` | `HYDROLIX_VERSION_API_HOST` |
 | `HYDROLIX_API_PORT` | `HYDROLIX_VERSION_API_PORT` |
+| `HYDROLIX_PROXY_PATH` | `HYDROLIX_HTTP_QUERY_PATH` |
 
 External operators using any of these will see a one-time startup warning advising the migration to `HYDROLIX_URL`. In-cluster (o6r-managed) deployments will not see this warning; their migration is handled by the platform.
 
