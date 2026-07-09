@@ -396,9 +396,6 @@ If no credentials are provided via the environment or the request, the request w
 * `HYDROLIX_VERIFY`: Enable/disable SSL certificate verification
   * Default: `"true"`
   * Set to `"false"` to disable certificate verification (not recommended for production)
-* `HYDROLIX_DATABASE`: Default database to use
-  *Default: None (uses server default)
-  * Set this to automatically connect to a specific database
 * `HYDROLIX_MCP_SERVER_TRANSPORT`: Sets the transport method for the MCP server.
   * Default: `"stdio"`
   * Valid options: `"stdio"`, `"http"`, `"sse"`. This is useful for local development with tools like MCP Inspector.
@@ -421,7 +418,6 @@ If no credentials are provided via the environment or the request, the request w
   * Unlike `HYDROLIX_QUERY_POOL` (a per-query setting for the query *peer* pool), query-head pool selection is connection-time routing keyed on the database name: the value is sent as the connection's default database (the `?database=` parameter), which CHProxy matches against the operator-configured routing rules to pick a query-head pool. It is therefore a database name those rules map to a pool, not necessarily a literal pool name
   * The value must name a database that **already exists** on the cluster. Because the routing key doubles as the ClickHouse default database, a non-existent value can cause the query-head to reject the connection
   * Only meaningful when query-head pooling (CHProxy) is enabled on the cluster. If it is not, no routing occurs and the value is simply the connection's default database — harmless when it is a real database (queries are fully qualified `db.table`, so the default is unused for name resolution). Leave this unset on clusters without query-head pooling
-  * When set, it takes precedence over `HYDROLIX_DATABASE` for the connection's default database
 * `HYDROLIX_HTTPS_PROXY` / `HYDROLIX_HTTP_PROXY`: Outbound proxy for reaching the Hydrolix cluster
   * Default: None (connect directly)
   * Set one to route the connection through a corporate proxy; include the scheme, e.g. `http://proxy.corp:8080`. If both are set, `HYDROLIX_HTTPS_PROXY` wins

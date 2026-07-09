@@ -177,7 +177,6 @@ class HydrolixConfig:
         HYDROLIX_VERIFY: Verify SSL certificates (default: true)
         HYDROLIX_CONNECT_TIMEOUT: Connection timeout in seconds (default: 30)
         HYDROLIX_SEND_RECEIVE_TIMEOUT: Send/receive timeout in seconds (default: 300)
-        HYDROLIX_DATABASE: Default database to use (default: None)
         HYDROLIX_MCP_SERVER_TRANSPORT: MCP server transport method - "stdio", "http", or "sse" (default: stdio)
         HYDROLIX_MCP_BIND_HOST: Host to bind the MCP server to when using HTTP or SSE transport (default: 127.0.0.1)
         HYDROLIX_MCP_BIND_PORT: Port to bind the MCP server to when using HTTP or SSE transport (default: 8000)
@@ -207,10 +206,9 @@ class HydrolixConfig:
             ``?database=`` parameter on the HTTP path), which CHProxy matches against the
             operator-configured routing rules to pick a query-head pool. It is therefore a
             database name that those rules map to a pool, not necessarily a literal pool name.
-            When set it takes precedence over HYDROLIX_DATABASE for the connection default; this
-            is safe because the server issues fully-qualified ``db.table`` queries, so the default
-            database is unused for name resolution. (default: None -- use the cluster default
-            query head)
+            When set it becomes the connection's default database; this is safe because the
+            server issues fully-qualified ``db.table`` queries, so the default database is
+            unused for name resolution. (default: None -- use the cluster default query head)
         HYDROLIX_HTTPS_PROXY / HYDROLIX_HTTP_PROXY: Outbound proxy for reaching the cluster.
             Set one (https wins if both are set) to route the connection through a corporate
             proxy; include the scheme (e.g. http://proxy.corp:8080). This is the single egress
@@ -359,11 +357,6 @@ class HydrolixConfig:
     def deprecation_audience(self) -> Optional[str]:
         """``"external"``, ``"internal"``, or ``None`` -- determined at construction time."""
         return self._deprecation_audience
-
-    @property
-    def database(self) -> Optional[str]:
-        """Get the default database name if set."""
-        return os.getenv("HYDROLIX_DATABASE")
 
     @property
     def verify(self) -> bool:
@@ -561,11 +554,10 @@ class HydrolixConfig:
         rules to select a query-head pool. It is thus a database name the
         routing rules map to a pool, not necessarily a literal pool name.
 
-        When set, this wins over :pyattr:`database` (HYDROLIX_DATABASE) for the
-        connection default database (see ``get_client_config``). That is safe
-        because the server issues fully-qualified ``db.table`` queries, so the
-        default database is not used for name resolution -- it serves only as the
-        routing key here.
+        When set, this becomes the connection default database (see
+        ``get_client_config``). That is safe because the server issues
+        fully-qualified ``db.table`` queries, so the default database is not used
+        for name resolution -- it serves only as the routing key here.
 
         The value must name a database that already exists on the cluster: since
         the routing key doubles as the ClickHouse default database, a non-existent
@@ -714,11 +706,10 @@ class HydrolixConfig:
             "tz_mode": "aware",
         }
 
-        # Set the connection's default database. HYDROLIX_QUERY_HEAD_POOL doubles as
-        # the query-head routing key (sent as ?database=), so it wins over
-        # HYDROLIX_DATABASE when set. Safe because queries are fully-qualified, so the
-        # default database is unused for name resolution.
-        if routing_database := (self.query_head_pool or self.database):
+        # Set the connection's default database. HYDROLIX_QUERY_HEAD_POOL is the
+        # query-head routing key, sent as ?database=. Safe because queries are
+        # fully-qualified, so the default database is unused for name resolution.
+        if routing_database := self.query_head_pool:
             config["database"] = routing_database
 
         # Add credentials
