@@ -22,7 +22,6 @@
         "HYDROLIX_TOKEN": "${user_config.hydrolix_token}",
         "HYDROLIX_USER": "${user_config.hydrolix_user}",
         "HYDROLIX_PASSWORD": "${user_config.hydrolix_password}",
-        "HYDROLIX_DATABASE": "${user_config.hydrolix_database}",
         "HYDROLIX_MCP_SERVER_TRANSPORT": "stdio"
       }
     }
@@ -61,13 +60,6 @@
       "title": "Password",
       "description": "Hydrolix password. Used with Username if no Service Account Token is set.",
       "sensitive": true,
-      "required": false,
-      "default": ""
-    },
-    "hydrolix_database": {
-      "type": "string",
-      "title": "Default Database",
-      "description": "Optional default database. The server uses the cluster default when this is empty.",
       "required": false,
       "default": ""
     }

@@ -710,6 +710,12 @@ async def run_select_query(
     """Run a SELECT query in a Hydrolix time-series database using the Clickhouse SQL dialect.
     Queries run using this tool will timeout after 30 seconds.
 
+    FULLY-QUALIFIED TABLE NAMES:
+
+    Every table reference MUST be fully qualified as `database.table` (e.g. FROM
+    my_db.my_table). The connection has no default database, so an unqualified table
+    name will fail to resolve.
+
     RESULT TRUNCATION:
 
     Query results are automatically truncated when the total cell count (rows * columns)

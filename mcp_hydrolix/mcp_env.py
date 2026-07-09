@@ -184,7 +184,6 @@ class HydrolixConfig:
         HYDROLIX_VERIFY: Verify SSL certificates (default: true)
         HYDROLIX_CONNECT_TIMEOUT: Connection timeout in seconds (default: 30)
         HYDROLIX_SEND_RECEIVE_TIMEOUT: Send/receive timeout in seconds (default: 300)
-        HYDROLIX_DATABASE: Default database to use (default: None)
         HYDROLIX_MCP_SERVER_TRANSPORT: MCP server transport method - "stdio", "http", or "sse" (default: stdio)
         HYDROLIX_MCP_BIND_HOST: Host to bind the MCP server to when using HTTP or SSE transport (default: 127.0.0.1)
         HYDROLIX_MCP_BIND_PORT: Port to bind the MCP server to when using HTTP or SSE transport (default: 8000)
@@ -207,6 +206,16 @@ class HydrolixConfig:
             platform-managed (in-cluster) deployments the cluster tunable is mapped onto this
             same variable; since the platform owns the process environment there, its value is
             authoritative. (default: None -- use the cluster default pool)
+        HYDROLIX_QUERY_HEAD_POOL: Name of the Hydrolix query-head pool to route this connection
+            to. Unlike HYDROLIX_QUERY_POOL (a per-query ``hdx_query_pool_name`` setting selecting
+            the query *peer* pool), query-head pool selection is connection-time routing keyed on
+            the *database name*: the value is sent as the connection's default database (the
+            ``?database=`` parameter on the HTTP path), which CHProxy matches against the
+            operator-configured routing rules to pick a query-head pool. It is therefore a
+            database name that those rules map to a pool, not necessarily a literal pool name.
+            When set it becomes the connection's default database; this is safe because the
+            server issues fully-qualified ``db.table`` queries, so the default database is
+            unused for name resolution. (default: None -- use the cluster default query head)
         HYDROLIX_HTTPS_PROXY / HYDROLIX_HTTP_PROXY: Outbound proxy for reaching the cluster.
             Set one (https wins if both are set) to route the connection through a corporate
             proxy; include the scheme (e.g. http://proxy.corp:8080). This is the single egress
@@ -376,11 +385,6 @@ class HydrolixConfig:
     def deprecation_audience(self) -> Optional[str]:
         """``"external"``, ``"internal"``, or ``None`` -- determined at construction time."""
         return self._deprecation_audience
-
-    @property
-    def database(self) -> Optional[str]:
-        """Get the default database name if set."""
-        return os.getenv("HYDROLIX_DATABASE")
 
     @property
     def verify(self) -> bool:
@@ -566,6 +570,36 @@ class HydrolixConfig:
         """
         return os.getenv("HYDROLIX_QUERY_POOL", "").strip() or None
 
+    @property
+    def query_head_pool(self) -> Optional[str]:
+        """Get the Hydrolix query-head pool routing key for this connection.
+
+        Query-head pool selection is connection-time routing keyed on the database
+        name, not a per-query setting (contrast :pyattr:`query_pool`, which selects
+        the query *peer* pool via ``hdx_query_pool_name``). The value is sent as the
+        connection's default database -- the ``?database=`` parameter on the HTTP
+        path -- and CHProxy matches it against the operator-configured routing
+        rules to select a query-head pool. It is thus a database name the
+        routing rules map to a pool, not necessarily a literal pool name.
+
+        When set, this becomes the connection default database (see
+        ``get_client_config``). That is safe because the server issues
+        fully-qualified ``db.table`` queries, so the default database is not used
+        for name resolution -- it serves only as the routing key here.
+
+        The value must name a database that already exists on the cluster: since
+        the routing key doubles as the ClickHouse default database, a non-existent
+        value can make the query-head reject the connection. This is only
+        meaningful when query-head pooling (CHProxy) is enabled; without it no
+        routing happens and the value is just the default database (a no-op when
+        it is a real database). Same "must already exist" contract as query pools;
+        no validation is performed here -- it is an operator/deployment concern.
+
+        A blank/whitespace value is treated as unset so that MCPB hosts injecting
+        empty user_config fields do not send an empty routing key.
+        """
+        return os.getenv("HYDROLIX_QUERY_HEAD_POOL", "").strip() or None
+
     def proxy_pool_kwargs(self) -> ProxyPoolKwargs:
         """Outbound-proxy kwargs for the shared urllib3 pool (``get_pool_manager``).
 
@@ -705,9 +739,11 @@ class HydrolixConfig:
             "tz_mode": "aware",
         }
 
-        # Add optional database if set
-        if self.database:
-            config["database"] = self.database
+        # Set the connection's default database. HYDROLIX_QUERY_HEAD_POOL is the
+        # query-head routing key, sent as ?database=. Safe because queries are
+        # fully-qualified, so the default database is unused for name resolution.
+        if routing_database := self.query_head_pool:
+            config["database"] = routing_database
 
         # Add credentials
         config |= self.creds_with(request_credential).clickhouse_config_entries()
