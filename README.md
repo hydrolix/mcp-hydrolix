@@ -359,29 +359,6 @@ You MUST set one of the following to identify the cluster:
 
 When `HYDROLIX_MCP_SERVER_TRANSPORT` is `http` or `sse`, `HYDROLIX_URL` *specifically* is required (the OAuth metadata endpoint advertises it). `HYDROLIX_HOST` alone is not sufficient for these transports.
 
-#### Endpoint overrides
-
-These override the values derived from `HYDROLIX_URL`. They are useful for in-cluster deployments where the HTTP query endpoint and the version-API live at different internal hostnames or ports. Override precedence: explicit new var > deprecated alias > `HYDROLIX_URL`-derived > hard default.
-
-* `HYDROLIX_HTTP_QUERY_HOST` / `HYDROLIX_HTTP_QUERY_PORT` / `HYDROLIX_HTTP_QUERY_SECURE`: override the ClickHouse HTTP query endpoint.
-* `HYDROLIX_HTTP_QUERY_PATH`: override the request path for the ClickHouse HTTP query endpoint (default `/query`, matching Traefik's external routing; set to `/` for in-cluster targets that serve queries at the root).
-* `HYDROLIX_VERSION_API_HOST` / `HYDROLIX_VERSION_API_PORT` / `HYDROLIX_VERSION_API_SECURE`: override the REST `/version` probe endpoint. `HYDROLIX_VERSION_API_SECURE` inherits from the resolved HTTP-query secure value by default.
-
-#### Deprecated variables
-
-The following are still honored during the transition window but will be removed in a future release. Migrate at your convenience:
-
-| Deprecated | Replacement |
-|---|---|
-| `HYDROLIX_HOST` | `HYDROLIX_URL` (preferred) or `HYDROLIX_HTTP_QUERY_HOST` |
-| `HYDROLIX_PORT` | `HYDROLIX_HTTP_QUERY_PORT` |
-| `HYDROLIX_SECURE` | `HYDROLIX_HTTP_QUERY_SECURE` |
-| `HYDROLIX_API_HOST` | `HYDROLIX_VERSION_API_HOST` |
-| `HYDROLIX_API_PORT` | `HYDROLIX_VERSION_API_PORT` |
-| `HYDROLIX_PROXY_PATH` | `HYDROLIX_HTTP_QUERY_PATH` |
-
-External operators using any of these will see a one-time startup warning advising the migration to `HYDROLIX_URL`. In-cluster (o6r-managed) deployments will not see this warning; their migration is handled by the platform.
-
 #### Authentication Variables
 At least one authentication method must be configured when using the stdio transport:
 
@@ -393,55 +370,6 @@ In summary:
 - For http/sse, you MAY use HYDROLIX_TOKEN or HYDROLIX_USER+HYDROLIX_PASS (environmental credentials), but you may instead use per-request credentials.
 
 If no credentials are provided via the environment or the request, the request will fail.
-
-#### Optional Variables
-* `HYDROLIX_VERIFY`: Enable/disable SSL certificate verification
-  * Default: `"true"`
-  * Set to `"false"` to disable certificate verification (not recommended for production)
-* `HYDROLIX_MCP_SERVER_TRANSPORT`: Sets the transport method for the MCP server.
-  * Default: `"stdio"`
-  * Valid options: `"stdio"`, `"http"`, `"sse"`. This is useful for local development with tools like MCP Inspector.
-* `HYDROLIX_MCP_BIND_HOST`: Host to bind the MCP server to when using HTTP or SSE transport
-  * Default: `"127.0.0.1"`
-  * Set to `"0.0.0.0"` to bind to all network interfaces (useful for Docker or remote access)
-  * Only used when transport is `"http"` or `"sse"`
-* `HYDROLIX_MCP_BIND_PORT`: Port to bind the MCP server to when using HTTP or SSE transport
-  * Default: `"8000"`
-  * Only used when transport is `"http"` or `"sse"`
-* `HYDROLIX_MAX_RAW_TIMERANGE`: Maximum time range in seconds allowed for queries against non-summary tables
-  * Default: `21600` (6 hours)
-  * Queries targeting summary tables are not affected by this limit
-* `HYDROLIX_QUERY_POOL`: Name of the Hydrolix query pool to route queries to (sets `hdx_query_pool_name`)
-  * Default: None (uses the cluster's default query pool)
-  * When set, every query the server issues is routed to the named pool; the pool must already exist on the cluster
-  * In platform-managed (in-cluster) deployments the cluster tunable is mapped onto this same variable; the deployment owns the environment, so its value is authoritative
-* `HYDROLIX_QUERY_HEAD_POOL`: Name of the Hydrolix query-head pool to route this connection to
-  * Default: None (uses the cluster's default query head)
-  * Unlike `HYDROLIX_QUERY_POOL` (a per-query setting for the query *peer* pool), query-head pool selection is connection-time routing keyed on the database name: the value is sent as the connection's default database (the `?database=` parameter), which CHProxy matches against the operator-configured routing rules to pick a query-head pool. It is therefore a database name those rules map to a pool, not necessarily a literal pool name
-  * The value must name a database that **already exists** on the cluster. Because the routing key doubles as the ClickHouse default database, a non-existent value can cause the query-head to reject the connection
-  * Only meaningful when query-head pooling (CHProxy) is enabled on the cluster. If it is not, no routing occurs and the value is simply the connection's default database — harmless when it is a real database (queries are fully qualified `db.table`, so the default is unused for name resolution). Leave this unset on clusters without query-head pooling
-* `HYDROLIX_HTTPS_PROXY` / `HYDROLIX_HTTP_PROXY`: Outbound proxy for reaching the Hydrolix cluster
-  * Default: None (connect directly)
-  * Set one to route the connection through a corporate proxy; include the scheme, e.g. `http://proxy.corp:8080`. If both are set, `HYDROLIX_HTTPS_PROXY` wins
-  * The standard `HTTP_PROXY`/`HTTPS_PROXY` environment variables are **not** used — the server needs these explicit `HYDROLIX_`-prefixed vars
-  * This is the single egress proxy for all cluster traffic, including the internal `/version` capability probe; the proxy must permit that request, or the server silently falls back to non-parameterized queries
-  * Note: this is unrelated to `HYDROLIX_QUERIES_POOL_SIZE`, which sizes the client-side query thread pool
-
-
-For MCP Inspector or remote access with HTTP transport:
-
-```env
-HYDROLIX_URL=https://my-cluster.hydrolix.net
-HYDROLIX_USER=default
-HYDROLIX_PASSWORD=myPassword
-HYDROLIX_MCP_SERVER_TRANSPORT=http
-HYDROLIX_MCP_BIND_HOST=0.0.0.0  # Bind to all interfaces
-HYDROLIX_MCP_BIND_PORT=4200  # Custom port (default: 8000)
-```
-
-When using HTTP transport, the server will run on the configured port (default 8000). For example, with the above configuration:
-- MCP endpoint: `http://localhost:4200/mcp`
-- Health check: `http://localhost:4200/health`
 
 #### Using Per-Request Authentication with HTTP Transport
 
@@ -469,6 +397,10 @@ HYDROLIX_MCP_SERVER_TRANSPORT=http
 Though not part of the MCP specification, many MCP clients allow adding headers to MCP-issued requests. When this is possible, we recommend configuring the MCP client to pass a service account token via the `Authorization: Bearer <sa-token-here>` header instead of as a query parameter for greater security.
 
 Note: The bind host and port settings are only used when transport is set to "http" or "sse".
+
+#### Optional Variables
+
+See **[docs/CONFIG.md](docs/CONFIG.md)** for endpoint overrides, deprecated variable aliases, and the full set of optional tuning variables (timeouts, query SETTINGS overrides, result truncation, HTTP/SSE worker tuning, proxy, metrics, and escape hatches).
 
 ## Maintainers
 
