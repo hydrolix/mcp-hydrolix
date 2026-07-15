@@ -81,9 +81,8 @@ These map to per-query Hydrolix/ClickHouse settings sent with every query:
   * In platform-managed (in-cluster) deployments the cluster tunable is mapped onto this same variable; the deployment owns the environment, so its value is authoritative
 * `HYDROLIX_QUERY_HEAD_POOL`: Name of the Hydrolix query-head pool to route this connection to
   * Default: None (uses the cluster's default query head)
-  * Unlike `HYDROLIX_QUERY_POOL` (a per-query setting for the query *peer* pool), query-head pool selection is connection-time routing keyed on the database name: the value is sent as the connection's default database (the `?database=` parameter), which CHProxy matches against the operator-configured routing rules to pick a query-head pool. It is therefore a database name those rules map to a pool, not necessarily a literal pool name
-  * The value must name a database that **already exists** on the cluster. Because the routing key doubles as the ClickHouse default database, a non-existent value can cause the query-head to reject the connection
-  * Only meaningful when query-head pooling (CHProxy) is enabled on the cluster. If it is not, no routing occurs and the value is simply the connection's default database — harmless when it is a real database (queries are fully qualified `db.table`, so the default is unused for name resolution). Leave this unset on clusters without query-head pooling
+  * The pool must be preconfigured on the cluster; requests fail if it doesn't exist
+  * Unlike `HYDROLIX_QUERY_POOL`, which selects the query *peer* pool per query, this selects the query-head pool for the whole connection
 * `HYDROLIX_HTTPS_PROXY` / `HYDROLIX_HTTP_PROXY`: Outbound proxy for reaching the Hydrolix cluster
   * Default: None (connect directly)
   * Set one to route the connection through a corporate proxy; include the scheme, e.g. `http://proxy.corp:8080`. If both are set, `HYDROLIX_HTTPS_PROXY` wins

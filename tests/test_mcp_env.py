@@ -176,12 +176,12 @@ class TestQueryPool:
 
 
 class TestQueryHeadPool:
-    """HYDROLIX_QUERY_HEAD_POOL resolution and its effect on the connection's
-    default database (the ?database= routing key).
+    """HYDROLIX_QUERY_HEAD_POOL resolution and how the pool name is conveyed.
 
     The property itself mirrors query_pool (None/value/blank/whitespace). The
-    routing tests exercise get_client_config, where the head pool -- when set --
-    drives the ``database`` slot.
+    routing tests exercise get_client_config, where the pool name -- when set --
+    rides the HTTP ``database`` parameter (an implementation detail; query-head
+    pools are unrelated to databases).
     """
 
     def test_default_is_none(self, config: HydrolixConfig) -> None:
