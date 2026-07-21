@@ -32,8 +32,74 @@ jobs:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
       - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86  # v5
       - run: uv python install
-      - run: uv build
+      # This repo publishes ONLY the Hydrolix distribution to PyPI. The
+      # mcp-trafficpeak wheel is published by the sibling repo (which checks out
+      # this repo at the tag and runs the brand build), dispatched below.
+      - run: MCP_BRAND=hydrolix uv build
       - uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b  # release/v1
+  dispatch-trafficpeak:
+    # Fire the sibling repo's publish workflow once the Hydrolix wheel is up, so
+    # mcp-trafficpeak is published at the same version from the same commit. A
+    # failed dispatch fails the release (artifact-parity invariant); recover with
+    # `gh workflow run publish.yml -R hydrolix/mcp-trafficpeak -f tag=<tag>`.
+    # Reuses the existing GitHub App (ci/development/mcp-hydrolix/APP_SECRET),
+    # minting a token scoped to hydrolix/mcp-trafficpeak. The App must be
+    # installed on that repo with `actions: write`.
+    name: Dispatch mcp-trafficpeak PyPI publish (sibling repo)
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a  # v4
+        with:
+          role-to-assume: arn:aws:iam::471112700926:role/github-actions-lke-secrets-role
+          aws-region: us-east-2
+      - name: Retrieve GitHub App secret
+        id: get-secret
+        run: |
+          secret=$(aws secretsmanager get-secret-value \
+            --secret-id arn:aws:secretsmanager:us-east-2:471112700926:secret:ci/development/mcp-hydrolix/APP_SECRET-93IGLx \
+            --output text --query SecretString)
+          while IFS= read -r line; do
+            [[ -n "$line" ]] && echo "::add-mask::$line"
+          done <<< "$secret"
+          app_id=$(jq -rn --argjson s "$secret" '$s.APP_ID')
+          private_key=$(jq -rn --argjson s "$secret" '$s.PRIVATE_KEY')
+          if [[ -z "$app_id" || "$app_id" == "null" ]]; then
+            echo "::error::APP_ID is missing or null in the retrieved secret"
+            exit 1
+          fi
+          if [[ -z "$private_key" || "$private_key" == "null" ]]; then
+            echo "::error::PRIVATE_KEY is missing or null in the retrieved secret"
+            exit 1
+          fi
+          while IFS= read -r line; do
+            [[ -n "$line" ]] && echo "::add-mask::$line"
+          done <<< "$private_key"
+          echo "app-id=$app_id" >> "$GITHUB_OUTPUT"
+          {
+            echo 'private-key<<PRIVATE_KEY_EOF'
+            echo "$private_key"
+            echo 'PRIVATE_KEY_EOF'
+          } >> "$GITHUB_OUTPUT"
+      - name: Generate GitHub App token for the sibling repo
+        id: app-token
+        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547  # v1
+        with:
+          app-id: ${{ steps.get-secret.outputs.app-id }}
+          private-key: ${{ steps.get-secret.outputs.private-key }}
+          owner: hydrolix
+          repositories: mcp-trafficpeak
+      - name: Fire workflow_dispatch at the sibling publish workflow
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run publish.yml \
+            -R hydrolix/mcp-trafficpeak \
+            -f tag="${GITHUB_REF_NAME}"
   publish-docker:
     name: Upload release to GAR
     needs: prove-main
@@ -59,18 +125,35 @@ jobs:
           tag="v$(uv version --short)"
           echo "::notice::Tag is $tag"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
-      - name: Build docker image for MCP
+      - name: Build docker images for both brands
         shell: bash
         run: |
-          docker buildx build \
-            -t us-docker.pkg.dev/hdx-art/t/mcp-hydrolix:${{ steps.get_tag.outputs.tag }} \
-            -t us-docker.pkg.dev/hdx-art/t/mcp-hydrolix:latest \
-            .
-      - name: Push docker image
+          set -euo pipefail
+          TAG="${{ steps.get_tag.outputs.tag }}"
+          for brand in hydrolix trafficpeak; do
+            img="us-docker.pkg.dev/hdx-art/t/mcp-${brand}"
+            docker buildx build --build-arg MCP_BRAND="${brand}" \
+              -t "${img}:${TAG}" -t "${img}:latest" --load .
+          done
+      - name: Assert brand parity before pushing
         shell: bash
         run: |
-          docker push us-docker.pkg.dev/hdx-art/t/mcp-hydrolix:${{ steps.get_tag.outputs.tag }}
-          docker push us-docker.pkg.dev/hdx-art/t/mcp-hydrolix:latest
+          set -euo pipefail
+          TAG="${{ steps.get_tag.outputs.tag }}"
+          for brand in hydrolix trafficpeak; do
+            docker image inspect "us-docker.pkg.dev/hdx-art/t/mcp-${brand}:${TAG}" >/dev/null \
+              || { echo "::error::missing mcp-${brand} image at ${TAG}"; exit 1; }
+          done
+      - name: Push docker images for both brands
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.get_tag.outputs.tag }}"
+          for brand in hydrolix trafficpeak; do
+            img="us-docker.pkg.dev/hdx-art/t/mcp-${brand}"
+            docker push "${img}:${TAG}"
+            docker push "${img}:latest"
+          done
   publish-mcpb:
     name: Build and attach MCPB bundle to release
     needs: prove-main
@@ -90,8 +173,16 @@ jobs:
           ref: ${{ github.ref }}
       - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86  # v5
       - run: uv python install
-      - name: Build MCPB bundle
-        run: bash mcpb/build.sh
+      - name: Build MCPB bundles for both brands
+        run: |
+          set -euo pipefail
+          MCP_BRAND=hydrolix bash mcpb/build.sh
+          MCP_BRAND=trafficpeak bash mcpb/build.sh
+          VERSION="$(uv version --short)"
+          for brand in hydrolix trafficpeak; do
+            test -f "dist/mcp-${brand}-${VERSION}.mcpb" \
+              || { echo "::error::missing dist/mcp-${brand}-${VERSION}.mcpb (parity)"; exit 1; }
+          done
       - name: Attach MCPB to GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -116,7 +207,7 @@ jobs:
           fi
   bump-version:
     name: Bump to next patch version
-    needs: [publish, publish-docker, publish-mcpb]
+    needs: [publish, dispatch-trafficpeak, publish-docker, publish-mcpb]
     runs-on: ubuntu-latest
     permissions:
       id-token: write

@@ -69,6 +69,7 @@ The Hatchling build hook SHALL set `project.name`, `[project.scripts]` console-s
 - **AND** every literal `mcp-hydrolix` has become `mcp-trafficpeak`
 - **AND** every `HYDROLIX_`-prefixed env var has become `TRAFFICPEAK_`-prefixed
 - **AND** the prose brand name `Hydrolix` has been substituted per the per-brand substitution table
+- **AND** the `Description` contains no occurrence of `hydrolix` in any case, EXCEPT the GitHub-org identity namespace `io.github.hydrolix` / `github.com/hydrolix` (which names the owning org, not the brand); the package segment after it still rebrands (e.g. `io.github.hydrolix/mcp-trafficpeak`)
 
 ### Requirement: Runtime Brand Identifier Baked At Build Time
 
@@ -121,9 +122,9 @@ These values MUST NOT be derived from `sys.argv[0]`, from which environment-vari
 - **WHEN** every customer-visible runtime output path is exercised (startup log line, outbound `User-Agent`, MCP-protocol server-name advertisement, `hdx_query_admin_comment` setting)
 - **THEN** none of those outputs contains the substring `mcp-hydrolix` (case-insensitive)
 
-### Requirement: Dual-Namespace Env-Var Contract With Whole-Chain Precedence
+### Requirement: Dual-Namespace Env-Var Contract With Per-Variable Precedence
 
-The server SHALL accept a `TRAFFICPEAK_*` environment-variable namespace that mirrors the **modern** `HYDROLIX_*` variables one-for-one — every non-deprecated variable consumed by the configuration resolver (including but not limited to `URL`, `TOKEN`, `HTTP_QUERY_HOST` / `PORT` / `SECURE`, `VERSION_API_HOST` / `PORT` / `SECURE`, `VERIFY`, `USER`, `PASSWORD`) MUST be accepted under both prefixes with identical semantics, including identical within-namespace precedence rules. The deprecated `HYDROLIX_*` aliases (`HYDROLIX_HOST`, `HYDROLIX_PORT`, `HYDROLIX_SECURE`, `HYDROLIX_API_HOST`, `HYDROLIX_API_PORT`) are NOT mirrored under `TRAFFICPEAK_*`; the TrafficPeak namespace supports only the modern variable scheme, so `TRAFFICPEAK_URL` is its sole layer-1 anchor. At startup, the server SHALL resolve its effective configuration by first running the full resolver over the `TRAFFICPEAK_*` namespace; if the layer-1 anchor `TRAFFICPEAK_URL` is present the result MUST be used and `HYDROLIX_*` MUST be ignored entirely; otherwise the server SHALL re-run the same resolver over `HYDROLIX_*` (whose layer-1 anchor is `HYDROLIX_URL`, or the deprecated `HYDROLIX_HOST` alias accepted only for stdio transport). The two namespaces MUST NOT interleave on a per-variable basis. If both namespaces independently resolve to different effective values, the server SHALL prefer the TrafficPeak resolution and SHALL emit exactly one WARNING-level log line at startup naming the conflicting layer-1 variables and identifying `TRAFFICPEAK_*` as the winner. Identical effective values → silent. Neither namespace resolves → exit non-zero with an error message naming `TRAFFICPEAK_URL` and `HYDROLIX_URL` as the acceptable layer-1 anchors.
+The server SHALL accept a `TRAFFICPEAK_*` environment-variable namespace that mirrors the **modern** `HYDROLIX_*` variables one-for-one — every non-deprecated variable consumed by the configuration resolver (including but not limited to `URL`, `TOKEN`, `HTTP_QUERY_HOST` / `PORT` / `SECURE`, `VERSION_API_HOST` / `PORT` / `SECURE`, `VERIFY`, `USER`, `PASSWORD`) MUST be accepted under both prefixes with identical semantics. The deprecated `HYDROLIX_*` aliases (`HYDROLIX_HOST`, `HYDROLIX_PORT`, `HYDROLIX_SECURE`, `HYDROLIX_API_HOST`, `HYDROLIX_API_PORT`, `HYDROLIX_PROXY_PATH`) are NOT mirrored under `TRAFFICPEAK_*`. Resolution SHALL be **per-variable**: for each modern variable a set `TRAFFICPEAK_<suffix>` takes precedence over `HYDROLIX_<suffix>`, and where `TRAFFICPEAK_<suffix>` is unset the `HYDROLIX_<suffix>` value (if any) SHALL be used unchanged (silent fallback). The server MUST NOT delete `HYDROLIX_*` variables and MUST NOT emit a cross-namespace conflict warning — TrafficPeak simply wins per variable. This ensures operational defaults set only under `HYDROLIX_*` (e.g. a container image's `HYDROLIX_MCP_SERVER_TRANSPORT`) survive when a caller supplies only `TRAFFICPEAK_URL`. If neither namespace supplies a URL the server SHALL exit non-zero with an error naming **only the running brand's own anchor** — `TRAFFICPEAK_URL` for a `mcp-trafficpeak` build, `HYDROLIX_URL` (or the deprecated `HYDROLIX_HOST` for stdio) for a `mcp-hydrolix` build. Which prefix the server *advertises* in user-facing output is chosen by the baked brand, though both builds *accept* both prefixes.
 
 <!-- settle: explore/env-var-namespace-chain -->
 
@@ -139,17 +140,17 @@ The server SHALL accept a `TRAFFICPEAK_*` environment-variable namespace that mi
 - **WHEN** the server starts
 - **THEN** the server resolves entirely from `HYDROLIX_*`, starts silently, behaves identically to its pre-change behavior, and emits no warning about absent `TRAFFICPEAK_*` variables
 
-#### Scenario: Partial Trafficpeak Config Falls Through To Hydrolix
+#### Scenario: Trafficpeak Overrides Apply Per Variable
 
-- **GIVEN** `TRAFFICPEAK_HTTP_QUERY_HOST` is set, no `TRAFFICPEAK_URL` anchor is set, and `HYDROLIX_URL` is set
+- **GIVEN** `TRAFFICPEAK_HTTP_QUERY_HOST` is set and `HYDROLIX_URL` is set (no `TRAFFICPEAK_URL`)
 - **WHEN** the server starts
-- **THEN** the server falls through to the `HYDROLIX_*` namespace, uses `HYDROLIX_URL` and Hydrolix-namespace overrides, and ignores the stray `TRAFFICPEAK_HTTP_QUERY_HOST`
+- **THEN** the query host is taken from `TRAFFICPEAK_HTTP_QUERY_HOST` (TrafficPeak wins for that variable), while variables not set under `TRAFFICPEAK_*` (e.g. the version-api host) fall back to the `HYDROLIX_URL`-derived values
 
 #### Scenario: Both Namespaces Resolve With Conflicting Anchors
 
 - **GIVEN** `TRAFFICPEAK_URL=https://tp.example.live` and `HYDROLIX_URL=https://hdx.example.live` are both set
 - **WHEN** the server starts
-- **THEN** the server uses the `TRAFFICPEAK_URL` value, emits exactly one WARNING log line naming both variables and identifying `TRAFFICPEAK_*` as the winner, and proceeds normally
+- **THEN** the server uses the `TRAFFICPEAK_URL` value and starts silently — no cross-namespace conflict warning is emitted (TrafficPeak wins per variable)
 
 #### Scenario: Both Namespaces Resolve To Identical Values
 
@@ -161,7 +162,7 @@ The server SHALL accept a `TRAFFICPEAK_*` environment-variable namespace that mi
 
 - **GIVEN** none of `TRAFFICPEAK_URL`, `HYDROLIX_URL`, or the deprecated `HYDROLIX_HOST` are set
 - **WHEN** the server starts
-- **THEN** the server exits non-zero with an error message naming `TRAFFICPEAK_URL` and `HYDROLIX_URL` as the acceptable layer-1 anchors
+- **THEN** the server exits non-zero with an error naming **only the running brand's own layer-1 anchor** (`HYDROLIX_URL` for a `mcp-hydrolix` build, `TRAFFICPEAK_URL` for a `mcp-trafficpeak` build) — it does not advertise the other brand's namespace
 
 ### Requirement: Existing Hydrolix-Branded Surface Is Preserved
 
