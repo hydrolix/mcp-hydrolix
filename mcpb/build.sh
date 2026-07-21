@@ -7,49 +7,13 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "${REPO_ROOT}"
 
 # ---------------------------------------------------------------------------
-# 0. Select the brand. MCP_BRAND={hydrolix|trafficpeak} (default hydrolix),
-#    mirroring the Hatchling build hook. The per-brand table below is the
-#    single source of brand-divergent mcpb metadata.
+# 0. Select the brand and load its values from brands.toml (the single source
+#    of truth). scripts/brand_meta.py validates MCP_BRAND (defaulting from
+#    brands.toml when unset) and emits the shell vars used below; `set -e`
+#    aborts the build if the brand is invalid. No per-brand table lives here.
 # ---------------------------------------------------------------------------
-MCP_BRAND="${MCP_BRAND:-hydrolix}"
-case "${MCP_BRAND}" in
-  hydrolix)
-    DIST_NAME="mcp-hydrolix"
-    DISPLAY_NAME="Hydrolix"
-    BRAND_NAME="Hydrolix"
-    DESCRIPTION="An MCP server for the Hydrolix analytics database."
-    LONG_DESCRIPTION="Query Hydrolix from Claude using SQL. Provides tools to list databases and tables, inspect schemas, and run SELECT queries."
-    AUTHOR_NAME="Hydrolix"
-    AUTHOR_URL="https://hydrolix.io"
-    HOMEPAGE="https://github.com/hydrolix/mcp-hydrolix"
-    REPOSITORY="https://github.com/hydrolix/mcp-hydrolix"
-    KEYWORDS='["hydrolix", "sql", "clickhouse", "analytics", "observability", "logs"]'
-    ENV_PREFIX="HYDROLIX_"
-    CFG_PREFIX="hydrolix_"
-    EXAMPLE_URL="https://mycluster.hydrolix.live"
-    ;;
-  trafficpeak)
-    DIST_NAME="mcp-trafficpeak"
-    DISPLAY_NAME="TrafficPeak"
-    BRAND_NAME="TrafficPeak"
-    DESCRIPTION="An MCP server for the TrafficPeak analytics database."
-    LONG_DESCRIPTION="Query TrafficPeak from Claude using SQL. Provides tools to list databases and tables, inspect schemas, and run SELECT queries."
-    AUTHOR_NAME="TrafficPeak"
-    AUTHOR_URL="https://www.akamai.com/products/trafficpeak"
-    HOMEPAGE="https://www.akamai.com/products/trafficpeak"
-    # The repository field points at the real sibling repo under the hydrolix
-    # org -- an accepted exemption to the zero-hydrolix rule for repo pointers.
-    REPOSITORY="https://github.com/hydrolix/mcp-trafficpeak"
-    KEYWORDS='["trafficpeak", "sql", "clickhouse", "analytics", "observability", "logs"]'
-    ENV_PREFIX="TRAFFICPEAK_"
-    CFG_PREFIX="trafficpeak_"
-    EXAMPLE_URL="https://mycluster.trafficpeak.live"
-    ;;
-  *)
-    echo "ERROR: MCP_BRAND='${MCP_BRAND}' is not valid. Use 'hydrolix' or 'trafficpeak'." >&2
-    exit 1
-    ;;
-esac
+brand_vars="$(uv run --quiet python scripts/brand_meta.py "${MCP_BRAND:-}")"
+eval "${brand_vars}"
 
 # ---------------------------------------------------------------------------
 # 1. Determine the version. MCPB_VERSION overrides; otherwise read from

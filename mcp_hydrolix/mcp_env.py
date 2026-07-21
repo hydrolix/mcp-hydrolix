@@ -11,7 +11,11 @@ from enum import Enum
 from typing import Optional, TypedDict
 from urllib.parse import ParseResult, urlparse
 
-from mcp_hydrolix._brand import __brand__, __dist_name__
+from mcp_hydrolix._brand import (
+    __dist_name__,
+    __env_prefix__,
+    __env_prefix_precedence__,
+)
 from mcp_hydrolix.auth.credentials import HydrolixCredential, ServiceAccountToken, UsernamePassword
 
 logger = logging.getLogger("mcp-hydrolix")
@@ -111,11 +115,12 @@ def _parse_hydrolix_url() -> Optional[ParseResult]:
     return parsed
 
 
-# Dual-namespace env-var resolution (TrafficPeak brand). The server accepts a
-# parallel TRAFFICPEAK_* namespace that mirrors only the *modern* HYDROLIX_*
-# variables; the deprecated aliases below are Hydrolix-only and never mirrored.
+# Canonical internal env-var namespace: every config read in this module uses
+# the HYDROLIX_* spelling. The dual-namespace override (a TRAFFICPEAK_* value
+# wins per variable) is applied by brand_getenv using the precedence order baked
+# from brands.toml (__env_prefix_precedence__). Deprecated aliases are
+# Hydrolix-only and never mirrored under the other namespace.
 HYDROLIX_PREFIX = "HYDROLIX_"
-TRAFFICPEAK_PREFIX = "TRAFFICPEAK_"
 
 # Suffixes of the deprecated HYDROLIX_* aliases (derived from ALIAS_RENAMES).
 # TRAFFICPEAK_* does not mirror these, so they are skipped when projecting the
@@ -135,9 +140,7 @@ def _connection_target_hint() -> str:
     alone is the actionable fix). Reads the baked ``__brand__`` at call time so
     the message matches the published wheel.
     """
-    if __brand__ == "trafficpeak":
-        return "TRAFFICPEAK_URL"
-    return "HYDROLIX_URL"
+    return f"{__env_prefix__}URL"
 
 
 def brand_getenv(name: str, default: Optional[str] = None) -> Optional[str]:
@@ -159,9 +162,14 @@ def brand_getenv(name: str, default: Optional[str] = None) -> Optional[str]:
     if name.startswith(HYDROLIX_PREFIX):
         suffix = name[len(HYDROLIX_PREFIX) :]
         if suffix not in _DEPRECATED_SUFFIXES:
-            tp = os.environ.get(TRAFFICPEAK_PREFIX + suffix)
-            if tp is not None:
-                return tp
+            # Modern variable: try each namespace prefix in the baked precedence
+            # order (first wins). The canonical HYDROLIX_ spelling is itself one
+            # of the prefixes, so a plain HYDROLIX_<suffix> is honored last.
+            for prefix in __env_prefix_precedence__:
+                value = os.environ.get(prefix + suffix)
+                if value is not None:
+                    return value
+            return default
     return os.environ.get(name, default)
 
 
