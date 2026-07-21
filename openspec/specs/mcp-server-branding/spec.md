@@ -201,7 +201,7 @@ This change MUST NOT remove, rename, or behaviorally alter the `mcp-hydrolix` Py
 
 ### Requirement: Artifact Parity Invariant
 
-For every release artifact this repository emits under the `mcp-hydrolix` brand at version V, the same release workflow run SHALL emit a corresponding `mcp-trafficpeak` artifact at the identical version V, built from the same source commit. This invariant SHALL hold for the PyPI wheel + sdist, the mcpb bundle, the Docker image pushed to GAR, and any future release-time artifact type introduced to this repository. The release workflow MUST fail before any partial-brand upload completes if either brand's counterpart is missing.
+For every release artifact this repository emits under the `mcp-hydrolix` brand at version V, the same release workflow run SHALL emit a corresponding `mcp-trafficpeak` artifact at the identical version V, built from the same source commit. This invariant SHALL hold for the PyPI wheel, the mcpb bundle, the Docker image pushed to GAR, and any future release-time artifact type introduced to this repository. The sole exception is the PyPI sdist: `mcp-trafficpeak` is published wheel-only, because a TrafficPeak sdist would rebuild under the `mcp-hydrolix` distribution name in a downstream source build; the Hydrolix sdist therefore has no TrafficPeak counterpart by design. The release workflow MUST fail before any partial-brand upload completes if either brand's counterpart is missing.
 
 <!-- settle: explore/artifact-parity-invariant -->
 
