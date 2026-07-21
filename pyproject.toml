@@ -1,6 +1,6 @@
 [project]
 name = "mcp-hydrolix"
-version = "0.3.5"
+version = "0.3.5a1"
 # description, readme, scripts, and urls are brand-varying and populated by the
 # custom metadata hook in hatch_build.py (default brand: hydrolix). project.name
 # stays static because uv/PEP 621 forbid a dynamic name; the mcp-trafficpeak
