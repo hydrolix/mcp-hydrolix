@@ -395,8 +395,11 @@ def test_readme_does_not_mention_trafficpeak():
 
 
 def test_internal_engineering_docs_may_mention_both_brands():
-    change = REPO_ROOT / "openspec" / "changes" / "tp-brand-via-hatch-hook"
-    text = (change / "proposal.md").read_text(encoding="utf-8").lower()
+    # The capability spec is the durable home for this branding contract; the
+    # proposal.md that originally carried it moves under changes/archive/ once
+    # the change is archived, so assert against the synced spec instead.
+    spec = REPO_ROOT / "openspec" / "specs" / "mcp-server-branding" / "spec.md"
+    text = spec.read_text(encoding="utf-8").lower()
     assert "trafficpeak" in text  # allowed (and expected) in internal docs
 
 
