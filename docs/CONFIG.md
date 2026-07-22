@@ -81,7 +81,7 @@ These map to per-query Hydrolix/ClickHouse settings sent with every query:
   * In platform-managed (in-cluster) deployments the cluster tunable is mapped onto this same variable; the deployment owns the environment, so its value is authoritative
 * `HYDROLIX_QUERY_HEAD_POOL`: Name of the Hydrolix query-head pool to route this connection to
   * Default: None (uses the cluster's default query head)
-  * The pool must be preconfigured on the cluster; requests fail if it doesn't exist
+  * The pool must be preconfigured on the cluster; if the named pool isn't configured, the connection falls back to the cluster's default query head pool
   * Unlike `HYDROLIX_QUERY_POOL`, which selects the query *peer* pool per query, this selects the query-head pool for the whole connection
 * `HYDROLIX_HTTPS_PROXY` / `HYDROLIX_HTTP_PROXY`: Outbound proxy for reaching the Hydrolix cluster
   * Default: None (connect directly)
