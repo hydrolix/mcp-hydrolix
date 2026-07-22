@@ -62,7 +62,13 @@ from mcp_hydrolix.models import (
 from mcp_hydrolix.utils import coerce_rows, inject_limit, strip_conflicting_settings
 
 
-MCP_SERVER_NAME = "mcp-hydrolix"
+# Brand identity is baked at build time into mcp_hydrolix/_brand.py by the
+# Hatchling hook (hatch_build.py); at runtime we source the distribution name
+# from there and NOWHERE else, so every customer-visible identifier reflects the
+# wheel that was actually published rather than a fragile runtime signal.
+from mcp_hydrolix._brand import __brand__, __dist_name__
+
+MCP_SERVER_NAME = __dist_name__
 logger = logging.getLogger(MCP_SERVER_NAME)
 
 load_dotenv()
@@ -71,21 +77,51 @@ HYDROLIX_CONFIG: Final[HydrolixConfig] = get_config()
 
 
 def _resolve_server_version() -> str:
-    try:
-        return _pkg_version(MCP_SERVER_NAME)
-    except PackageNotFoundError:
-        logger.warning(
-            "Could not resolve package version for %s; using 'unknown' in admin comment",
-            MCP_SERVER_NAME,
-        )
-        return "unknown"
+    # Both brands are the same source at the same version, so the version number
+    # is brand-independent. Prefer this brand's own distribution; fall back to
+    # the base mcp-hydrolix distribution, which is the one actually installed in
+    # the Docker image (it copies source rather than installing the brand wheel,
+    # so a TrafficPeak image has no mcp-trafficpeak dist metadata to read). The
+    # fallback surfaces only the version *number*, never the distribution name,
+    # so it does not leak the Hydrolix brand into TrafficPeak output.
+    for dist in (MCP_SERVER_NAME, "mcp-hydrolix"):
+        try:
+            return _pkg_version(dist)
+        except PackageNotFoundError:
+            continue
+    logger.warning(
+        "Could not resolve package version for %s; using 'unknown' in admin comment",
+        MCP_SERVER_NAME,
+    )
+    return "unknown"
 
+
+SERVER_VERSION: Final[str] = _resolve_server_version()
 
 HDX_ADMIN_COMMENT: Final[str] = (
     f"User: {MCP_SERVER_NAME} "
-    f"version: {_resolve_server_version()} "
+    f"version: {SERVER_VERSION} "
     f"transport: {HYDROLIX_CONFIG.mcp_server_transport}"
 )
+
+# Leading token of the outbound User-Agent on every HTTP request the server
+# makes to the configured cluster (e.g. the /version probe). Sourced from the
+# baked distribution name so a TP wheel never advertises "mcp-hydrolix".
+USER_AGENT: Final[str] = f"{__dist_name__}/{SERVER_VERSION}"
+
+
+def startup_banner() -> str:
+    """One-line startup banner naming the baked brand and distribution.
+
+    Built exclusively from the ``_brand.py`` constants so the reported brand
+    reflects the published wheel, not ``sys.argv[0]`` or the env-var namespace.
+    """
+    return (
+        f"Starting {__dist_name__} (brand: {__brand__}) "
+        f"version {SERVER_VERSION} "
+        f"transport {HYDROLIX_CONFIG.mcp_server_transport}"
+    )
+
 
 mcp = FastMCP(
     name=MCP_SERVER_NAME,
@@ -98,6 +134,10 @@ mcp = FastMCP(
         else None
     ),
 )
+
+# Startup banner. Emitted once at import (after logging is configured by
+# main()/webapp) so operators see which brand/version is actually running.
+logger.info(startup_banner())
 
 
 async def create_hydrolix_client(pool_mgr, request_credential: Optional[HydrolixCredential]):
@@ -224,6 +264,9 @@ async def _check_parameterized_query_support() -> bool:
             headers = {"Authorization": f"Basic {encoded}"}
         else:
             headers = {"Authorization": f"Bearer {cast(ServiceAccountToken, creds).token}"}
+        # Identify ourselves by the baked distribution name on every outbound
+        # cluster request (task 1.6a). A TP wheel sends "mcp-trafficpeak/<v>".
+        headers["User-Agent"] = USER_AGENT
 
         scheme = "https" if HYDROLIX_CONFIG.version_api_secure else "http"
         url = (

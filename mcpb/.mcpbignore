@@ -5,3 +5,6 @@ dist/
 build.sh
 *.tmpl
 .DS_Store
+# Repo-facing README; not part of the shipped bundle (and it is Hydrolix-branded,
+# so packing it would leak Hydrolix into the TrafficPeak bundle).
+README.md

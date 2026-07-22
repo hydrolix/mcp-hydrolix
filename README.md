@@ -357,7 +357,7 @@ You MUST set one of the following to identify the cluster:
 * `HYDROLIX_URL` *(recommended)*: The canonical public URL of your Hydrolix cluster, e.g. `https://mycluster.hydrolix.live`. For typical out-of-cluster deployments this single variable is sufficient — it supplies the host, port (scheme-default 443/80), and TLS settings for both the HTTP query endpoint and the REST `/version` probe.
 * `HYDROLIX_HOST` *(deprecated)*: The hostname of your Hydrolix server. Still honored for backwards compatibility but should be replaced by `HYDROLIX_URL`.
 
-When `HYDROLIX_MCP_SERVER_TRANSPORT` is `http` or `sse`, `HYDROLIX_URL` *specifically* is required (the OAuth metadata endpoint advertises it). `HYDROLIX_HOST` alone is not sufficient for these transports.
+When `HYDROLIX_MCP_SERVER_TRANSPORT` is `http` or `sse`, `HYDROLIX_URL` *specifically* is required (a forthcoming OAuth metadata endpoint would advertise it). `HYDROLIX_HOST` alone is not sufficient for these transports.
 
 #### Authentication Variables
 At least one authentication method must be configured when using the stdio transport:
