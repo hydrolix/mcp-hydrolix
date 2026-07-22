@@ -125,12 +125,19 @@ jobs:
           tag="v$(uv version --short)"
           echo "::notice::Tag is $tag"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
-      - name: Build docker images for both brands
+      - name: Resolve brand set from brands.toml
+        shell: bash
+        run: |
+          set -euo pipefail
+          brands="$(python3 -c 'import tomllib;print(" ".join(tomllib.load(open("brands.toml","rb"))["brands"]))')"
+          echo "::notice::brands = ${brands}"
+          echo "BRANDS=${brands}" >> "$GITHUB_ENV"
+      - name: Build docker images for all brands
         shell: bash
         run: |
           set -euo pipefail
           TAG="${{ steps.get_tag.outputs.tag }}"
-          for brand in hydrolix trafficpeak; do
+          for brand in $BRANDS; do
             img="us-docker.pkg.dev/hdx-art/t/mcp-${brand}"
             docker buildx build --build-arg MCP_BRAND="${brand}" \
               -t "${img}:${TAG}" -t "${img}:latest" --load .
@@ -140,7 +147,7 @@ jobs:
         run: |
           set -euo pipefail
           TAG="${{ steps.get_tag.outputs.tag }}"
-          for brand in hydrolix trafficpeak; do
+          for brand in $BRANDS; do
             docker image inspect "us-docker.pkg.dev/hdx-art/t/mcp-${brand}:${TAG}" >/dev/null \
               || { echo "::error::missing mcp-${brand} image at ${TAG}"; exit 1; }
           done
@@ -149,7 +156,7 @@ jobs:
         run: |
           set -euo pipefail
           TAG="${{ steps.get_tag.outputs.tag }}"
-          for brand in hydrolix trafficpeak; do
+          for brand in $BRANDS; do
             img="us-docker.pkg.dev/hdx-art/t/mcp-${brand}"
             docker push "${img}:${TAG}"
             docker push "${img}:latest"
@@ -173,13 +180,15 @@ jobs:
           ref: ${{ github.ref }}
       - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86  # v5
       - run: uv python install
-      - name: Build MCPB bundles for both brands
+      - name: Build MCPB bundles for all brands
         run: |
           set -euo pipefail
-          MCP_BRAND=hydrolix bash mcpb/build.sh
-          MCP_BRAND=trafficpeak bash mcpb/build.sh
+          BRANDS="$(python3 -c 'import tomllib;print(" ".join(tomllib.load(open("brands.toml","rb"))["brands"]))')"
+          for brand in $BRANDS; do
+            MCP_BRAND="$brand" bash mcpb/build.sh
+          done
           VERSION="$(uv version --short)"
-          for brand in hydrolix trafficpeak; do
+          for brand in $BRANDS; do
             test -f "dist/mcp-${brand}-${VERSION}.mcpb" \
               || { echo "::error::missing dist/mcp-${brand}-${VERSION}.mcpb (parity)"; exit 1; }
           done

@@ -10,10 +10,12 @@ COPY pyproject.toml /app/
 COPY uv.lock /app/
 # And because uv sync likes to verify the README... for some reason...
 COPY README.md /app/
-# pyproject.toml now declares custom Hatchling metadata/build hooks in
-# hatch_build.py, so resolving the project's (dynamic) metadata during uv sync
-# requires this file to be present.
+# pyproject.toml declares custom Hatchling metadata/build hooks in
+# hatch_build.py, which reads brands.toml (the brand single source of truth),
+# so both must be present to resolve the project's (dynamic) metadata during
+# uv sync.
 COPY hatch_build.py /app/
+COPY brands.toml /app/
 
 # produce .venv
 RUN uv sync --locked
@@ -57,6 +59,7 @@ COPY --chown=appuser:appgroup pyproject.toml /app/
 # server name, and admin-comment User token from these baked constants.
 ARG MCP_BRAND=hydrolix
 COPY --chown=appuser:appgroup hatch_build.py /app/hatch_build.py
+COPY --chown=appuser:appgroup brands.toml /app/brands.toml
 RUN MCP_BRAND="${MCP_BRAND}" .venv/bin/python -c \
   "from hatch_build import brand_module_source, selected_brand; \
 open('mcp_hydrolix/_brand.py','w').write(brand_module_source(selected_brand()))" \
