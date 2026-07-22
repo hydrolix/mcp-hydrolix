@@ -264,7 +264,8 @@ class HydrolixConfig:
         HYDROLIX_QUERY_HEAD_POOL: Name of the Hydrolix query-head pool to route this connection
             to. Unlike HYDROLIX_QUERY_POOL (a per-query ``hdx_query_pool_name`` setting selecting
             the query *peer* pool), this selects the query-head pool for the whole connection.
-            The pool must be preconfigured on the cluster; requests fail if it does not exist.
+            The pool must be preconfigured on the cluster; if the named pool isn't configured,
+            the connection falls back to the cluster's default query head.
             (default: None -- use the cluster default query head)
         HYDROLIX_HTTPS_PROXY / HYDROLIX_HTTP_PROXY: Outbound proxy for reaching the cluster.
             Set one (https wins if both are set) to route the connection through a corporate
@@ -630,7 +631,8 @@ class HydrolixConfig:
         Unlike :pyattr:`query_pool` (a per-query ``hdx_query_pool_name`` setting
         selecting the query *peer* pool), this selects the query-head pool for
         the whole connection. The pool must be preconfigured on the cluster;
-        requests fail if it does not exist. No validation is performed here --
+        if the named pool isn't configured, the connection falls back to the
+        cluster's default query head. No validation is performed here --
         that is an operator/deployment concern.
 
         Implementation detail: the value reaches the cluster via the HTTP
