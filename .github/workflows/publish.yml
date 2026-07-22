@@ -38,7 +38,7 @@ jobs:
       - run: MCP_BRAND=hydrolix uv build
       - uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b  # release/v1
   dispatch-trafficpeak:
-    # Fire the sibling repo's publish workflow once the Hydrolix wheel is up, so
+    # Fire off the sibling repo's publish workflow once the Hydrolix wheel is up, so
     # mcp-trafficpeak is published at the same version from the same commit. A
     # failed dispatch fails the release (artifact-parity invariant); recover with
     # `gh workflow run publish.yml -R hydrolix/mcp-trafficpeak -f tag=<tag>`.
@@ -92,7 +92,7 @@ jobs:
           private-key: ${{ steps.get-secret.outputs.private-key }}
           owner: hydrolix
           repositories: mcp-trafficpeak
-      - name: Fire workflow_dispatch at the sibling publish workflow
+      - name: Fire off workflow_dispatch at the sibling publish workflow
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
