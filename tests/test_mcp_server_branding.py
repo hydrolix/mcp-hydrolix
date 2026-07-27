@@ -168,6 +168,17 @@ def test_deprecated_alias_suffix_not_mirrored_from_trafficpeak(brand_env):
     assert mcp_env._DEPRECATED_SUFFIXES  # guard: suffix set is non-empty
 
 
+def test_canonical_read_survives_a_precedence_order_omitting_it(brand_env, monkeypatch):
+    # brand_getenv falls through to a plain read of the canonical name, so the
+    # HYDROLIX_ spelling every config read in mcp_env uses stays honored even if
+    # the baked precedence order omits HYDROLIX_ entirely. No brands.toml edit
+    # can silently strand the canonical namespace.
+    monkeypatch.setattr(mcp_env, "__env_prefix_precedence__", ("TRAFFICPEAK_",))
+    brand_env["HYDROLIX_URL"] = "https://hdx.example.live"
+    assert brand_getenv("HYDROLIX_URL") == "https://hdx.example.live"
+    assert brand_getenv("HYDROLIX_TOKEN", "fallback") == "fallback"  # default still applies
+
+
 # ==========================================================================  #
 # Build-time brand flag + metadata + baked runtime identifier                 #
 # ==========================================================================  #
@@ -425,6 +436,26 @@ def test_baked_env_constants_match_brands_toml():
         assert f'__env_prefix__ = "{cfg["env_prefix"]}"' in src
         assert f"__env_prefix_precedence__ = {precedence!r}" in src
         assert f'__dist_name__ = "{cfg["dist_name"]}"' in src
+
+
+def test_precedence_includes_the_canonical_env_prefix():
+    # mcp_env reads every config value under its canonical HYDROLIX_ spelling, so
+    # that prefix must itself appear in the precedence order -- otherwise the
+    # dual-namespace loop never probes the canonical namespace. Asserted against
+    # the literal prefix (not one recomputed from brands.toml) so a config edit
+    # that drops "hydrolix" from [resolution] precedence, or renames its
+    # env_prefix, fails here. Checks both the committed default that dev/test
+    # imports and the order the hook bakes into every brand's wheel.
+    baked = tuple(hatch_build.BRANDS[b]["env_prefix"] for b in hatch_build._PRECEDENCE)
+    assert "HYDROLIX_" in baked
+    assert mcp_env.HYDROLIX_PREFIX == "HYDROLIX_"
+    assert mcp_env.HYDROLIX_PREFIX in mcp_env.__env_prefix_precedence__
+
+
+def test_every_brand_appears_in_the_precedence_order():
+    # A brand added to brands.toml but left out of [resolution] precedence would
+    # have its own env-var namespace silently ignored by brand_getenv.
+    assert set(hatch_build._PRECEDENCE) == set(hatch_build.BRANDS)
 
 
 def test_no_brand_table_outside_brands_toml():

@@ -163,13 +163,15 @@ def brand_getenv(name: str, default: Optional[str] = None) -> Optional[str]:
         suffix = name[len(HYDROLIX_PREFIX) :]
         if suffix not in _DEPRECATED_SUFFIXES:
             # Modern variable: try each namespace prefix in the baked precedence
-            # order (first wins). The canonical HYDROLIX_ spelling is itself one
-            # of the prefixes, so a plain HYDROLIX_<suffix> is honored last.
+            # order (first wins). With no match, fall through to the canonical
+            # read below -- redundant when HYDROLIX_ is itself in the precedence
+            # list (the loop already probed it), and the safety net when it is
+            # not: the canonical spelling every read here uses is always honored,
+            # whatever brands.toml says.
             for prefix in __env_prefix_precedence__:
                 value = os.environ.get(prefix + suffix)
                 if value is not None:
                     return value
-            return default
     return os.environ.get(name, default)
 
 
