@@ -124,8 +124,9 @@ def test_neither_namespace_provides_an_anchor(brand_env):
 
 
 def test_hydrolix_branded_errors_never_mention_trafficpeak(brand_env, monkeypatch):
-    # Exercise both connection-target error paths under the Hydrolix brand.
-    monkeypatch.setattr(mcp_env, "__brand__", "hydrolix")
+    # Exercise both connection-target error paths under the Hydrolix brand. The
+    # hint derives from the baked own env prefix; a Hydrolix wheel bakes "HYDROLIX_".
+    monkeypatch.setattr(mcp_env, "__env_prefix__", "HYDROLIX_")
     with pytest.raises(ValueError) as stdio_err:  # stdio: no anchor
         HydrolixConfig()
     assert "trafficpeak" not in str(stdio_err.value).lower()
@@ -137,8 +138,9 @@ def test_hydrolix_branded_errors_never_mention_trafficpeak(brand_env, monkeypatc
 
 def test_trafficpeak_branded_error_names_trafficpeak_anchor(brand_env, monkeypatch):
     # Under the TrafficPeak brand the error leads with TRAFFICPEAK_URL and does
-    # not need to mention HYDROLIX_URL.
-    monkeypatch.setattr(mcp_env, "__brand__", "trafficpeak")
+    # not need to mention HYDROLIX_URL. The hint derives from the baked own
+    # env prefix (__env_prefix__), which a TP wheel bakes as "TRAFFICPEAK_".
+    monkeypatch.setattr(mcp_env, "__env_prefix__", "TRAFFICPEAK_")
     with pytest.raises(ValueError) as excinfo:
         HydrolixConfig()
     msg = str(excinfo.value)
@@ -164,6 +166,17 @@ def test_deprecated_alias_suffix_not_mirrored_from_trafficpeak(brand_env):
     assert config.host == "tp.example.live"  # from TRAFFICPEAK_URL, not TRAFFICPEAK_HOST
     assert brand_getenv("HYDROLIX_HOST") is None  # deprecated suffix not mirrored
     assert mcp_env._DEPRECATED_SUFFIXES  # guard: suffix set is non-empty
+
+
+def test_canonical_read_survives_a_precedence_order_omitting_it(brand_env, monkeypatch):
+    # brand_getenv falls through to a plain read of the canonical name, so the
+    # HYDROLIX_ spelling every config read in mcp_env uses stays honored even if
+    # the baked precedence order omits HYDROLIX_ entirely. No brands.toml edit
+    # can silently strand the canonical namespace.
+    monkeypatch.setattr(mcp_env, "__env_prefix_precedence__", ("TRAFFICPEAK_",))
+    brand_env["HYDROLIX_URL"] = "https://hdx.example.live"
+    assert brand_getenv("HYDROLIX_URL") == "https://hdx.example.live"
+    assert brand_getenv("HYDROLIX_TOKEN", "fallback") == "fallback"  # default still applies
 
 
 # ==========================================================================  #
@@ -401,6 +414,98 @@ def test_internal_engineering_docs_may_mention_both_brands():
     spec = REPO_ROOT / "openspec" / "specs" / "mcp-server-branding" / "spec.md"
     text = spec.read_text(encoding="utf-8").lower()
     assert "trafficpeak" in text  # allowed (and expected) in internal docs
+
+
+# ==========================================================================  #
+# brands.toml is the single source of truth                                   #
+# ==========================================================================  #
+def test_exempt_org_tokens_appear_verbatim_in_readme():
+    # The rebrand filter protects these via case-sensitive replace; a token in
+    # brands.toml that doesn't match README byte-for-byte silently protects
+    # nothing. Guard the config against the doc.
+    for token in hatch_build._EXEMPT_ORG_TOKENS:
+        assert token in README, f"exempt token {token!r} not found verbatim in README.md"
+
+
+def test_baked_env_constants_match_brands_toml():
+    # The runtime _brand.py the hook bakes must reflect brands.toml exactly, for
+    # every brand (own prefix + the shared precedence order).
+    precedence = tuple(hatch_build.BRANDS[b]["env_prefix"] for b in hatch_build._PRECEDENCE)
+    for brand, cfg in hatch_build.BRANDS.items():
+        src = hatch_build.brand_module_source(brand)
+        assert f'__env_prefix__ = "{cfg["env_prefix"]}"' in src
+        assert f"__env_prefix_precedence__ = {precedence!r}" in src
+        assert f'__dist_name__ = "{cfg["dist_name"]}"' in src
+
+
+def test_precedence_includes_the_canonical_env_prefix():
+    # mcp_env reads every config value under its canonical HYDROLIX_ spelling, so
+    # that prefix must itself appear in the precedence order -- otherwise the
+    # dual-namespace loop never probes the canonical namespace. Asserted against
+    # the literal prefix (not one recomputed from brands.toml) so a config edit
+    # that drops "hydrolix" from [resolution] precedence, or renames its
+    # env_prefix, fails here. Checks both the committed default that dev/test
+    # imports and the order the hook bakes into every brand's wheel.
+    baked = tuple(hatch_build.BRANDS[b]["env_prefix"] for b in hatch_build._PRECEDENCE)
+    assert "HYDROLIX_" in baked
+    assert mcp_env.HYDROLIX_PREFIX == "HYDROLIX_"
+    assert mcp_env.HYDROLIX_PREFIX in mcp_env.__env_prefix_precedence__
+
+
+def test_every_brand_appears_in_the_precedence_order():
+    # A brand added to brands.toml but left out of [resolution] precedence would
+    # have its own env-var namespace silently ignored by brand_getenv.
+    assert set(hatch_build._PRECEDENCE) == set(hatch_build.BRANDS)
+
+
+def test_no_brand_table_outside_brands_toml():
+    # Single-source guard: the previously-duplicated per-brand tables must be
+    # gone from the other toolchains (they now read brands.toml).
+    build_sh = (REPO_ROOT / "mcpb" / "build.sh").read_text()
+    assert "brand_meta.py" in build_sh and 'DIST_NAME="mcp-' not in build_sh
+    env_py = (REPO_ROOT / "mcp_hydrolix" / "mcp_env.py").read_text()
+    assert 'TRAFFICPEAK_PREFIX = "TRAFFICPEAK_"' not in env_py
+    publish = (REPO_ROOT / ".github" / "workflows" / "publish.yml").read_text()
+    assert "for brand in hydrolix trafficpeak" not in publish
+
+
+@pytest.mark.brand_build
+def test_sdist_is_self_sufficient_for_a_brand_build(tmp_path):
+    # brands.toml must ship in the sdist, else a wheel-from-sdist / source build
+    # fails inside the metadata hook. Build an sdist, extract it, and build a
+    # TrafficPeak wheel purely from the extracted tree.
+    import subprocess
+    import tarfile
+
+    out = tmp_path / "dist"
+    subprocess.run(
+        ["uv", "build", "--sdist", "--out-dir", str(out)],
+        cwd=REPO_ROOT,
+        check=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+    )
+    sdist = next(out.glob("mcp_hydrolix-*.tar.gz"))
+    with tarfile.open(sdist) as t:
+        t.extractall(tmp_path / "x")
+    root = next((tmp_path / "x").glob("mcp_hydrolix-*"))
+    assert (root / "brands.toml").exists(), "brands.toml missing from sdist"
+    wheels = root / "w"
+    subprocess.run(
+        [
+            sys.executable,
+            str(root / "scripts" / "brand_build.py"),
+            "--wheel",
+            "--out-dir",
+            str(wheels),
+        ],
+        cwd=root,
+        env={**os.environ, "MCP_BRAND": "trafficpeak"},
+        check=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+    )
+    assert list(wheels.glob("mcp_trafficpeak-*.whl")), "TP wheel not built from extracted sdist"
 
 
 # ==========================================================================  #

@@ -1,0 +1,70 @@
+# Single source of truth for ALL build-time brand-divergent values.
+#
+# Consumers (all read THIS file; none re-declare brand values):
+#   - hatch_build.py        wheel metadata, the baked mcp_hydrolix/_brand.py,
+#                           and the README -> long-description rebrand filter
+#   - mcpb/build.sh         the mcpb bundle (via scripts/brand_meta.py)
+#   - .github/workflows/publish.yml   the brand set + `mcp-<brand>` image names
+#
+# Runtime note: this file is NOT shipped in the wheel (build-time only). The
+# values the running server needs (brand id, dist name, own env prefix, and the
+# dual-namespace precedence) are BAKED into mcp_hydrolix/_brand.py by the build
+# hook, so mcp_env.py reads them from there rather than parsing this at runtime.
+
+[resolution]
+# Default when MCP_BRAND is unset, and the per-variable dual-namespace
+# precedence (first prefix wins) applied by mcp_env.brand_getenv at runtime.
+default = "hydrolix"
+precedence = ["trafficpeak", "hydrolix"]
+
+[filter]
+# README -> long-description scrub exemptions: GitHub-org identity namespaces
+# name the owning org (not the brand), so they survive the rebrand filter.
+# NOTE: matched case-sensitively against README.md; a test asserts each token
+# appears verbatim there, so only add a token that is actually present (e.g.
+# add "github.com/hydrolix" here if/when a repo link is introduced to README).
+exempt_org_tokens = ["io.github.hydrolix"]
+
+[brands.hydrolix]
+brand = "hydrolix"
+dist_name = "mcp-hydrolix"
+prose_name = "Hydrolix"
+# `summary` is the wheel Summary (terse). It is DELIBERATELY different from
+# `mcpb_description` below (which is richer). Both are pinned to preserve the
+# "hydrolix artifact unchanged" invariants -- do NOT collapse them:
+#   summary          -> test_pip_show_on_hydrolix_wheel_is_unchanged
+#   mcpb_description  -> test_default_mode_mcpb_build_emits_the_hydrolix_bundle_unchanged
+summary = "An MCP server for Hydrolix."
+mcpb_description = "An MCP server for the Hydrolix analytics database."
+mcpb_long_description = "Query Hydrolix from Claude using SQL. Provides tools to list databases and tables, inspect schemas, and run SELECT queries."
+author_name = "Hydrolix"
+author_url = "https://hydrolix.io"
+keywords = ["hydrolix", "sql", "clickhouse", "analytics", "observability", "logs"]
+env_prefix = "HYDROLIX_"
+config_prefix = "hydrolix_"
+example_url = "https://mycluster.hydrolix.live"
+
+# Wheel Project-URLs, stated explicitly (not derived). mcpb HOMEPAGE = Home,
+# mcpb REPOSITORY = Source if present else Home.
+[brands.hydrolix.urls]
+Home = "https://github.com/hydrolix/mcp-hydrolix"
+
+[brands.trafficpeak]
+brand = "trafficpeak"
+dist_name = "mcp-trafficpeak"
+prose_name = "TrafficPeak"
+summary = "An MCP server for TrafficPeak."
+mcpb_description = "An MCP server for the TrafficPeak analytics database."
+mcpb_long_description = "Query TrafficPeak from Claude using SQL. Provides tools to list databases and tables, inspect schemas, and run SELECT queries."
+author_name = "TrafficPeak"
+author_url = "https://www.akamai.com/products/trafficpeak"
+keywords = ["trafficpeak", "sql", "clickhouse", "analytics", "observability", "logs"]
+env_prefix = "TRAFFICPEAK_"
+config_prefix = "trafficpeak_"
+example_url = "https://mycluster.trafficpeak.live"
+
+# Home is brand-clean (no "hydrolix"); Source points at the sibling repo under
+# the hydrolix org -- accepted exemption for repository-pointing manifest fields.
+[brands.trafficpeak.urls]
+Home = "https://www.akamai.com/products/trafficpeak"
+Source = "https://github.com/hydrolix/mcp-trafficpeak"
