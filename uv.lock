@@ -10,6 +10,12 @@ resolution-markers = [
     "python_full_version < '3.14' and sys_platform != 'emscripten' and sys_platform != 'win32'",
 ]
 
+[manifest]
+constraints = [
+    { name = "authlib", specifier = ">=1.6.12" },
+    { name = "cryptography", specifier = ">=50.0.0" },
+]
+
 [[package]]
 name = "aiofile"
 version = "3.9.0"
@@ -873,9 +879,7 @@ version = "0.3.6"
 source = { editable = "." }
 dependencies = [
     { name = "anyio" },
-    { name = "authlib" },
     { name = "clickhouse-connect" },
-    { name = "cryptography" },
     { name = "fastmcp" },
     { name = "mcp" },
     { name = "prometheus-client" },
@@ -900,9 +904,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "anyio", specifier = ">=4.14.2,<5" },
-    { name = "authlib", specifier = ">=1.6.12,<2" },
     { name = "clickhouse-connect", specifier = ">=0.15,<0.16" },
-    { name = "cryptography", specifier = ">=50.0.0" },
     { name = "fastmcp", specifier = ">=3.3.0,<3.4" },
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.27,<0.29" },
     { name = "kubernetes", marker = "extra == 'dev'", specifier = ">=30,<32" },
