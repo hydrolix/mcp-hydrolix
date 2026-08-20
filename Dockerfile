@@ -17,8 +17,9 @@ COPY README.md /app/
 COPY hatch_build.py /app/
 COPY brands.toml /app/
 
-# produce .venv
-RUN uv sync --locked
+# produce .venv, pre-compiling dependency bytecode so containers don't pay the
+# compile cost (~2s of parse+compile across the dependency tree) on every start
+RUN uv sync --locked --compile-bytecode
 
 # begin definition of runtime container, relying on the venv made in builder
 FROM python:3.13-alpine
@@ -26,7 +27,10 @@ FROM python:3.13-alpine
 # don't buffer log streams (docker adds enough delay)
 ENV PYTHONUNBUFFERED=1
 
-# don't cache pyc bytecode, since the container fs isn't persisted across restarts anyways
+# don't write pyc bytecode at runtime, since the container fs isn't persisted
+# across restarts anyways. Bytecode is instead baked into the image at build
+# time (see the compileall/--compile-bytecode steps); Python still *reads*
+# those __pycache__ files with this set.
 ENV PYTHONDONTWRITEBYTECODE=1
 
 # Bind HTTP transport to all interfaces
@@ -64,5 +68,12 @@ RUN MCP_BRAND="${MCP_BRAND}" .venv/bin/python -c \
   "from hatch_build import brand_module_source, selected_brand; \
 open('mcp_hydrolix/_brand.py','w').write(brand_module_source(selected_brand()))" \
   && .venv/bin/python -c "from mcp_hydrolix._brand import __dist_name__; print('baked brand:', __dist_name__)"
+
+# Pre-compile the application package's bytecode into the image (the venv's
+# site-packages were already compiled by `uv sync --compile-bytecode` in the
+# builder stage). This runs after the brand bake so _brand.py is included.
+# PYTHONDONTWRITEBYTECODE above only stops *runtime* writes; compileall here
+# is explicit and Python happily reads the resulting __pycache__ at startup.
+RUN .venv/bin/python -m compileall -q /app/mcp_hydrolix
 
 ENTRYPOINT [".venv/bin/python", "-m", "mcp_hydrolix.main"]
