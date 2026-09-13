@@ -1,0 +1,222 @@
+name: interactive-tdd
+version: 1
+description: Dependency-aware discovery, traceable behavior slices, TDD, and evidence-based review
+
+artifacts:
+  - id: proposal
+    generates: proposal.md
+    description: Outcome, scope, and affected capabilities
+    template: proposal.md
+    instruction: |
+      Inspect the target project's instructions, source, tests, and existing
+      specs before proposing changes. Resolve the planning root and target code
+      root from CLI context; they may differ. Use CLI-returned artifact paths.
+      Record the target root in design.md, not in this reusable schema.
+      Write the problem, intended outcome, scope, and non-goals.
+      List capabilities under ### New and ### Modified using their exact paths
+      relative to specs/. Each listed capability must have a corresponding delta
+      spec. Existing capability paths may be nested; preserve them.
+      Use *none* for an empty list. Implementation-only or documentation changes
+      may have no capability deltas; explain why and leave specs empty.
+      Keep technical choices in design.md and work tracking in tasks.md.
+    requires: []
+
+  - id: explore
+    generates: explore.md
+    description: Resolved decisions, explicit assumptions, and deferred questions
+    template: explore.md
+    instruction: |
+      Read proposal.md and inspect relevant project facts yourself. Read the
+      target project's CONTEXT.md or its established glossary when present.
+      Use dependency-aware questioning: track settled decisions, open questions,
+      and which questions depend on others. Ask one decision question at a time
+      from the unblocked frontier, with a grounded recommendation and tradeoff.
+      Batch independent questions only when the user requests it. Recompute the
+      frontier after each answer. Investigate factual questions before asking.
+      Stop when every in-scope blocking decision is resolved; explicitly record
+      assumptions and deferred branches with their impact. This is not a demand
+      to exhaust hypothetical branches. Reuse decisions already authorized in
+      the conversation instead of asking for confirmation again.
+      Capture actual answers as ### Decision: <kebab-case-slug>, with Question,
+      Answer, Rationale, and Affects (artifact path plus intended section).
+      Reconcile Affects against the real downstream sections before apply.
+      If no questions are needed, record why, the evidence, and any prior user
+      decisions. Never invent an interview or treat silence as an answer.
+      Challenge ambiguous domain terms against the glossary. When documentation
+      edits are authorized, create or update the glossary lazily with settled
+      current terms only. Keep proposed meanings in this change until implemented;
+      schedule their promotion as a task. Use CONTEXT.md when the project has no
+      glossary convention. Include terms, definitions, relationships, and source
+      references; keep requirements and implementation decisions in OpenSpec.
+      Pocock's grilling and domain-modeling techniques may assist this step.
+      Preserve this artifact contract, cadence, and project write authorization;
+      route change decisions to explore.md/design.md rather than duplicate ADRs.
+    requires: [proposal]
+
+  - id: specs
+    generates: "specs/**/*.md"
+    description: Observable requirements and named scenarios
+    template: spec.md
+    instruction: |
+      Read proposal.md and explore.md. Write one delta spec per listed capability.
+      If both capability lists are empty, create no spec files; explain this in
+      proposal.md and set skip_specs: true in the change's .openspec.yaml while
+      preserving other metadata. Confirm status reports specs skipped before
+      continuing. If this CLI lacks skip_specs support, report incompatibility;
+      do not invent a behavioral spec. This is the only conditional planning
+      artifact. Remove the marker if requirements later change.
+      Use ## ADDED Requirements, ## MODIFIED Requirements, and
+      ## REMOVED Requirements. For modifications include the entire updated
+      requirement and its scenarios; for removals include Reason and Migration.
+      Use ### Requirement: <Title Case Name> and #### Scenario: <Title Case Name>.
+      Each added/modified requirement has at least one observable GIVEN/WHEN/THEN
+      scenario. Choose independent expected outcomes, including relevant failure
+      behavior. Tests must not merely reproduce the implementation's calculation.
+      Cite applicable exploration decisions with <!-- settle: explore/<slug> -->
+      after the requirement statement or scenario bullets, never under a heading.
+      Scenario identity is <capability-path>/<requirement-slug>/<scenario-slug>.
+      Derive slugs by lowercasing, replacing whitespace with hyphens, stripping
+      characters outside a-z, 0-9 and hyphen, then collapsing/trimming hyphens.
+      Requirement slugs are unique within a capability; scenario slugs are unique
+      within a requirement. Resolve collisions by choosing distinct headings.
+    requires: [proposal, explore]
+
+  - id: design
+    generates: design.md
+    description: Interfaces, agreed testing seams, and technical decisions
+    template: design.md
+    instruction: |
+      Read the completed planning artifacts and target project conventions.
+      Record target code root, verification working directory, and toolchain
+      commands discovered from that project. Use relative paths where portable.
+      Consult codebase-design for interface depth and domain-modeling for shared
+      vocabulary if installed; the workflow must also work without these skills.
+      Write technical choices as ### Decision: <slug> with Choice, Why,
+      Alternatives, and Binding. Cite applicable explore/<slug> decisions in Why.
+      Prefer existing public interfaces and test through observable behavior.
+      Record testing seams as ### Seam: <slug>, naming the interface, observable
+      outcomes, external dependency handling, and existing test conventions.
+      Agree new testing seams with the user before tests are written. Cite the
+      user's message or an existing explicit agreement; reuse it without asking
+      again. A proposed default or the existence of this file is not agreement.
+      For changes without behavioral tests explain why seams are not applicable.
+      Identify scenario-to-seam mappings, verification commands, and relevant
+      regression checks. Follow the project's language and runner conventions.
+      Keep per-change rationale here. Link existing ADRs when applicable; a
+      cross-change decision index can link this record after archive without
+      creating a second authoritative copy.
+    requires: [proposal, explore, specs]
+
+  - id: tasks
+    generates: tasks.md
+    description: Behavior slices with scenario coverage and completion checks
+    template: tasks.md
+    instruction: |
+      Read all planning artifacts. Make an ordered checklist of small vertical
+      behavior slices, each independently verifiable through an agreed seam.
+      A behavioral task includes its red test and passing implementation. Never
+      split the expected red state into a task that must pass before code begins.
+      Each task has a stable numeric id, [implements: ...], [mode: tdd|check],
+      [scenarios: ...], [seam: ...], and a final verify: clause with an actual
+      command and expected outcome. Use the target project's runner, not a
+      language assumed by the schema. Document its working directory in design.
+      Binding namespaces are <capability-path>/<requirement-slug>, design/<slug>,
+      explore/<slug>, and meta/tests|docs|migration|rollout|tooling. All references
+      must resolve. A TDD task cites its parent requirement(s) and meta/tests.
+      In scenarios list full scenario identities from the specs instruction.
+      Assign every added/modified scenario to exactly one owning task; one task
+      may own several related scenarios and perform a separate red/green cycle
+      for each. Reuse existing tests where appropriate and record the coverage.
+      Include test cleanup/migration for removed requirements.
+      Use mode: check for docs, behavior-neutral configuration, and other direct
+      checks, with a reason recorded below the task. Configuration that changes
+      behavior still defaults to TDD. Use scenarios: none and seam: none only
+      when no behavioral scenario or seam applies. For a behavior-preserving
+      refactor, record why regression verification is appropriate instead of
+      inventing a failing behavior. A behavior-changing TDD exception requires
+      an explicit user decision cited in explore/design; it cannot drop coverage.
+      Completed means implemented AND verified. Keep blocked or deferred tasks
+      unchecked; record the reason in evidence.md. Checklist status alone does
+      not prove tests ran. Evidence is recorded during apply, not prefilled here.
+      End with a check-mode review task citing meta/tooling. Its deliverable is
+      review.md following the review artifact instructions; its verify clause
+      includes the relevant regression command and no unresolved blocking review
+      findings. Keep it unchecked until the review and required reruns are done.
+    requires: [proposal, explore, specs, design]
+
+  - id: review
+    generates: review.md
+    description: Post-implementation standards and spec review with verification evidence
+    template: review.md
+    instruction: |
+      POST-IMPLEMENTATION ONLY: create this artifact after implementation and
+      verification, not during proposal generation even if CLI reports it ready.
+      Read tasks.md, evidence.md, all planning artifacts, target project standards,
+      and the actual diff. Resolve and record a base revision and reviewed revision
+      or working-tree state; include uncommitted/untracked implementation changes.
+      Report Standards and Spec findings separately. The installed code-review
+      skill may assist when given these exact spec paths and comparison scope;
+      OpenSpec is the requirements source even when no issue tracker is configured.
+      Check every scenario's task and observed test coverage, decision citations,
+      seam agreements, removed behavior cleanup, and completion checks.
+      Distinguish structural validation, agent-recorded execution evidence, and
+      independently rerun checks. Logs and checked boxes are not independent proof.
+      Fix authorized findings and rerun affected checks before finalizing review.
+      Keep unresolved findings and unavailable verification explicit. Archive
+      readiness requires all tasks verified, all scenarios covered, relevant
+      regression checks passing, and no unresolved blocking findings. Record
+      nonblocking findings with rationale. A review.md file alone is not readiness.
+      Archive only when the user authorizes it. At archive reconcile glossary
+      promotion tasks and preserve links to durable decisions; do not duplicate
+      decisions into a parallel live plan or automatically publish tracker issues.
+    requires: [tasks]
+
+apply:
+  requires: [proposal, explore, specs, design, tasks]
+  tracks: tasks.md
+  instruction: |
+    Follow this schema's TDD task semantics. Read CLI-returned context files plus
+    evidence.md if resuming. Reuse resolved planning/code roots and project rules.
+    Preflight: resolve proposal-to-delta mapping, all decision/binding citations,
+    unique scenario identities, exactly one owner per scenario, actual Affects
+    sections, agreed seams, task commands, and check-mode reasons/authorizations.
+    Missing glossary is not a blocker unless the change requires glossary work.
+    Surface contradictions before dependent implementation; keep scope intact.
+    If a behavior-neutral change conditionally omitted specs, use CLI-supported
+    skip handling. If the CLI still blocks apply, report that limitation rather
+    than fabricate a behavioral spec or bypass CLI-controlled state.
+
+    Work in declared task order. For mode: tdd, consult the installed tdd skill
+    when available, preserving these artifact and completion rules. For each
+    scenario: write or update one behavioral test at the agreed public seam;
+    run it and establish RED for the intended missing/wrong behavior; implement
+    the minimum change; rerun to establish GREEN. Repeat for the next scenario.
+    Expected assertion failure inside a slice is progress, not a blocked task.
+    Import, syntax, setup, or unrelated failures are not valid RED evidence;
+    diagnose them first (diagnosing-bugs may assist). Never weaken the expected
+    result to obtain green. If an existing test already proves a scenario, record
+    it as existing coverage; do not invent a historical red run or break correct
+    code. Investigate unexpected initial green before adding implementation.
+    For mode: check run the task's direct check and applicable regression tests.
+
+    Append to evidence.md per task: scenario identity, seam, test/check identifier,
+    working directory, exact commands, red failure reason and exit status (or
+    existing-coverage/check-mode rationale), green/check results, and remaining
+    limitations. Include concise observed output or stable log references without
+    secrets. Record evidence only from actual runs. Resume from recorded state,
+    inspect the current diff, and rerun affected checks if code or context changed.
+    Run each task's verify command. Mark [x] only after behavior and verification
+    are complete; leave [ ] for any deferred/unavailable/failed check. Do not use
+    alternative checked markers that the CLI might count incorrectly.
+    Follow authorization for changes to scope or agreed interfaces; reconcile the
+    affected OpenSpec artifacts before dependent work. Run relevant regression
+    checks after slices. Refactor during review with tests green and scope intact.
+
+    On reaching the final review task, request `openspec instructions review` for
+    the selected change (preserve --store when applicable), and perform its review
+    steps. Record findings in review.md and rerun affected checks after fixes.
+    Mark the review task complete only after that work is verified. If resuming
+    a legacy checklist without this final task, perform review before reporting
+    archive readiness even when CLI reports all_done.
+    Report task progress, verification, review status, and limitations. CLI
+    all_done describes checklist state, not semantic review or archive approval.
