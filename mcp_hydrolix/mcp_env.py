@@ -6,6 +6,7 @@ and type conversion.
 
 import logging
 import os
+import re
 from dataclasses import dataclass
 from enum import Enum
 from typing import Optional, TypedDict
@@ -19,6 +20,18 @@ from mcp_hydrolix._brand import (
 from mcp_hydrolix.auth.credentials import HydrolixCredential, ServiceAccountToken, UsernamePassword
 
 logger = logging.getLogger("mcp-hydrolix")
+
+
+class MissingRequestCredentialError(ValueError):
+    """A request carried no credential and the environment fallback is disabled."""
+
+
+# The label becomes a Prometheus dimension on the query head, so it is confined to
+# a small alphabet and length.
+_QUERY_LABEL_ALLOWED = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
+
+# Floor the Config API enforces for hdx_query_max_result_bytes.
+QUERY_MAX_RESULT_BYTES_FLOOR = 10_000
 
 
 # Mapping of deprecated env var names to their replacements.
@@ -261,9 +274,19 @@ class HydrolixConfig:
         HYDROLIX_MCP_MAX_KEEPALIVE 10
         HYDROLIX_MAX_RESULT_CELLS: Maximum number of cells (rows × columns) to return in a
             query result before truncating (default: 50_000)
-        HYDROLIX_MAX_RESULT_CELLS_LIMIT: Hard upper bound on max_cells that callers may request.
-            0 means no limit is enforced (default: 0). Set this in multi-tenant HTTP/SSE
-            deployments to prevent a single session from materialising very large result sets.
+        HYDROLIX_MAX_RESULT_CELLS_LIMIT: Hard upper bound on max_cells that callers may request;
+            a caller can only lower the effective budget below it (default: 200_000). 0 disables
+            the cap and is meant for single-user stdio setups only.
+        HYDROLIX_QUERY_MAX_RESULT_BYTES: Max bytes a query may hold on the query head before
+            it is cancelled (``hdx_query_max_result_bytes``; default: 64 MiB, minimum 10000)
+        HYDROLIX_QUERY_LABEL: Static ``hdx_query_label`` sent with every query for the
+            query head's metrics (default: unset, no label; set once the cluster is
+            confirmed to accept it as a query parameter)
+        HYDROLIX_REQUIRE_REQUEST_CREDENTIAL: When "true", every request must carry its own
+            credential and the environment credentials are never used for queries
+            (default: false). Requires the http or sse transport.
+        HYDROLIX_ALLOW_TOKEN_QUERY_PARAM: When "true", also accept a service-account token in
+            the ``?token=`` query parameter (default: false; URLs land in access logs)
         HYDROLIX_MAX_RAW_TIMERANGE: Max timerange in seconds for non-summary queries (default: 6 hours)
         HYDROLIX_QUERY_POOL: Name of the Hydrolix query pool to route queries to. When set, every
             query the server issues carries the ``hdx_query_pool_name`` setting instead of using
@@ -318,18 +341,52 @@ class HydrolixConfig:
             ):
                 self._default_credential = UsernamePassword(global_username, global_password)
 
+        self._log_hardening_notices()
+
+    def _log_hardening_notices(self) -> None:
+        """Warn once at startup about settings that widen or narrow the request path."""
+        if self.require_request_credential and self._default_credential is not None:
+            logger.info(
+                "HYDROLIX_REQUIRE_REQUEST_CREDENTIAL is true: the environment credentials are "
+                "not used for requests; every request must carry its own bearer token."
+            )
+        if self.allow_token_query_param:
+            logger.warning(
+                "HYDROLIX_ALLOW_TOKEN_QUERY_PARAM is true: tokens in the ?token= query "
+                "parameter are accepted and will appear in access logs. Prefer the "
+                "Authorization: Bearer header."
+            )
+        transport = brand_getenv("HYDROLIX_MCP_SERVER_TRANSPORT", TransportType.STDIO.value).lower()
+        if transport != TransportType.STDIO.value and self.max_result_cells_limit == 0:
+            logger.warning(
+                "HYDROLIX_MAX_RESULT_CELLS_LIMIT=0 on the %s transport: callers can disable "
+                "result truncation entirely.",
+                transport,
+            )
+
     def creds_with(self, request_credential: Optional[HydrolixCredential]) -> HydrolixCredential:
+        """Resolve the credential for a request: its own, else the environment default.
+
+        With ``HYDROLIX_REQUIRE_REQUEST_CREDENTIAL`` on, the environment default is
+        never consulted for a request, so a request without a bearer token fails
+        instead of running as the deployment's service account.
+        """
         if request_credential is not None:
             return request_credential
-        elif self._default_credential is not None:
-            return self._default_credential
-        else:
-            raise ValueError(
-                "No credentials available for Hydrolix connection. "
-                "Please provide credentials either through HYDROLIX_TOKEN or "
-                "HYDROLIX_USER/HYDROLIX_PASSWORD environment variables, "
-                "or pass credentials explicitly via the creds parameter."
+        if self.require_request_credential:
+            raise MissingRequestCredentialError(
+                "This server requires a per-request credential (Authorization: Bearer <token>) "
+                "and none was presented. Environment credentials are not used for requests "
+                "while HYDROLIX_REQUIRE_REQUEST_CREDENTIAL is true."
             )
+        if self._default_credential is not None:
+            return self._default_credential
+        raise ValueError(
+            "No credentials available for Hydrolix connection. "
+            "Please provide credentials either through HYDROLIX_TOKEN or "
+            "HYDROLIX_USER/HYDROLIX_PASSWORD environment variables, "
+            "or pass credentials explicitly via the creds parameter."
+        )
 
     @property
     def host(self) -> str:
@@ -539,13 +596,56 @@ class HydrolixConfig:
     def max_result_cells_limit(self) -> int:
         """Get the hard upper bound on the max_cells value callers may request.
 
-        When > 0, any per-call max_cells value above this limit is capped to this
-        value, preventing callers from requesting unbounded result sets.
+        When > 0, any per-call max_cells value above this limit (or 0, "no
+        truncation") is capped to this value, so a caller can only lower the
+        effective budget. 0 disables the cap.
 
-        Configured via HYDROLIX_MAX_RESULT_CELLS_LIMIT (default: 0, no cap enforced).
-        Set to a positive integer to enforce a cap in multi-tenant HTTP/SSE deployments.
+        Configured via HYDROLIX_MAX_RESULT_CELLS_LIMIT (default: 200_000).
         """
-        return int(brand_getenv("HYDROLIX_MAX_RESULT_CELLS_LIMIT", 0))
+        return int(brand_getenv("HYDROLIX_MAX_RESULT_CELLS_LIMIT", 200_000))
+
+    @property
+    def query_max_result_bytes(self) -> int:
+        """Max bytes a query may hold on the query head before it is cancelled.
+
+        Maps to the ``hdx_query_max_result_bytes`` Hydrolix query setting, sent with
+        every query beside the row cap so a wide result cannot exhaust the executor.
+        Default: 64 MiB. The Config API floor is 10000.
+        """
+        return int(brand_getenv("HYDROLIX_QUERY_MAX_RESULT_BYTES", 64 * 1024 * 1024))
+
+    @property
+    def query_label(self) -> Optional[str]:
+        """Static ``hdx_query_label`` sent with every query, or None when unset.
+
+        The label is a Prometheus dimension on the query head's metrics; keep it
+        static (cardinality). It travels as a transport-level setting: an inline
+        SETTINGS clause is rejected under the ``readonly`` the server always sends.
+        Unset by default until the cluster is confirmed to accept it as a query
+        parameter. Configured via HYDROLIX_QUERY_LABEL.
+        """
+        return brand_getenv("HYDROLIX_QUERY_LABEL", "").strip() or None
+
+    @property
+    def require_request_credential(self) -> bool:
+        """Whether every request must carry its own credential.
+
+        When true, ``creds_with(None)`` raises instead of falling back to the
+        environment credentials, so no request can run as the deployment's
+        service account. The readiness probe is unaffected: it passes its own
+        credential explicitly. Configured via HYDROLIX_REQUIRE_REQUEST_CREDENTIAL
+        (default: false).
+        """
+        return brand_getenv("HYDROLIX_REQUIRE_REQUEST_CREDENTIAL", "false").lower() == "true"
+
+    @property
+    def allow_token_query_param(self) -> bool:
+        """Whether a ``?token=`` query parameter is accepted as a credential.
+
+        Off by default: a token in the URL is written to every access log on the
+        path. Configured via HYDROLIX_ALLOW_TOKEN_QUERY_PARAM (default: false).
+        """
+        return brand_getenv("HYDROLIX_ALLOW_TOKEN_QUERY_PARAM", "false").lower() == "true"
 
     @property
     def mcp_server_transport(self) -> str:
@@ -870,6 +970,37 @@ class HydrolixConfig:
                     f"Invalid HYDROLIX_MAX_RESULT_CELLS_LIMIT={raw_limit!r}: "
                     "must be a non-negative integer (0 means no cap)."
                 )
+
+        raw_bytes = brand_getenv("HYDROLIX_QUERY_MAX_RESULT_BYTES")
+        if raw_bytes is not None:
+            try:
+                if int(raw_bytes) < QUERY_MAX_RESULT_BYTES_FLOOR:
+                    raise ValueError()
+            except (ValueError, TypeError):
+                raise ValueError(
+                    f"Invalid HYDROLIX_QUERY_MAX_RESULT_BYTES={raw_bytes!r}: must be an integer "
+                    f"of at least {QUERY_MAX_RESULT_BYTES_FLOOR} (e.g. 67108864)."
+                )
+
+        raw_label = brand_getenv("HYDROLIX_QUERY_LABEL")
+        if (
+            raw_label is not None
+            and raw_label.strip()
+            and not _QUERY_LABEL_ALLOWED.match(raw_label.strip())
+        ):
+            raise ValueError(
+                f"Invalid HYDROLIX_QUERY_LABEL={raw_label!r}: use 1-64 characters from "
+                "letters, digits, '.', '_' and '-' (or leave it empty to disable)."
+            )
+
+        if (
+            brand_getenv("HYDROLIX_REQUIRE_REQUEST_CREDENTIAL", "false").lower() == "true"
+            and transport == TransportType.STDIO.value
+        ):
+            raise ValueError(
+                "HYDROLIX_REQUIRE_REQUEST_CREDENTIAL=true needs the http or sse transport: "
+                "stdio requests carry no credential of their own."
+            )
 
         # Validate the execute_query SETTINGS overrides: each must be a positive
         # integer if set (they map to Hydrolix per-query limits).

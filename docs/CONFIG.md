@@ -64,14 +64,19 @@ These map to per-query Hydrolix/ClickHouse settings sent with every query:
   * Default: `1` (no retries)
 * `HYDROLIX_QUERY_MAX_RESULT_ROWS`: Max number of rows a query may return (`hdx_query_max_result_rows`)
   * Default: `100000`
+* `HYDROLIX_QUERY_MAX_RESULT_BYTES`: Max bytes a query may hold on the query head before it is cancelled (`hdx_query_max_result_bytes`)
+  * Default: `67108864` (64 MiB); the Config API floor is `10000`
+* `HYDROLIX_QUERY_LABEL`: Static `hdx_query_label` sent with every query, a Prometheus dimension on the query head's metrics (keep it static)
+  * Default: unset (no label). Set it to `mcp` once the cluster is confirmed to accept the label as a query parameter: the docs list it under SQL `SETTINGS` only, and an inline clause is rejected under the `readonly` the server always sends
+  * Letters, digits, `.`, `_` and `-` only, up to 64 characters
 
 ### Result truncation
 
 * `HYDROLIX_MAX_RESULT_CELLS`: Default cell budget (rows × columns) for query result truncation
   * Default: `50000`
-* `HYDROLIX_MAX_RESULT_CELLS_LIMIT`: Hard upper bound on the `max_cells` value callers may request; any per-call value above this is capped
-  * Default: `0` (no cap enforced)
-  * Set to a positive integer in multi-tenant HTTP/SSE deployments to prevent a single session from materializing very large result sets
+* `HYDROLIX_MAX_RESULT_CELLS_LIMIT`: Hard upper bound on the `max_cells` value callers may request; a per-call value above it, or `max_cells=0`, is capped to it, so a caller can only lower the budget
+  * Default: `200000`
+  * Set to `0` to disable the cap; meant for single-user stdio setups only (the server warns when it is `0` on http/sse)
 * `HYDROLIX_MAX_RAW_TIMERANGE`: Maximum time range in seconds allowed for queries against non-summary tables
   * Default: `21600` (6 hours)
   * Queries targeting summary tables are not affected by this limit
@@ -91,6 +96,32 @@ These map to per-query Hydrolix/ClickHouse settings sent with every query:
   * Note: this is unrelated to `HYDROLIX_QUERIES_POOL_SIZE`, which sizes the client-side query thread pool
 * `HYDROLIX_METRICS_ENABLED`: Enable Prometheus metrics
   * Default: `"false"`
+
+### Per-request credentials
+
+Only used when `HYDROLIX_MCP_SERVER_TRANSPORT` is `"http"` or `"sse"`:
+
+* `HYDROLIX_REQUIRE_REQUEST_CREDENTIAL`: Require every request to carry its own credential (`Authorization: Bearer <token>`)
+  * Default: `"false"` (a request without a credential falls back to `HYDROLIX_TOKEN` or `HYDROLIX_USER`/`HYDROLIX_PASSWORD`)
+  * Set to `"true"` in multi-user deployments so a request can never run as the deployment's service account; the readiness probe keeps using the service-account token mounted at `/var/run/secrets/service-tokens`
+  * Refused at startup on the stdio transport, which has no per-request credential
+* `HYDROLIX_ALLOW_TOKEN_QUERY_PARAM`: Also accept the token from the `?token=<token>` query parameter
+  * Default: `"false"`; the URL, token included, is written to every access log on the path
+  * Set to `"true"` only for clients that cannot send headers; the server logs a warning at startup
+
+### Query guardrails and attribution
+
+`run_select_query` accepts one read statement (`SELECT`, `WITH`, `SHOW`, `DESC`, `DESCRIBE`, `EXPLAIN`). A second statement, a write or DDL statement, or a top-level `SETTINGS` clause is refused before the cluster sees it, and a trailing `FORMAT` clause is removed because the server selects the wire format. A `SETTINGS` clause inside a subquery that the server cannot parse is refused too, so an inline setting can never lift a server limit. These are statement-shape guards; what a user may read is decided by the cluster's own RBAC.
+
+Every query carries attribution in the existing Hydrolix query settings, so no schema change is needed:
+
+* `hdx_query_admin_comment`: space-separated `key=value` tokens in a fixed order: `app=<distribution>/<version> transport=<transport> user=<sub> agent=<client>/<version> model=<model> session=<mcp-session-id> trace=<traceparent>`. `user` is the `sub` of the bearer token the request carried. Values use `[A-Za-z0-9._:/@-]`, 64 characters each; empty fields are omitted; the string is capped at 512 bytes.
+* `hdx_query_comment`: the tool's optional `purpose` argument, up to 256 characters.
+* `hdx_query_label`: the static `HYDROLIX_QUERY_LABEL` when set (see above; unset by default).
+
+The agent fields come from, in precedence order: the request headers `X-Hdx-Agent` (`<client>/<version>`), `X-Hdx-Model`, `traceparent` and `Mcp-Session-Id`, set by a gateway in front of the server or by a client that can set headers; then the `agent` and `model` keys of the request's MCP `_meta`; then the client name and version from the MCP `initialize` handshake when the transport keeps it (stdio does, the stateless HTTP transport does not).
+
+Every tool the server registers is read-only. A future write tool must be listed in `WRITE_TOOLS_REQUIRING_CONFIRMATION` in `mcp_hydrolix/mcp_server.py`, declare `destructiveHint=True`, and require confirmation from the client before it runs; the test suite enforces this.
 
 ### HTTP/SSE worker tuning
 

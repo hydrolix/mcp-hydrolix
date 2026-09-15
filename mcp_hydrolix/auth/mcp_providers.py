@@ -81,7 +81,9 @@ class HydrolixCredentialChain(AuthProvider):
     AuthProvider that authenticates with the following precedence (highest to lowest):
 
     1. Per-request Bearer token: Service account token via Authorization: Bearer <token> header
-    2. Per-request GET parameter: Service account token via ?token=<token> query parameter
+    2. Per-request GET parameter: Service account token via ?token=<token> query parameter,
+       only when ``allow_token_query_param`` is set (HYDROLIX_ALLOW_TOKEN_QUERY_PARAM). Off by
+       default because the URL, token included, is written to every access log on the path.
 
     NB MCP-standard oAuth is not currently implemented
     NB all per-request credentials take precedence over all environment-variable-supplied credentials
@@ -96,15 +98,17 @@ class HydrolixCredentialChain(AuthProvider):
         def as_credential(self) -> ServiceAccountToken:
             return ServiceAccountToken(self.token, self.expected_issuer)
 
-    def __init__(self, expected_issuer: Optional[str]):
+    def __init__(self, expected_issuer: Optional[str], *, allow_token_query_param: bool = False):
         """
         Initialize HydrolixCredentialChain.
 
         Args:
             expected_issuer: The issuer URL that must be used (mitigates credential-stuffing)
+            allow_token_query_param: Also accept the token from the ``?token=`` query parameter
         """
         super().__init__()
         self.expected_issuer = expected_issuer
+        self.allow_token_query_param = allow_token_query_param
 
     async def verify_token(self, token: str) -> AccessToken | None:
         """
@@ -122,16 +126,15 @@ class HydrolixCredentialChain(AuthProvider):
             expected_issuer=self.expected_issuer,
         )
 
+    def backends(self) -> List[AuthenticationBackend]:
+        """The per-request credential sources, in precedence order."""
+        chain: List[AuthenticationBackend] = [BearerAuthBackend(self)]
+        if self.allow_token_query_param:
+            chain.append(GetParamAuthBackend(self, TOKEN_PARAM))
+        return chain
+
     def get_middleware(self) -> list:
         return [
-            Middleware(
-                AuthenticationMiddleware,
-                backend=ChainedAuthBackend(
-                    [
-                        BearerAuthBackend(self),
-                        GetParamAuthBackend(self, TOKEN_PARAM),
-                    ]
-                ),
-            ),
+            Middleware(AuthenticationMiddleware, backend=ChainedAuthBackend(self.backends())),
             Middleware(McpAuthContextMiddleware),
         ]

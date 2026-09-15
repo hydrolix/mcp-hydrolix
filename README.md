@@ -148,8 +148,10 @@ Click the **Install in VS Code** badge at the top of this README for a one-click
 ## Tools
 
 * `run_select_query`
-  * Execute SQL queries on your Hydrolix cluster.
-  * Input: `sql` (string): The SQL query to execute.
+  * Execute one read-only SQL statement (`SELECT`, `WITH`, `SHOW`, `DESC`, `DESCRIBE`, `EXPLAIN`) on your Hydrolix cluster. Multiple statements, write statements and a top-level `SETTINGS` clause are refused; a trailing `FORMAT` clause is removed. See [Query guardrails and attribution](docs/CONFIG.md#query-guardrails-and-attribution).
+  * Input: `query` (string): The SQL statement to execute.
+  * Input: `max_cells` (integer, optional): Result cell budget (rows × columns); a caller can only lower it below the server's cap.
+  * Input: `purpose` (string, optional): Why the query is being run; recorded with the query as `hdx_query_comment`.
 
 * `list_databases`
   * List all databases on your Hydrolix cluster.
@@ -195,12 +197,12 @@ The recommended way to launch the Hydrolix MCP server is via the [`uv` project m
 The server supports multiple authentication methods with the following precedence (highest to lowest):
 
 1. **Per-request Bearer token**: Service account token provided via `Authorization: Bearer <token>` header
-2. **Per-request GET parameter**: Service account token provided via `?token=<token>` query parameter
+2. **Per-request GET parameter** (opt-in): Service account token provided via `?token=<token>` query parameter. Off by default because the URL, token included, is written to every access log on the path; set `HYDROLIX_ALLOW_TOKEN_QUERY_PARAM=true` to accept it.
 3. **Environment-based credentials**: Credentials configured via environment variables
    - Service account token (`HYDROLIX_TOKEN`), or
    - Username and password (`HYDROLIX_USER` and `HYDROLIX_PASSWORD`)
 
-When multiple authentication methods are configured, the server will use the first available method in the precedence order above. Per-request authentication is only available when using HTTP or SSE transport modes.
+When multiple authentication methods are configured, the server will use the first available method in the precedence order above. Per-request authentication is only available when using HTTP or SSE transport modes. Multi-user HTTP deployments should set `HYDROLIX_REQUIRE_REQUEST_CREDENTIAL=true`, which makes a request without its own bearer token fail instead of running with the environment credentials; see [Per-request credentials](docs/CONFIG.md#per-request-credentials).
 
 **Note: Using a service account token with a readonly role is recommended.**
 
@@ -381,26 +383,28 @@ Example `mcpServers` configuration connecting to a remote HTTP server with per-r
 {
   "mcpServers": {
     "mcp-hydrolix-remote": {
-      "url": "https://my-hydrolix-mcp.example.com/mcp?token=<service-account-token>"
+      "url": "https://my-hydrolix-mcp.example.com/mcp",
+      "headers": { "Authorization": "Bearer <service-account-token>" }
     }
   }
 }
 ```
 
-Example minimal `.env` configuration for running your own HTTP server without environment credentials:
+Example minimal `.env` configuration for running your own HTTP server without environment credentials, where every request must carry its own token:
 
 ```env
 HYDROLIX_URL=https://my-cluster.hydrolix.net
 HYDROLIX_MCP_SERVER_TRANSPORT=http
+HYDROLIX_REQUIRE_REQUEST_CREDENTIAL=true
 ```
 
-Though not part of the MCP specification, many MCP clients allow adding headers to MCP-issued requests. When this is possible, we recommend configuring the MCP client to pass a service account token via the `Authorization: Bearer <sa-token-here>` header instead of as a query parameter for greater security.
+Though not part of the MCP specification, most MCP clients allow adding headers to MCP-issued requests, and the `Authorization: Bearer <sa-token-here>` header is the recommended way to pass the token. A client that cannot set headers may pass it as `?token=<service-account-token>` only when the server runs with `HYDROLIX_ALLOW_TOKEN_QUERY_PARAM=true`; the token then appears in access logs.
 
 Note: The bind host and port settings are only used when transport is set to "http" or "sse".
 
 #### Optional Variables
 
-See **[docs/CONFIG.md](docs/CONFIG.md)** for endpoint overrides, deprecated variable aliases, and the full set of optional tuning variables (timeouts, query SETTINGS overrides, result truncation, HTTP/SSE worker tuning, proxy, metrics, and escape hatches).
+See **[docs/CONFIG.md](docs/CONFIG.md)** for endpoint overrides, deprecated variable aliases, and the full set of optional tuning variables (timeouts, query SETTINGS overrides, result truncation, per-request credentials, query guardrails and attribution, HTTP/SSE worker tuning, proxy, metrics, and escape hatches).
 
 ## Maintainers
 

@@ -4,6 +4,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 
 from mcp_hydrolix.utils import (
+    UnparseableQueryError,
     coerce_cell,
     coerce_rows,
     inject_limit,
@@ -260,9 +261,17 @@ class TestStripConflictingSettings:
         query = "SELECT a FROM t SETTINGS readonly=0"
         assert strip_conflicting_settings(query, set()) == query
 
-    def test_unparseable_query_returned_unchanged(self):
+    def test_unparseable_query_without_settings_returned_unchanged(self):
+        # No SETTINGS clause means nothing to verify, so the fast path returns the text
+        # untouched even when sqlglot could not parse it.
         bad_sql = "THIS IS NOT VALID SQL @@@@"
         assert strip_conflicting_settings(bad_sql, self.GUARDRAILS) == bad_sql
+
+    def test_unparseable_query_with_settings_is_refused(self):
+        # A SETTINGS clause that cannot be inspected could be overriding a guardrail;
+        # the query is refused rather than sent (HDX-12410).
+        with pytest.raises(UnparseableQueryError):
+            strip_conflicting_settings("SELECT ((( SETTINGS readonly=0 @@@", self.GUARDRAILS)
 
     def test_logs_warning_when_stripping(self, caplog):
         import logging

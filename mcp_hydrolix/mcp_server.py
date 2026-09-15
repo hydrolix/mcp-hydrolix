@@ -37,6 +37,12 @@ from mcp_hydrolix.auth import (
     UsernamePassword,
     get_request_credential,
 )
+from mcp_hydrolix.attribution import (
+    build_admin_comment,
+    gather_request_attribution,
+    sanitize_purpose,
+)
+from mcp_hydrolix.preflight import preflight
 from mcp_hydrolix.sa_attribution import ServiceAccountAttributionMiddleware
 from mcp_hydrolix import mcp_env
 from mcp_hydrolix.mcp_env import (
@@ -98,11 +104,14 @@ def _resolve_server_version() -> str:
 
 SERVER_VERSION: Final[str] = _resolve_server_version()
 
-HDX_ADMIN_COMMENT: Final[str] = (
-    f"User: {MCP_SERVER_NAME} "
-    f"version: {SERVER_VERSION} "
-    f"transport: {HYDROLIX_CONFIG.mcp_server_transport}"
-)
+# The static half of the per-query admin comment: which server, at which version,
+# on which transport. execute_query adds the per-request half (user, agent, model,
+# session, trace); mcp_hydrolix.attribution holds the vocabulary (HDX-12008).
+_APP_IDENTITY: Final[dict[str, str]] = {
+    "app": f"{MCP_SERVER_NAME}/{SERVER_VERSION}",
+    "transport": HYDROLIX_CONFIG.mcp_server_transport,
+}
+HDX_ADMIN_COMMENT: Final[str] = build_admin_comment(_APP_IDENTITY)
 
 # Leading token of the outbound User-Agent on every HTTP request the server
 # makes to the configured cluster (e.g. the /version probe). Sourced from the
@@ -125,7 +134,9 @@ def startup_banner() -> str:
 
 mcp = FastMCP(
     name=MCP_SERVER_NAME,
-    auth=HydrolixCredentialChain(None),
+    auth=HydrolixCredentialChain(
+        None, allow_token_query_param=HYDROLIX_CONFIG.allow_token_query_param
+    ),
     # External deployments with deprecated config get an LLM-visible nudge via the
     # MCP ``instructions`` channel; internal/clean configs advertise no instructions.
     instructions=(
@@ -320,34 +331,57 @@ def _pool_settings() -> dict[str, Any]:
     return {"hdx_query_pool_name": pool} if pool else {}
 
 
+def _admin_comment_for_request(credential: HydrolixCredential) -> str:
+    """The per-request ``hdx_query_admin_comment``: app identity plus who and what asked."""
+    attribution = gather_request_attribution(
+        credential,
+        transport=HYDROLIX_CONFIG.mcp_server_transport,
+        use_session_id=True,
+    )
+    return build_admin_comment({**_APP_IDENTITY, **attribution.as_fields()})
+
+
 async def execute_query(
     query: str,
     parameters: Optional[Dict[str, Any]] = None,
     extra_settings: Optional[Dict[str, Any]] = None,
+    comment: Optional[str] = None,
 ) -> HdxQueryResult:
+    """Run a query with the server's guardrail settings and attribution attached.
+
+    ``comment`` is the caller's stated purpose (``hdx_query_comment``). The static
+    ``hdx_query_label`` rides the transport settings when ``HYDROLIX_QUERY_LABEL``
+    is set; an inline SETTINGS clause would be refused under ``readonly``.
+    """
     start = time.perf_counter()
     status = "success"
     try:
-        async with await create_hydrolix_client(
-            client_shared_pool, get_request_credential()
-        ) as client:
+        request_credential = get_request_credential()
+        async with await create_hydrolix_client(client_shared_pool, request_credential) as client:
+            purpose = sanitize_purpose(comment)
+            label = HYDROLIX_CONFIG.query_label
             settings: dict[str, Any] = (
                 {
                     "readonly": 1,
                     "hdx_query_max_execution_time": HYDROLIX_CONFIG.query_timeout_sec,
                     "hdx_query_max_attempts": HYDROLIX_CONFIG.query_max_attempts,
                     "hdx_query_max_result_rows": HYDROLIX_CONFIG.query_max_result_rows,
+                    "hdx_query_max_result_bytes": HYDROLIX_CONFIG.query_max_result_bytes,
                     "hdx_query_max_memory_usage": HYDROLIX_CONFIG.query_max_memory_usage,
-                    "hdx_query_admin_comment": HDX_ADMIN_COMMENT,
+                    "hdx_query_admin_comment": _admin_comment_for_request(
+                        HYDROLIX_CONFIG.creds_with(request_credential)
+                    ),
                 }
+                | ({"hdx_query_comment": purpose} if purpose else {})
+                | ({"hdx_query_label": label} if label else {})
                 | _pool_settings()
                 | (extra_settings or {})
             )
             # Inline `SETTINGS` in the query text currently outrank the transport-level
             # settings above on the Hydrolix HTTP path, which would let a caller override
-            # our guardrails. Strip any inline setting that collides with one we declare so
-            # our value wins de facto (HDX-11717). This is a temporary measure until the
-            # query head inverts that precedence.
+            # our guardrails. The preflight refuses a top-level SETTINGS clause on user
+            # SQL; this strips any nested one that collides with a key we declare, and
+            # refuses the query when it cannot be parsed (HDX-11717, HDX-12410).
             query = strip_conflicting_settings(query, settings.keys())
             res = await client.query(
                 query,
@@ -459,6 +493,15 @@ if HYDROLIX_CONFIG.metrics_enabled:
 # Per-request SA attribution logging (HDX-11151). Unconditional; see
 # mcp_hydrolix.sa_attribution for the temporary-stopgap rationale.
 mcp.add_middleware(ServiceAccountAttributionMiddleware())
+
+
+# Tool policy for the per-cluster gateway path (HDX-12410, plan section 3d): every
+# tool this server registers is read-only. A future write tool must be listed here,
+# declare destructiveHint=True in its ToolAnnotations, and require confirmation from
+# the client before it runs; the gateway's per-tool authorization can then gate it on
+# its own codename. tests/test_tool_annotations.py enforces the rule, so a write tool
+# cannot be registered unmarked.
+WRITE_TOOLS_REQUIRING_CONFIRMATION: Final[frozenset[str]] = frozenset()
 
 
 async def _query_targets_summary_table(query: str) -> bool:
@@ -711,8 +754,8 @@ def _build_truncation_response(
     else:
         retrieve_more = (
             "Consider refining your query with LIMIT, WHERE filters, or GROUP BY. "
-            "To retrieve more data, call run_select_query with a larger max_cells value "
-            "(e.g. max_cells=200000), or set max_cells=0 to disable truncation entirely."
+            "To retrieve more data, call run_select_query with a larger max_cells value, "
+            "up to the server's cap."
         )
 
     return RunSelectQueryResult(
@@ -749,9 +792,23 @@ def _build_truncation_response(
 async def run_select_query(
     query: str,
     max_cells: Optional[int] = None,
+    purpose: Optional[str] = None,
 ) -> RunSelectQueryResult:
     """Run a SELECT query in a Hydrolix time-series database using the Clickhouse SQL dialect.
     Queries run using this tool will timeout after 30 seconds.
+
+    READ-ONLY, ONE STATEMENT:
+
+    The query must be a single SELECT, WITH, SHOW, DESC, DESCRIBE or EXPLAIN statement.
+    Anything else is refused before it reaches the database. Do not add a SETTINGS clause
+    (row, byte and time limits are set by the server) or a FORMAT clause (the server picks
+    the wire format; a trailing FORMAT is removed).
+
+    PURPOSE:
+
+    Pass a short `purpose` describing why the query is being run (for example "top error
+    codes in the last hour for the incident review"). It is recorded with the query so
+    operators can see what an agent was doing.
 
     FULLY-QUALIFIED TABLE NAMES:
 
@@ -888,6 +945,14 @@ async def run_select_query(
     Performance guard: date range filter.
      `SELECT app, count(*) FROM application.logs WHERE timestamp > '2024-01-01' AND timestamp < '2024-02-14' GROUP BY app ORDER BY count(*) DESC LIMIT 1`
     """
+    # Statement-shape guard shared with the console's query surfaces: one read
+    # statement, no SETTINGS clause, FORMAT stripped. Refused statements never reach
+    # the cluster; what the user may read is still the cluster's RBAC.
+    pre = preflight(query, surface_name="run_select_query tool")
+    if pre.blocked:
+        raise ToolError(pre.block_reason or "The statement was refused by the read-only guard.")
+    query = pre.sql
+
     cell_limit, capped_by_operator = _resolve_cell_limit(max_cells)
 
     # Rewrite the query to add a server-side LIMIT before hitting the DB, so we don't
@@ -904,7 +969,9 @@ async def run_select_query(
         }
         if not await _query_targets_summary_table(query):
             extra_settings["hdx_query_max_timerange_sec"] = HYDROLIX_CONFIG.max_raw_timerange
-        result = await execute_query(query=effective_query, extra_settings=extra_settings)
+        result = await execute_query(
+            query=effective_query, extra_settings=extra_settings, comment=purpose
+        )
     except ToolError:
         raise
     except Exception as e:

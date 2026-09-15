@@ -374,7 +374,7 @@ def test_admin_comment_user_token_reflects_the_baked_distribution_name():
         "trafficpeak",
         "from mcp_hydrolix.mcp_server import HDX_ADMIN_COMMENT\nprint(HDX_ADMIN_COMMENT)\n",
     )
-    assert "User: mcp-trafficpeak" in out and "mcp-hydrolix" not in out
+    assert "app=mcp-trafficpeak/" in out and "mcp-hydrolix" not in out
 
 
 def test_no_customer_visible_output_of_a_trafficpeak_wheel_contains_the_hydrolix_distribution_name():

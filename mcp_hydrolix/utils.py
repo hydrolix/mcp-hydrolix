@@ -11,6 +11,10 @@ import sqlglot.expressions as exp
 logger = logging.getLogger(__name__)
 
 
+class UnparseableQueryError(ValueError):
+    """The query could not be parsed, so a guardrail could not be verified."""
+
+
 def coerce_cell(v: Any) -> Any:
     """Coerce ClickHouse-specific Python types in a result cell to JSON-friendly
     equivalents.
@@ -85,8 +89,10 @@ def strip_conflicting_settings(query: str, protected_keys: Iterable[str]) -> str
     applied to every ``SETTINGS`` clause in the AST (including subqueries) and key
     matching is case-insensitive.
 
-    Returns the rewritten SQL string. If the query cannot be parsed by sqlglot, logs a
-    warning and returns the original query unchanged so the caller still executes something.
+    Returns the rewritten SQL string. A query that mentions SETTINGS but cannot be
+    parsed by sqlglot is refused with :class:`UnparseableQueryError`: an inline setting
+    that cannot be inspected could be overriding a guardrail, so the caller must not
+    execute it (HDX-12410).
     """
     protected = {k.lower() for k in protected_keys}
     if not protected:
@@ -101,12 +107,15 @@ def strip_conflicting_settings(query: str, protected_keys: Iterable[str]) -> str
 
     try:
         ast = sqlglot.parse_one(query, dialect="clickhouse")
-    except sqlglot_errors.SqlglotError:
+    except sqlglot_errors.SqlglotError as err:
         logger.warning(
-            "strip_conflicting_settings: could not parse query with sqlglot; inline "
-            "SETTINGS will not be stripped and may override transport-level guardrails."
+            "strip_conflicting_settings: could not parse a query that mentions SETTINGS; "
+            "refusing it rather than letting an inline setting override a guardrail."
         )
-        return query
+        raise UnparseableQueryError(
+            "The query mentions SETTINGS but could not be parsed to verify it; remove the "
+            "SETTINGS clause (server limits are set by the transport) and retry."
+        ) from err
 
     stripped: List[str] = []
     for node in ast.walk():
