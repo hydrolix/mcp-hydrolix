@@ -374,6 +374,10 @@ class TestConcurrentQueries:
         # limit mcp server waiting for query finish
         os.environ["HYDROLIX_QUERY_TIMEOUT_SECS"] = "10"
 
+        # The long query below must run until the timeout, so it needs the uncapped
+        # max_cells=0 that the default cell-cap of 200000 would otherwise reduce.
+        monkeypatch.setenv("HYDROLIX_MAX_RESULT_CELLS_LIMIT", "0")
+
         ServerMetrics.inflight_requests = 0
         async with Client(mcp_server) as client:
             lq = (
