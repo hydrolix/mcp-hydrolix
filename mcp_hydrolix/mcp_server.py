@@ -59,7 +59,12 @@ from mcp_hydrolix.models import (
     Table,
     TableList,
 )
-from mcp_hydrolix.utils import coerce_rows, inject_limit, strip_conflicting_settings
+from mcp_hydrolix.utils import (
+    coerce_rows,
+    inject_limit,
+    sanitize_purpose,
+    strip_conflicting_settings,
+)
 
 
 # Brand identity is baked at build time into mcp_hydrolix/_brand.py by the
@@ -324,13 +329,20 @@ async def execute_query(
     query: str,
     parameters: Optional[Dict[str, Any]] = None,
     extra_settings: Optional[Dict[str, Any]] = None,
+    comment: Optional[str] = None,
 ) -> HdxQueryResult:
+    """Run a query with the server's guardrail settings attached.
+
+    ``comment`` is the caller's stated purpose; it is recorded as ``hdx_query_comment``
+    so operators can see what an agent was doing (HDX-12008).
+    """
     start = time.perf_counter()
     status = "success"
     try:
         async with await create_hydrolix_client(
             client_shared_pool, get_request_credential()
         ) as client:
+            purpose = sanitize_purpose(comment)
             settings: dict[str, Any] = (
                 {
                     "readonly": 1,
@@ -340,6 +352,7 @@ async def execute_query(
                     "hdx_query_max_memory_usage": HYDROLIX_CONFIG.query_max_memory_usage,
                     "hdx_query_admin_comment": HDX_ADMIN_COMMENT,
                 }
+                | ({"hdx_query_comment": purpose} if purpose else {})
                 | _pool_settings()
                 | (extra_settings or {})
             )
@@ -749,9 +762,16 @@ def _build_truncation_response(
 async def run_select_query(
     query: str,
     max_cells: Optional[int] = None,
+    purpose: Optional[str] = None,
 ) -> RunSelectQueryResult:
     """Run a SELECT query in a Hydrolix time-series database using the Clickhouse SQL dialect.
     Queries run using this tool will timeout after 120 seconds.
+
+    PURPOSE:
+
+    Pass a short `purpose` describing why the query is being run (for example "top error
+    codes in the last hour for the incident review"). It is recorded with the query so
+    operators can see what an agent was doing.
 
     FULLY-QUALIFIED TABLE NAMES:
 
@@ -904,7 +924,9 @@ async def run_select_query(
         }
         if not await _query_targets_summary_table(query):
             extra_settings["hdx_query_max_timerange_sec"] = HYDROLIX_CONFIG.max_raw_timerange
-        result = await execute_query(query=effective_query, extra_settings=extra_settings)
+        result = await execute_query(
+            query=effective_query, extra_settings=extra_settings, comment=purpose
+        )
     except ToolError:
         raise
     except Exception as e:
