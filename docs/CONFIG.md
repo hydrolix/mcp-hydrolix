@@ -98,7 +98,12 @@ These map to per-query Hydrolix/ClickHouse settings sent with every query:
 
 ### Query attribution
 
-Every query the server runs carries `hdx_query_admin_comment` (the server's identity) in the query settings. `run_select_query` also records its optional `purpose` argument as `hdx_query_comment`, collapsed to single spaces and capped at 256 characters; both land in `hydro.logs` and `hdx.active_queries` with no schema change.
+Every query the server runs carries attribution in the existing Hydrolix query settings, so no schema change is needed; both fields land in `hydro.logs` and `hdx.active_queries`.
+
+* `hdx_query_admin_comment` keeps its existing shape, `User: <distribution> version: <version> transport: <transport>`, and gains optional colon-separated fields after it: `sub: <the bearer token's sub claim, or the basic-auth username> agent: <client>/<version> model: <model> session: <mcp-session-id> trace: <traceparent>`. Values use `[A-Za-z0-9._/@-]`, 64 characters each; empty fields are omitted; the string is capped at 512 bytes with the trailing fields dropped first and the three leading fields never dropped. `sub` is the token's subject: a service account id, or, behind a gateway that exchanges tokens per user, that user's id. It is the same key the gateway's audit log and the cluster's external identities use, so the three can be joined on it.
+* `hdx_query_comment`: the `purpose` argument of `run_select_query`, collapsed to single spaces and capped at 256 characters.
+
+The agent fields come from, in precedence order: the request headers `X-Hdx-Agent` (`<client>/<version>`), `X-Hdx-Model`, `traceparent` and `Mcp-Session-Id`, set by a gateway in front of the server or by a client that can set headers; then the `agent` and `model` keys of the request's MCP `_meta`; then the client name and version from the MCP `initialize` handshake when the transport keeps it (stdio does, the stateless HTTP transport does not). They are observability, not authorization.
 
 ### Tool policy
 

@@ -37,6 +37,7 @@ from mcp_hydrolix.auth import (
     UsernamePassword,
     get_request_credential,
 )
+from mcp_hydrolix.attribution import build_admin_comment, gather_request_attribution
 from mcp_hydrolix.sa_attribution import ServiceAccountAttributionMiddleware
 from mcp_hydrolix.statement import normalize_statement
 from mcp_hydrolix import mcp_env
@@ -104,11 +105,15 @@ def _resolve_server_version() -> str:
 
 SERVER_VERSION: Final[str] = _resolve_server_version()
 
-HDX_ADMIN_COMMENT: Final[str] = (
-    f"User: {MCP_SERVER_NAME} "
-    f"version: {SERVER_VERSION} "
-    f"transport: {HYDROLIX_CONFIG.mcp_server_transport}"
-)
+# The static half of hdx_query_admin_comment: which server, at which version, on
+# which transport. execute_query appends the per-request half (sub, agent, model,
+# session, trace); mcp_hydrolix.attribution owns the vocabulary (HDX-12008).
+_APP_IDENTITY: Final[dict[str, str]] = {
+    "User": MCP_SERVER_NAME,
+    "version": SERVER_VERSION,
+    "transport": HYDROLIX_CONFIG.mcp_server_transport,
+}
+HDX_ADMIN_COMMENT: Final[str] = build_admin_comment(_APP_IDENTITY)
 
 # Leading token of the outbound User-Agent on every HTTP request the server
 # makes to the configured cluster (e.g. the /version probe). Sourced from the
@@ -326,13 +331,21 @@ def _pool_settings() -> dict[str, Any]:
     return {"hdx_query_pool_name": pool} if pool else {}
 
 
+def _admin_comment_for_request(credential: HydrolixCredential) -> str:
+    """The per-request hdx_query_admin_comment: app identity plus who and what asked."""
+    attribution = gather_request_attribution(
+        credential, transport=HYDROLIX_CONFIG.mcp_server_transport, use_session_id=True
+    )
+    return build_admin_comment({**_APP_IDENTITY, **attribution.as_fields()})
+
+
 async def execute_query(
     query: str,
     parameters: Optional[Dict[str, Any]] = None,
     extra_settings: Optional[Dict[str, Any]] = None,
     comment: Optional[str] = None,
 ) -> HdxQueryResult:
-    """Run a query with the server's guardrail settings attached.
+    """Run a query with the server's guardrail settings and attribution attached.
 
     ``comment`` is the caller's stated purpose; it is recorded as ``hdx_query_comment``
     so operators can see what an agent was doing (HDX-12008).
@@ -340,9 +353,8 @@ async def execute_query(
     start = time.perf_counter()
     status = "success"
     try:
-        async with await create_hydrolix_client(
-            client_shared_pool, get_request_credential()
-        ) as client:
+        request_credential = get_request_credential()
+        async with await create_hydrolix_client(client_shared_pool, request_credential) as client:
             purpose = sanitize_purpose(comment)
             settings: dict[str, Any] = (
                 {
@@ -351,7 +363,9 @@ async def execute_query(
                     "hdx_query_max_attempts": HYDROLIX_CONFIG.query_max_attempts,
                     "hdx_query_max_result_rows": HYDROLIX_CONFIG.query_max_result_rows,
                     "hdx_query_max_memory_usage": HYDROLIX_CONFIG.query_max_memory_usage,
-                    "hdx_query_admin_comment": HDX_ADMIN_COMMENT,
+                    "hdx_query_admin_comment": _admin_comment_for_request(
+                        HYDROLIX_CONFIG.creds_with(request_credential)
+                    ),
                 }
                 | ({"hdx_query_comment": purpose} if purpose else {})
                 | _pool_settings()
