@@ -270,6 +270,9 @@ class HydrolixConfig:
             max_cells=0 is capped too (default: 0, no cap; cluster-managed deployments set it).
         HYDROLIX_QUERY_MAX_RESULT_BYTES: Max bytes a query may hold on the query head before
             it is cancelled (``hdx_query_max_result_bytes``; default: 64 MiB, minimum 10000)
+        HYDROLIX_ALLOW_TOKEN_QUERY_PARAM: Accept a service-account token in the ``?token=``
+            query parameter (default: true; set "false" where every client sends the
+            Authorization header, for example behind a gateway)
         HYDROLIX_MAX_RAW_TIMERANGE: Max timerange in seconds for non-summary queries (default: 6 hours)
         HYDROLIX_QUERY_POOL: Name of the Hydrolix query pool to route queries to. When set, every
             query the server issues carries the ``hdx_query_pool_name`` setting instead of using
@@ -323,6 +326,12 @@ class HydrolixConfig:
                 global_password := brand_getenv("HYDROLIX_PASSWORD", "")
             ):
                 self._default_credential = UsernamePassword(global_username, global_password)
+
+        if not self.allow_token_query_param:
+            logger.info(
+                "HYDROLIX_ALLOW_TOKEN_QUERY_PARAM=false: the ?token= query parameter is not "
+                "accepted; clients must send Authorization: Bearer."
+            )
 
     def creds_with(self, request_credential: Optional[HydrolixCredential]) -> HydrolixCredential:
         if request_credential is not None:
@@ -774,6 +783,18 @@ class HydrolixConfig:
         Default: False
         """
         return brand_getenv("HYDROLIX_METRICS_ENABLED", "false").lower() == "true"
+
+    @property
+    def allow_token_query_param(self) -> bool:
+        """Whether a ``?token=`` query parameter is accepted as a credential.
+
+        On by default: some MCP clients cannot send an Authorization header, and
+        the query parameter is the only way for them to present a service-account
+        token. Set HYDROLIX_ALLOW_TOKEN_QUERY_PARAM=false where every client can
+        send the header, for example behind a gateway (MCPKA) that authenticates
+        callers itself. Only an explicit "false" disables it.
+        """
+        return brand_getenv("HYDROLIX_ALLOW_TOKEN_QUERY_PARAM", "true").lower() != "false"
 
     def get_client_config(self, request_credential: Optional[HydrolixCredential]) -> dict:
         """
