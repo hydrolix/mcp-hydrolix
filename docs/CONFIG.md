@@ -114,6 +114,14 @@ The agent fields are resolved once per MCP request, in precedence order: the req
 
 Every tool the server registers is read-only. A future write tool must declare `destructiveHint=True`, require confirmation from the client before it runs, and be added to the allow-list in `tests/test_write_tool_policy.py`; the test suite enforces this.
 
+### Per-request credentials
+
+Only used when `HYDROLIX_MCP_SERVER_TRANSPORT` is `"http"` or `"sse"`:
+
+* `HYDROLIX_ALLOW_TOKEN_QUERY_PARAM`: Accept a service-account token in the `?token=<token>` query parameter as well as in the `Authorization: Bearer` header
+  * Default: `"true"`; the form exists for MCP clients that cannot send headers, and the access-log filter redacts the value
+  * Set to `"false"` on deployments where every client sends the header, for example behind a gateway that authenticates callers itself; the server logs the choice at startup. Only an explicit `"false"` disables it
+
 ### HTTP/SSE worker tuning
 
 Only used when `HYDROLIX_MCP_SERVER_TRANSPORT` is `"http"` or `"sse"`:
