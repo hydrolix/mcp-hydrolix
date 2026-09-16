@@ -359,6 +359,7 @@ async def execute_query(
                     "hdx_query_max_execution_time": HYDROLIX_CONFIG.query_timeout_sec,
                     "hdx_query_max_attempts": HYDROLIX_CONFIG.query_max_attempts,
                     "hdx_query_max_result_rows": HYDROLIX_CONFIG.query_max_result_rows,
+                    "hdx_query_max_result_bytes": HYDROLIX_CONFIG.query_max_result_bytes,
                     "hdx_query_max_memory_usage": HYDROLIX_CONFIG.query_max_memory_usage,
                     "hdx_query_admin_comment": render_admin_comment(
                         HDX_ADMIN_COMMENT, credential.subject, current_attribution()
@@ -740,8 +741,8 @@ def _build_truncation_response(
     else:
         retrieve_more = (
             "Consider refining your query with LIMIT, WHERE filters, or GROUP BY. "
-            "To retrieve more data, call run_select_query with a larger max_cells value "
-            "(e.g. max_cells=200000), or set max_cells=0 to disable truncation entirely."
+            "To retrieve more data, call run_select_query with a larger max_cells value, "
+            "up to the server's cap."
         )
 
     return RunSelectQueryResult(
@@ -798,7 +799,9 @@ async def run_select_query(
     RESULT TRUNCATION:
 
     Query results are automatically truncated when the total cell count (rows * columns)
-    exceeds the configured limit.
+    exceeds the configured limit. Separately, the cluster cancels a query whose result
+    exceeds the server's byte cap instead of truncating it; if a query fails that way,
+    select fewer columns or narrow the time range.
 
     Response shape:
         - Always present: columns, rows, truncated (bool), row_count

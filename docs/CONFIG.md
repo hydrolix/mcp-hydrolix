@@ -64,14 +64,16 @@ These map to per-query Hydrolix/ClickHouse settings sent with every query:
   * Default: `1` (no retries)
 * `HYDROLIX_QUERY_MAX_RESULT_ROWS`: Max number of rows a query may return (`hdx_query_max_result_rows`)
   * Default: `100000`
+* `HYDROLIX_QUERY_MAX_RESULT_BYTES`: Max bytes a query may hold on the query head before it is cancelled (`hdx_query_max_result_bytes`)
+  * Default: `67108864` (64 MiB); the Config API floor is `10000`
 
 ### Result truncation
 
 * `HYDROLIX_MAX_RESULT_CELLS`: Default cell budget (rows × columns) for query result truncation
   * Default: `50000`
-* `HYDROLIX_MAX_RESULT_CELLS_LIMIT`: Hard upper bound on the `max_cells` value callers may request; any per-call value above this is capped
-  * Default: `0` (no cap enforced)
-  * Set to a positive integer in multi-tenant HTTP/SSE deployments to prevent a single session from materializing very large result sets
+* `HYDROLIX_MAX_RESULT_CELLS_LIMIT`: Hard upper bound on the `max_cells` value callers may request; a per-call value above it, or `max_cells=0`, is capped to it, so a caller can only lower the budget
+  * Default: `200000`
+  * Set to `0` to disable the cap; meant for single-user stdio setups only (the server warns when it is `0` on http/sse)
 * `HYDROLIX_MAX_RAW_TIMERANGE`: Maximum time range in seconds allowed for queries against non-summary tables
   * Default: `86400` (24 hours)
   * Queries targeting summary tables are not affected by this limit
