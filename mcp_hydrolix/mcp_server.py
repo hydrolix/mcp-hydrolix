@@ -38,6 +38,7 @@ from mcp_hydrolix.auth import (
     get_request_credential,
 )
 from mcp_hydrolix.sa_attribution import ServiceAccountAttributionMiddleware
+from mcp_hydrolix.statement import normalize_statement
 from mcp_hydrolix import mcp_env
 from mcp_hydrolix.mcp_env import (
     HydrolixConfig,
@@ -767,6 +768,9 @@ async def run_select_query(
     """Run a SELECT query in a Hydrolix time-series database using the Clickhouse SQL dialect.
     Queries run using this tool will timeout after 30 seconds.
 
+    Do not add a FORMAT clause: the server selects the wire format, and a trailing FORMAT
+    is removed before the statement runs.
+
     PURPOSE:
 
     Pass a short `purpose` describing why the query is being run (for example "top error
@@ -908,6 +912,13 @@ async def run_select_query(
     Performance guard: date range filter.
      `SELECT app, count(*) FROM application.logs WHERE timestamp > '2024-01-01' AND timestamp < '2024-02-14' GROUP BY app ORDER BY count(*) DESC LIMIT 1`
     """
+    # The driver appends its own FORMAT Native; a FORMAT clause the agent left in
+    # would make two and fail the statement (ClickHouse code 62).
+    normalized = normalize_statement(query)
+    if normalized.format_removed:
+        logger.info("run_select_query: removed a trailing FORMAT clause from the statement")
+    query = normalized.sql
+
     cell_limit, capped_by_operator = _resolve_cell_limit(max_cells)
 
     # Rewrite the query to add a server-side LIMIT before hitting the DB, so we don't
