@@ -68,6 +68,27 @@ class TestSingleStatementGuard:
         result = preflight("SELECT 'a; DROP TABLE x', 'it\\'s' FROM db.t")
         assert result.blocked is False
 
+    def test_blocks_literal_after_semicolon(self):
+        # A literal is a significant element too: the text after the semicolon
+        # must never be silently dropped and the first statement run alone.
+        result = preflight("SELECT 1; 'x'")
+        assert result.blocked is True
+        assert result.block_reason == SINGLE_STATEMENT_REASON
+
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            "SELECT count() FROM db.t WHERE name = 'x'",
+            "SELECT * FROM db.t WHERE ts > '2024-01-01'",
+            "SELECT `weird col` FROM db.`my table`",
+            'SELECT 1 FROM db."quoted table"',
+        ],
+    )
+    def test_preserves_trailing_literal(self, sql):
+        result = preflight(sql)
+        assert result.blocked is False
+        assert result.sql == sql
+
 
 class TestSettingsClauseRefused:
     def test_blocks_top_level_settings_clause(self):
@@ -83,9 +104,35 @@ class TestSettingsClauseRefused:
         result = preflight("SELECT * FROM (SELECT a FROM db.t SETTINGS max_threads = 1) AS s")
         assert result.blocked is False
 
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            "SELECT x FROM db.t WHERE a = 1. SETTINGS readonly=0",
+            "SELECT x FROM db.t WHERE a = 1.\nSETTINGS readonly=0",
+            "SELECT x FROM db.t WHERE a = 'b' SETTINGS readonly=0",
+            "SELECT x FROM db.t WHERE a = `b` SETTINGS readonly=0",
+        ],
+    )
+    def test_blocks_settings_after_numeric_literal(self, sql):
+        # The identifier exemption applies after `identifier.` only; a float
+        # literal's trailing dot or a closing quote must not hide a clause.
+        result = preflight(sql)
+        assert result.blocked is True
+        assert result.block_reason == SETTINGS_CLAUSE_REASON
+
+    def test_allows_settings_as_alias(self):
+        result = preflight("SELECT toString(1) AS settings FROM db.t")
+        assert result.blocked is False
+
     def test_refuses_unparseable_query_with_settings(self):
         with pytest.raises(UnparseableQueryError):
             strip_conflicting_settings("SELECT ((( FROM SETTINGS readonly=0", {"readonly"})
+
+    def test_ignores_settings_substring_in_identifier(self):
+        # No SETTINGS keyword means no parse, so a statement sqlglot cannot read
+        # is not refused just because a column or literal is spelled "settings".
+        sql = "SELECT settings_json, 'settings' FROM ((( db.t"
+        assert strip_conflicting_settings(sql, {"readonly"}) == sql
 
 
 class TestFormatClauseRemoved:
@@ -112,6 +159,24 @@ class TestCommentsIgnored:
     def test_ignores_keyword_inside_comment(self):
         result = preflight("SELECT 1 FROM db.t /* SETTINGS readonly=0; DROP TABLE x */")
         assert result.blocked is False
+
+    def test_ignores_hash_comment(self):
+        # ClickHouse treats `#` and `#!` as line comments; an apostrophe inside
+        # one must not open a phantom string that hides what follows.
+        result = preflight("SELECT 1 FROM db.t # it's a note\n#! and a shebang-style one")
+        assert result.blocked is False
+        assert result.sql == "SELECT 1 FROM db.t"
+
+    def test_blocks_statement_hidden_behind_hash_comment(self):
+        result = preflight("SELECT 1 # it's\n; DROP TABLE db.t")
+        assert result.blocked is True
+        assert result.block_reason == SINGLE_STATEMENT_REASON
+
+    def test_handles_nested_block_comment(self):
+        # ClickHouse nests block comments, so the outer one ends at the last `*/`.
+        result = preflight("SELECT 1 FROM db.t /* a /* b */ ; DROP TABLE x */")
+        assert result.blocked is False
+        assert result.sql == "SELECT 1 FROM db.t"
 
 
 class TestPreflightAppliedToRunSelectQuery:

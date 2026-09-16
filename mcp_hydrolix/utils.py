@@ -8,6 +8,8 @@ import sqlglot
 import sqlglot.errors as sqlglot_errors
 import sqlglot.expressions as exp
 
+from mcp_hydrolix.preflight import has_settings_clause
+
 logger = logging.getLogger(__name__)
 
 
@@ -101,8 +103,10 @@ def strip_conflicting_settings(query: str, protected_keys: Iterable[str]) -> str
     # Fast path: if the query text has no SETTINGS clause at all, there is nothing to
     # strip. Returning it verbatim avoids an unnecessary sqlglot round-trip, which would
     # otherwise re-serialise (and subtly alter) every query — e.g. injecting a space into
-    # ClickHouse parameter placeholders like `{db:Identifier}`.
-    if "settings" not in query.lower():
+    # ClickHouse parameter placeholders like `{db:Identifier}`. The check is on the
+    # keyword, not the substring, so a column or literal spelled "settings" does not
+    # drag a statement into the parser and its fail-closed refusal.
+    if not has_settings_clause(query):
         return query
 
     try:

@@ -21,17 +21,17 @@
 
 ### Decision: port-console-scanner
 
-- **Choice:** Port the console's character scanner (comments, strings, quoted identifiers, paren depth) rather than gate on sqlglot's parser.
-- **Why:** Identical behaviour across the two MCP surfaces, and no dependence on the ClickHouse dialect's parser accepting every valid Hydrolix statement. Per explore/fail-closed-settings the scanner refuses a top-level SETTINGS clause; nested clauses go to the AST stripper, which now raises.
+- **Choice:** Port the console's character scanner (comments, strings, quoted identifiers, paren depth) rather than gate on sqlglot's parser, and follow ClickHouse's lexer where the console diverges from it: `#` and `#!` line comments, nested block comments, literals and quoted identifiers kept as statement elements.
+- **Why:** Identical behaviour across the two MCP surfaces, and no dependence on the ClickHouse dialect's parser accepting every valid Hydrolix statement. Per explore/fail-closed-settings the scanner refuses a top-level SETTINGS clause; nested clauses go to the AST stripper, which now raises only when a SETTINGS keyword is present. The adversarial review found the first cut dropped a trailing literal (`WHERE name = 'x'` became `WHERE name =`) and let an apostrophe in a `#` comment hide a second statement; both are verified against ClickHouse 26.8 and covered by tests.
 - **Alternatives:** sqlglot tokenizer — `SHOW`/`EXPLAIN` swallow the rest as one token, hiding a SETTINGS clause. Full parse, fail closed — refuses valid SQL the parser does not know.
-- **Binding:** `run_select_query` MUST call `preflight()` before `_resolve_cell_limit` and MUST raise `ToolError(block_reason)` on a blocked result; no other caller rewrites user SQL.
+- **Binding:** `run_select_query` MUST call `preflight()` before `_resolve_cell_limit` and MUST raise `ToolError(block_reason)` on a blocked result; no other caller rewrites user SQL. `_tokenize` MUST emit literals and quoted identifiers as tokens so the statement end and the multi-statement check include them.
 
 ### Decision: identifier-after-dot
 
-- **Choice:** A keyword immediately preceded by `.` is an identifier, not a clause.
-- **Why:** `SELECT name FROM system.settings` is a legitimate Hydrolix query; the console scanner blocks it. A deviation in the permissive direction is acceptable because the AST stripper still covers nested clauses and the cluster's `readonly` still holds.
-- **Alternatives:** Keep parity and block — refuses a real query for no gain.
-- **Binding:** `_tokenize` MUST record `after_dot` per word and the SETTINGS and FORMAT checks MUST skip such words.
+- **Choice:** A keyword directly after an identifier and `.`, or directly after `AS`, is an identifier or alias, not a clause; a keyword after a numeric literal's trailing dot or after a closing quote is a clause.
+- **Why:** `SELECT name FROM system.settings` is a legitimate Hydrolix query; the console scanner blocks it. The first cut exempted any word after a dot, which let `WHERE a = 1. SETTINGS readonly=0` through (ClickHouse accepts `1.` as a float); the exemption now requires an identifier before the dot. A deviation in the permissive direction is acceptable because the AST stripper still covers nested clauses and the cluster's `readonly` still holds.
+- **Alternatives:** Keep parity and block — refuses a real query for no gain. Exempt any word after a dot — the bypass above.
+- **Binding:** `_tokenize` MUST mark a word `is_identifier` only when the previous token is `.` preceded by a word or quoted identifier, or is the word `AS`; the SETTINGS and FORMAT checks MUST skip only such words.
 
 ### Decision: label-as-transport-setting-default-off
 

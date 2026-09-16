@@ -129,13 +129,13 @@ def gather_request_attribution(
     """Resolve the attribution fields for the current request, best-effort.
 
     ``user`` is the ``sub`` of the bearer credential the request carried (the
-    per-user token under the gateway, the service account otherwise). Agent
-    fields come, in precedence order, from the request headers a gateway sets,
-    from the request's MCP ``_meta``, and from the session's ``initialize``
-    client info. Nothing here raises: attribution is observability and must
-    never fail a query.
+    per-user token under the gateway, the service account otherwise), or the
+    username of a basic-auth credential. Agent fields come, in precedence
+    order, from the request headers a gateway sets, from the request's MCP
+    ``_meta``, and from the session's ``initialize`` client info. Nothing here
+    raises: attribution is observability and must never fail a query.
     """
-    user = getattr(credential, "service_account_id", None)
+    user = getattr(credential, "service_account_id", None) or getattr(credential, "username", None)
     agent = model = session = trace = None
     try:
         headers = {

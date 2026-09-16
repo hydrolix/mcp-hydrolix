@@ -86,7 +86,7 @@ When `HYDROLIX_QUERY_LABEL` is set, `execute_query` MUST send it as the transpor
 
 ### Requirement: Agent Attribution Sources
 
-The agent fields MUST be resolved best-effort in this precedence: request headers `X-Hdx-Agent`, `X-Hdx-Model`, `traceparent` and `Mcp-Session-Id`; then the request's MCP `_meta` keys `agent` and `model`; then the session's `initialize` client info for `agent` and, on stdio, the session id. `user` MUST be the `sub` of the bearer credential. Resolution MUST never raise.
+The agent fields MUST be resolved best-effort in this precedence: request headers `X-Hdx-Agent`, `X-Hdx-Model`, `traceparent` and `Mcp-Session-Id`; then the request's MCP `_meta` keys `agent` and `model`; then the session's `initialize` client info for `agent` and, on stdio, the session id. `user` MUST be the `sub` of a bearer credential or the username of a basic-auth credential. Resolution MUST never raise.
 
 #### Scenario: Headers Take Precedence
 
@@ -105,6 +105,12 @@ The agent fields MUST be resolved best-effort in this precedence: request header
 - **GIVEN** no headers, no `_meta`, client info `claude-code` `2.1.0`, and the stdio transport
 - **WHEN** attribution is gathered
 - **THEN** agent is `claude-code/2.1.0` and session is the context session id
+
+#### Scenario: User From Basic Credential
+
+- **GIVEN** a username and password credential
+- **WHEN** attribution is gathered
+- **THEN** user is the username
 
 #### Scenario: Attribution Never Raises
 

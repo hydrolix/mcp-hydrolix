@@ -6,11 +6,13 @@ surfaces refuse and rewrite the same statements. It is a statement-shape
 guard, not an authorization boundary: what the user may read is decided by the
 cluster's own RBAC, and the cluster's ``readonly`` setting still applies.
 
-Deviations from the console scanner, all in the strict direction or fixing a
-false positive: a keyword directly after ``.`` is an identifier (``FROM
-system.settings`` is a table, not a clause), single-quoted strings honour
-backslash escapes, double-quoted identifiers are skipped like backticks, and a
-word may contain digits.
+Deviations from the console scanner, each verified against ClickHouse: ``#`` and
+``#!`` start line comments and block comments nest, as ClickHouse's lexer has
+it; a keyword directly after an identifier and ``.`` is itself an identifier
+(``FROM system.settings`` is a table, not a clause) while ``1. SETTINGS`` is
+still a clause; a keyword directly after ``AS`` is an alias; single-quoted
+strings honour backslash escapes; double-quoted identifiers are skipped like
+backticks; a word may contain digits.
 """
 
 from __future__ import annotations
@@ -84,51 +86,86 @@ class PreflightResult:
 
 @dataclass(frozen=True)
 class _Token:
-    kind: str  # word | semicolon | paren | punct
+    kind: str  # word | number | literal | quoted | semicolon | paren | punct
     text: str
     start: int
     end: int
     depth: int
-    after_dot: bool
+    is_identifier: bool  # a keyword-shaped word that is an identifier or alias here
+
+
+_IDENTIFIER_KINDS: Final[frozenset[str]] = frozenset({"word", "quoted"})
 
 
 def _tokenize(sql: str) -> list[_Token]:
-    """Split SQL into significant tokens, skipping comments and quoted text.
+    """Split SQL into significant elements, dropping comments.
 
-    Strings and quoted identifiers are consumed whole and never emitted, so a
-    keyword inside a literal cannot trip the guard. Parenthesis depth is
+    String literals and quoted identifiers are consumed whole and emitted as
+    opaque tokens, so a keyword inside one cannot trip the guard and the end of
+    the statement is known even when a literal closes it. Parenthesis depth is
     recorded on every token so the caller can tell a top-level clause from one
     inside a subquery.
     """
     tokens: list[_Token] = []
     depth = 0
-    prev_was_dot = False
     i = 0
     n = len(sql)
+
+    def emit(kind: str, start: int, end: int) -> None:
+        previous = tokens[-1] if tokens else None
+        before_previous = tokens[-2] if len(tokens) >= 2 else None
+        is_identifier = (
+            kind == "word"
+            and previous is not None
+            and (
+                (
+                    previous.kind == "punct"
+                    and previous.text == "."
+                    and before_previous is not None
+                    and before_previous.kind in _IDENTIFIER_KINDS
+                )
+                or (previous.kind == "word" and previous.text.upper() == "AS")
+            )
+        )
+        tokens.append(_Token(kind, sql[start:end], start, end, depth, is_identifier))
+
     while i < n:
         ch = sql[i]
         nxt = sql[i + 1] if i + 1 < n else ""
 
-        if ch == "-" and nxt == "-":
-            i += 2
+        if (ch == "-" and nxt == "-") or ch == "#":
+            i += 2 if ch == "-" else 1
             while i < n and sql[i] != "\n":
                 i += 1
             continue
         if ch == "/" and nxt == "*":
-            end = sql.find("*/", i + 2)
-            i = n if end == -1 else end + 2
+            nesting = 1
+            i += 2
+            while i < n and nesting:
+                if sql.startswith("/*", i):
+                    nesting += 1
+                    i += 2
+                elif sql.startswith("*/", i):
+                    nesting -= 1
+                    i += 2
+                else:
+                    i += 1
             continue
         if ch == "'":
+            start = i
             i += 1
             while i < n and sql[i] != "'":
                 i += 2 if sql[i] == "\\" else 1
-            i += 1
-            prev_was_dot = False
+            i = min(i + 1, n)
+            emit("literal", start, i)
             continue
         if ch in ("`", '"'):
-            end = sql.find(ch, i + 1)
-            i = n if end == -1 else end + 1
-            prev_was_dot = False
+            start = i
+            i += 1
+            while i < n and sql[i] != ch:
+                i += 2 if sql[i] == "\\" else 1
+            i = min(i + 1, n)
+            emit("quoted", start, i)
             continue
         if ch.isspace():
             i += 1
@@ -138,23 +175,45 @@ def _tokenize(sql: str) -> list[_Token]:
             start = i
             while i < n and (sql[i].isalnum() or sql[i] == "_"):
                 i += 1
-            tokens.append(_Token("word", sql[start:i], start, i, depth, prev_was_dot))
-            prev_was_dot = False
+            emit("word", start, i)
+            continue
+        if ch.isdigit():
+            start = i
+            while i < n and (sql[i].isalnum() or sql[i] in "._"):
+                i += 1
+            emit("number", start, i)
             continue
 
         if ch == "(":
             depth += 1
-            tokens.append(_Token("paren", ch, i, i + 1, depth, False))
+            emit("paren", i, i + 1)
         elif ch == ")":
             depth = max(0, depth - 1)
-            tokens.append(_Token("paren", ch, i, i + 1, depth, False))
+            emit("paren", i, i + 1)
         elif ch == ";":
-            tokens.append(_Token("semicolon", ch, i, i + 1, depth, False))
+            emit("semicolon", i, i + 1)
         else:
-            tokens.append(_Token("punct", ch, i, i + 1, depth, False))
-        prev_was_dot = ch == "."
+            emit("punct", i, i + 1)
         i += 1
     return tokens
+
+
+def _is_clause_keyword(token: _Token, keyword: str, *, top_level: bool) -> bool:
+    return (
+        token.kind == "word"
+        and not token.is_identifier
+        and token.text.upper() == keyword
+        and (token.depth == 0 or not top_level)
+    )
+
+
+def has_settings_clause(sql: str) -> bool:
+    """True when the text carries a ``SETTINGS`` keyword at any depth.
+
+    Used to decide whether a statement needs the AST-based stripper at all; a
+    column or literal that merely contains the letters is not a clause.
+    """
+    return any(_is_clause_keyword(t, "SETTINGS", top_level=False) for t in _tokenize(sql))
 
 
 def _edit_distance(a: str, b: str) -> int:
@@ -225,25 +284,13 @@ def preflight(raw_sql: str, *, surface_name: str = "query tool") -> PreflightRes
             sql=sql, blocked=True, block_reason=_read_only_block_reason(first_word, surface_name)
         )
 
-    for token in tokens:
-        if (
-            token.kind == "word"
-            and token.depth == 0
-            and not token.after_dot
-            and token.text.upper() == "SETTINGS"
-        ):
-            return PreflightResult(sql=sql, blocked=True, block_reason=SETTINGS_CLAUSE_REASON)
+    if any(_is_clause_keyword(t, "SETTINGS", top_level=True) for t in tokens):
+        return PreflightResult(sql=sql, blocked=True, block_reason=SETTINGS_CLAUSE_REASON)
 
     format_removed = False
     if len(tokens) >= 2:
         fmt, name = tokens[-2], tokens[-1]
-        if (
-            fmt.kind == "word"
-            and fmt.depth == 0
-            and not fmt.after_dot
-            and fmt.text.upper() == "FORMAT"
-            and name.kind == "word"
-        ):
+        if _is_clause_keyword(fmt, "FORMAT", top_level=True) and name.kind == "word":
             sql = raw_sql[tokens[0].start : fmt.start].rstrip()
             format_removed = True
 

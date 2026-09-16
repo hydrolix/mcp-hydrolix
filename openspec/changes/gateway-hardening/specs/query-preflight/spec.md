@@ -35,7 +35,7 @@
 
 ### Requirement: Single Statement Guard
 
-The preflight MUST refuse a text containing more than one statement, MUST drop a single trailing semicolon, and MUST ignore semicolons inside string literals and comments.
+The preflight MUST refuse a text containing more than one statement, MUST drop a single trailing semicolon, MUST ignore semicolons inside string literals and comments, and MUST treat string literals and quoted identifiers as part of the statement so that one closing the statement is preserved and one following a semicolon counts as a second statement.
 
 #### Scenario: Blocks Multiple Statements
 
@@ -52,9 +52,19 @@ The preflight MUST refuse a text containing more than one statement, MUST drop a
 - **WHEN** a string literal contains `;` or an escaped quote
 - **THEN** the preflight does not block the statement
 
+#### Scenario: Blocks Literal After Semicolon
+
+- **WHEN** the text is `SELECT 1; 'x'`
+- **THEN** the preflight blocks it with the reason `Only single statements are supported.`
+
+#### Scenario: Preserves Trailing Literal
+
+- **WHEN** a statement ends in a string literal, a backtick identifier or a double-quoted identifier
+- **THEN** the statement passed on is the full text, unchanged
+
 ### Requirement: Settings Clause Refused
 
-The preflight MUST refuse a top-level `SETTINGS` clause on user SQL, MUST treat a word directly after `.` as an identifier, and `strip_conflicting_settings` MUST raise `UnparseableQueryError` for a query that mentions SETTINGS but cannot be parsed, instead of sending it.
+The preflight MUST refuse a top-level `SETTINGS` clause on user SQL; it MUST treat a word directly after an identifier and `.` as an identifier and a word directly after `AS` as an alias, but not a word after a numeric literal's trailing dot or after a closing quote; and `strip_conflicting_settings` MUST raise `UnparseableQueryError` only for a query that carries a `SETTINGS` keyword and cannot be parsed, never for one that merely spells "settings" inside an identifier or literal.
 <!-- settle: explore/fail-closed-settings -->
 
 #### Scenario: Blocks Top Level Settings Clause
@@ -73,11 +83,27 @@ The preflight MUST refuse a top-level `SETTINGS` clause on user SQL, MUST treat 
 - **THEN** the preflight does not block it
 - **AND** the nested clause is left to `strip_conflicting_settings`
 
+#### Scenario: Blocks Settings After Numeric Literal
+
+- **WHEN** a top-level SETTINGS clause follows `1.`, a string literal or a quoted identifier
+- **THEN** the preflight blocks it with the SETTINGS reason
+
+#### Scenario: Allows Settings As Alias
+
+- **WHEN** the text is `SELECT toString(1) AS settings FROM db.t`
+- **THEN** the preflight does not block it
+
 #### Scenario: Refuses Unparseable Query With Settings
 
-- **GIVEN** a query that mentions SETTINGS and that sqlglot cannot parse
+- **GIVEN** a query that carries a SETTINGS keyword and that sqlglot cannot parse
 - **WHEN** `strip_conflicting_settings` runs with protected keys
 - **THEN** it raises `UnparseableQueryError`
+
+#### Scenario: Ignores Settings Substring In Identifier
+
+- **GIVEN** a query sqlglot cannot parse whose only "settings" is a column name and a literal
+- **WHEN** `strip_conflicting_settings` runs with protected keys
+- **THEN** it returns the query unchanged
 
 ### Requirement: Format Clause Removed
 
@@ -96,7 +122,7 @@ The preflight MUST remove a trailing top-level `FORMAT <name>` clause and MUST l
 
 ### Requirement: Comments Ignored
 
-The preflight MUST ignore line and block comments when classifying the statement and MUST strip leading and trailing comments from the statement passed on.
+The preflight MUST ignore `--`, `#` and `#!` line comments and nested `/* */` block comments, as ClickHouse's lexer does, when classifying the statement, and MUST strip leading and trailing comments from the statement passed on.
 
 #### Scenario: Ignores Leading And Trailing Comments
 
@@ -107,6 +133,23 @@ The preflight MUST ignore line and block comments when classifying the statement
 
 - **WHEN** a comment contains `SETTINGS` and a second statement
 - **THEN** the preflight does not block the statement
+
+#### Scenario: Ignores Hash Comment
+
+- **WHEN** the statement is followed by `#` and `#!` line comments containing an apostrophe
+- **THEN** the preflight does not block it
+- **AND** the statement passed on excludes the comments
+
+#### Scenario: Blocks Statement Hidden Behind Hash Comment
+
+- **WHEN** a `#` comment containing an apostrophe is followed on the next line by `; DROP TABLE`
+- **THEN** the preflight blocks it with the reason `Only single statements are supported.`
+
+#### Scenario: Handles Nested Block Comment
+
+- **WHEN** a block comment contains a nested block comment and then `; DROP TABLE`
+- **THEN** the preflight does not block the statement
+- **AND** the statement passed on excludes the whole comment
 
 ### Requirement: Preflight Applied To Run Select Query
 

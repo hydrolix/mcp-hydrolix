@@ -111,7 +111,7 @@ Only used when `HYDROLIX_MCP_SERVER_TRANSPORT` is `"http"` or `"sse"`:
 
 ### Query guardrails and attribution
 
-`run_select_query` accepts one read statement (`SELECT`, `WITH`, `SHOW`, `DESC`, `DESCRIBE`, `EXPLAIN`). A second statement, a write or DDL statement, or a top-level `SETTINGS` clause is refused before the cluster sees it, and a trailing `FORMAT` clause is removed because the server selects the wire format. A `SETTINGS` clause inside a subquery that the server cannot parse is refused too, so an inline setting can never lift a server limit. These are statement-shape guards; what a user may read is decided by the cluster's own RBAC.
+`run_select_query` accepts one read statement (`SELECT`, `WITH`, `SHOW`, `DESC`, `DESCRIBE`, `EXPLAIN`). A second statement, a write or DDL statement, or a top-level `SETTINGS` clause is refused before the cluster sees it, and a trailing `FORMAT` clause is removed because the server selects the wire format. Comments (`--`, `#`, `#!`, nested `/* */`), string literals and quoted identifiers are read the way ClickHouse reads them, so a keyword inside one does not count; a column or alias named `settings` is fine, an unquoted `SETTINGS` keyword is not. A `SETTINGS` clause inside a subquery that the server cannot parse is refused too, so an inline setting can never lift a server limit. These are statement-shape guards; what a user may read is decided by the cluster's own RBAC.
 
 Every query carries attribution in the existing Hydrolix query settings, so no schema change is needed:
 

@@ -1,4 +1,4 @@
-*4 phases, 62 tasks (11 implementation, 48 tests, 3 docs and rollout).*
+*4 phases, 71 tasks (11 implementation, 57 tests, 3 docs and rollout).*
 
 **Tracking:** HDX-12410, HDX-12008
 
@@ -26,14 +26,22 @@
 - [x] 2.6 Add test for scenario "Blocks Multiple Statements" [implements: query-preflight/single-statement-guard, meta/tests] — verify: `pytest -q tests/test_query_preflight.py::TestSingleStatementGuard::test_blocks_multiple_statements` green
 - [x] 2.7 Add test for scenario "Drops Trailing Semicolon" [implements: query-preflight/single-statement-guard, meta/tests] — verify: `pytest -q tests/test_query_preflight.py::TestSingleStatementGuard::test_drops_trailing_semicolon` green
 - [x] 2.8 Add test for scenario "Ignores Semicolon Inside String Literal" [implements: query-preflight/single-statement-guard, meta/tests] — verify: `pytest -q tests/test_query_preflight.py::TestSingleStatementGuard::test_ignores_semicolon_inside_string_literal` green
+- [x] 2.8a Add test for scenario "Blocks Literal After Semicolon" [implements: query-preflight/single-statement-guard, meta/tests] — verify: `pytest -q tests/test_query_preflight.py::TestSingleStatementGuard::test_blocks_literal_after_semicolon` green
+- [x] 2.8b Add test for scenario "Preserves Trailing Literal" [implements: query-preflight/single-statement-guard, meta/tests] — verify: `pytest -q tests/test_query_preflight.py -k test_preserves_trailing_literal` green
 - [x] 2.9 Add test for scenario "Blocks Top Level Settings Clause" [implements: query-preflight/settings-clause-refused, meta/tests] — verify: `pytest -q tests/test_query_preflight.py::TestSettingsClauseRefused::test_blocks_top_level_settings_clause` green
 - [x] 2.10 Add test for scenario "Allows System Settings Table" [implements: query-preflight/settings-clause-refused, meta/tests] — verify: `pytest -q tests/test_query_preflight.py::TestSettingsClauseRefused::test_allows_system_settings_table` green
 - [x] 2.11 Add test for scenario "Allows Nested Settings For Stripper" [implements: query-preflight/settings-clause-refused, meta/tests] — verify: `pytest -q tests/test_query_preflight.py::TestSettingsClauseRefused::test_allows_nested_settings_for_stripper` green
+- [x] 2.11a Add test for scenario "Blocks Settings After Numeric Literal" [implements: query-preflight/settings-clause-refused, meta/tests] — verify: `pytest -q tests/test_query_preflight.py -k test_blocks_settings_after_numeric_literal` green
+- [x] 2.11b Add test for scenario "Allows Settings As Alias" [implements: query-preflight/settings-clause-refused, meta/tests] — verify: `pytest -q tests/test_query_preflight.py::TestSettingsClauseRefused::test_allows_settings_as_alias` green
 - [x] 2.12 Add test for scenario "Refuses Unparseable Query With Settings" [implements: query-preflight/settings-clause-refused, meta/tests] — verify: `pytest -q tests/test_query_preflight.py::TestSettingsClauseRefused::test_refuses_unparseable_query_with_settings` green
+- [x] 2.12a Add test for scenario "Ignores Settings Substring In Identifier" [implements: query-preflight/settings-clause-refused, meta/tests] — verify: `pytest -q tests/test_query_preflight.py::TestSettingsClauseRefused::test_ignores_settings_substring_in_identifier` green
 - [x] 2.13 Add test for scenario "Strips Trailing Format Clause" [implements: query-preflight/format-clause-removed, meta/tests] — verify: `pytest -q tests/test_query_preflight.py::TestFormatClauseRemoved::test_strips_trailing_format_clause` green
 - [x] 2.14 Add test for scenario "Keeps Format Function Call" [implements: query-preflight/format-clause-removed, meta/tests] — verify: `pytest -q tests/test_query_preflight.py::TestFormatClauseRemoved::test_keeps_format_function_call` green
 - [x] 2.15 Add test for scenario "Ignores Leading And Trailing Comments" [implements: query-preflight/comments-ignored, meta/tests] — verify: `pytest -q tests/test_query_preflight.py::TestCommentsIgnored::test_ignores_leading_and_trailing_comments` green
 - [x] 2.16 Add test for scenario "Ignores Keyword Inside Comment" [implements: query-preflight/comments-ignored, meta/tests] — verify: `pytest -q tests/test_query_preflight.py::TestCommentsIgnored::test_ignores_keyword_inside_comment` green
+- [x] 2.16a Add test for scenario "Ignores Hash Comment" [implements: query-preflight/comments-ignored, meta/tests] — verify: `pytest -q tests/test_query_preflight.py::TestCommentsIgnored::test_ignores_hash_comment` green
+- [x] 2.16b Add test for scenario "Blocks Statement Hidden Behind Hash Comment" [implements: query-preflight/comments-ignored, meta/tests] — verify: `pytest -q tests/test_query_preflight.py::TestCommentsIgnored::test_blocks_statement_hidden_behind_hash_comment` green
+- [x] 2.16c Add test for scenario "Handles Nested Block Comment" [implements: query-preflight/comments-ignored, meta/tests] — verify: `pytest -q tests/test_query_preflight.py::TestCommentsIgnored::test_handles_nested_block_comment` green
 - [x] 2.17 Add test for scenario "Refused Statement Raises Tool Error" [implements: query-preflight/preflight-applied-to-run-select-query, meta/tests] — verify: `pytest -q tests/test_query_preflight.py::TestPreflightAppliedToRunSelectQuery::test_refused_statement_raises_tool_error` green
 - [x] 2.18 Add test for scenario "Executes Normalised Statement" [implements: query-preflight/preflight-applied-to-run-select-query, meta/tests] — verify: `pytest -q tests/test_query_preflight.py::TestPreflightAppliedToRunSelectQuery::test_executes_normalised_statement` green
 - [x] 2.19 Add test for scenario "Byte Cap Sent With Every Query" [implements: result-limits/result-byte-cap, meta/tests] — verify: `pytest -q tests/test_result_limits.py::TestResultByteCap::test_byte_cap_sent_with_every_query` green
@@ -71,6 +79,7 @@
 - [x] 3.12 Add test for scenario "Headers Take Precedence" [implements: query-admin-comment/agent-attribution-sources, meta/tests] — verify: `pytest -q tests/test_query_admin_comment.py::TestAgentAttributionSources::test_headers_take_precedence` green
 - [x] 3.13 Add test for scenario "Meta Fallback" [implements: query-admin-comment/agent-attribution-sources, meta/tests] — verify: `pytest -q tests/test_query_admin_comment.py::TestAgentAttributionSources::test_meta_fallback` green
 - [x] 3.14 Add test for scenario "Client Info Fallback" [implements: query-admin-comment/agent-attribution-sources, meta/tests] — verify: `pytest -q tests/test_query_admin_comment.py::TestAgentAttributionSources::test_client_info_fallback` green
+- [x] 3.14a Add test for scenario "User From Basic Credential" [implements: query-admin-comment/agent-attribution-sources, meta/tests] — verify: `pytest -q tests/test_query_admin_comment.py::TestAgentAttributionSources::test_user_from_basic_credential` green
 - [x] 3.15 Add test for scenario "Attribution Never Raises" [implements: query-admin-comment/agent-attribution-sources, meta/tests] — verify: `pytest -q tests/test_query_admin_comment.py::TestAgentAttributionSources::test_attribution_never_raises` green
 - [x] 3.16 Move the unchanged Version Resolution and Transport Resolution scenario tests beside the new composition tests and update the branding assertion to the `app=` token [implements: query-admin-comment/query-comment-composition, meta/tests] — verify: `pytest -q tests/test_query_admin_comment.py tests/test_query_settings.py` green
 

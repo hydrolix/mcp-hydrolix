@@ -819,7 +819,9 @@ async def run_select_query(
     RESULT TRUNCATION:
 
     Query results are automatically truncated when the total cell count (rows * columns)
-    exceeds the configured limit.
+    exceeds the configured limit. Separately, the cluster cancels a query whose result
+    exceeds the server's byte cap instead of truncating it; if a query fails that way,
+    select fewer columns or narrow the time range.
 
     Response shape:
         - Always present: columns, rows, truncated (bool), row_count

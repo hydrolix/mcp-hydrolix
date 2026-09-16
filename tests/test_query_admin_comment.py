@@ -258,6 +258,16 @@ class TestAgentAttributionSources:
         assert got.agent == "claude-code/2.1.0"
         assert got.session == "sid"
 
+    def test_user_from_basic_credential(self, monkeypatch):
+        from mcp_hydrolix.auth import UsernamePassword
+
+        monkeypatch.setattr(attribution, "get_http_headers", lambda include=None: {})
+        monkeypatch.setattr(attribution, "get_context", lambda: _fake_context())
+        got = gather_request_attribution(
+            UsernamePassword(username="alice", password="x"), transport="http", use_session_id=True
+        )
+        assert got.user == "alice"
+
     def test_attribution_never_raises(self, monkeypatch):
         def boom(*_args, **_kwargs):
             raise RuntimeError("no request")
