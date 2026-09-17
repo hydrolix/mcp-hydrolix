@@ -9,17 +9,18 @@ openspec/changes/admin-comment-attribution.
 from __future__ import annotations
 
 import time
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import jwt
 
 import mcp_hydrolix.mcp_server as mcp_server_module
-from mcp_hydrolix import attribution
+from mcp_hydrolix import attribution, request_attribution
 from mcp_hydrolix.attribution import (
     ADMIN_COMMENT_MAX_BYTES,
+    REQUEST_FIELDS,
+    RequestAttribution,
     build_admin_comment,
-    gather_request_attribution,
+    render_admin_comment,
 )
 from mcp_hydrolix.auth import ServiceAccountToken, UsernamePassword
 
@@ -52,65 +53,57 @@ def _mock_client_ctx():
 
 class TestQueryCommentComposition:
     def test_renders_composed_comment(self):
-        comment = build_admin_comment(
-            {
-                "User": "mcp-hydrolix",
-                "version": "0.3.2",
-                "transport": "stdio",
-                "sub": "9b2c0c5e-1f0a-4b4e-8a3e-2a1d2c3b4a5f",
-                "agent": "claude-code/2.1.0",
-                "model": "claude-opus-4-1",
-                "session": "sess-1",
-                "trace": TRACE,
-            }
+        comment = render_admin_comment(
+            "User: mcp-hydrolix version: 0.3.2 transport: stdio",
+            RequestAttribution(
+                sub="9b2c0c5e-1f0a-4b4e-8a3e-2a1d2c3b4a5f",
+                agent="claude-code/2.1.0",
+                model="claude-opus-4-1",
+                session="sess-1",
+                trace=TRACE,
+            ),
         )
         assert comment == (
             "User: mcp-hydrolix version: 0.3.2 transport: stdio "
             "sub: 9b2c0c5e-1f0a-4b4e-8a3e-2a1d2c3b4a5f agent: claude-code/2.1.0 "
-            f"model: claude-opus-4-1 session: sess-1 trace: {TRACE}"
+            f"session: sess-1 trace: {TRACE} model: claude-opus-4-1"
         )
 
     def test_static_prefix_unchanged(self):
         assert build_admin_comment(STATIC) == STATIC_TEXT
+        assert render_admin_comment(STATIC_TEXT, RequestAttribution()) == STATIC_TEXT
 
     def test_omits_empty_fields(self):
-        comment = build_admin_comment({**STATIC, "sub": None, "agent": "", "trace": "  "})
+        comment = render_admin_comment(
+            STATIC_TEXT, RequestAttribution(sub=None, agent="", trace="  ")
+        )
         assert comment == STATIC_TEXT
-        assert "sub:" not in comment
 
     def test_sanitizes_values(self):
-        comment = build_admin_comment(
-            {**STATIC, "agent": "Claude Desktop/1.0 (beta)", "model": "x" * 80, "session": "a:b"}
+        comment = render_admin_comment(
+            STATIC_TEXT,
+            RequestAttribution(agent="Claude Desktop/1.0 (beta)", model="x" * 80, session="a:b"),
         )
         assert "agent: Claude_Desktop/1.0__beta_" in comment
         assert f"model: {'x' * 64}" in comment
         assert "x" * 65 not in comment
         assert "session: a_b" in comment
 
-    def test_static_identity_survives_budget(self, monkeypatch):
-        fields = {**STATIC, **{key: "v" * 64 for key in attribution.REQUEST_FIELDS}}
-        full = build_admin_comment(fields)
-        assert len(full.encode("utf-8")) <= ADMIN_COMMENT_MAX_BYTES
+    def test_budget_drops_model_before_join_keys(self, monkeypatch):
+        full = RequestAttribution(**{key: "v" * 64 for key in REQUEST_FIELDS})
+        assert len(render_admin_comment(STATIC_TEXT, full).encode()) <= ADMIN_COMMENT_MAX_BYTES
 
-        monkeypatch.setattr(attribution, "ADMIN_COMMENT_MAX_BYTES", 120)
-        capped = build_admin_comment(fields)
-        assert capped.startswith(STATIC_TEXT + " sub: ")
-        assert len(capped.encode("utf-8")) <= 120
-        assert "agent:" not in capped
+        monkeypatch.setattr(attribution, "ADMIN_COMMENT_MAX_BYTES", 400)
+        capped = render_admin_comment(STATIC_TEXT, full)
+        assert len(capped.encode("utf-8")) <= 400
+        assert "model:" not in capped
+        assert "session: " in capped and "trace: " in capped
 
         monkeypatch.setattr(attribution, "ADMIN_COMMENT_MAX_BYTES", 10)
-        assert build_admin_comment(fields) == STATIC_TEXT
+        assert render_admin_comment(STATIC_TEXT, full) == STATIC_TEXT
 
-    @patch("mcp_hydrolix.mcp_server.create_hydrolix_client")
-    async def test_comment_built_per_request(self, mock_create_client):
-        mock_ctx, mock_client = _mock_client_ctx()
-        mock_create_client.return_value = mock_ctx
-        credential = _bearer_credential("user-sub-42")
-        with patch("mcp_hydrolix.mcp_server.get_request_credential", return_value=credential):
-            await mcp_server_module.execute_query("SELECT 1")
-        comment = mock_client.query.call_args.kwargs["settings"]["hdx_query_admin_comment"]
-        assert comment.startswith("User: mcp-hydrolix version: ")
-        assert " sub: user-sub-42" in comment
+    def test_fields_match_vocabulary(self):
+        assert set(RequestAttribution().as_fields()) == set(REQUEST_FIELDS)
 
     def test_module_constant_keeps_legacy_shape(self):
         assert mcp_server_module.HDX_ADMIN_COMMENT.startswith("User: mcp-hydrolix version: ")
@@ -118,88 +111,49 @@ class TestQueryCommentComposition:
         assert "sub:" not in mcp_server_module.HDX_ADMIN_COMMENT
 
 
-def _fake_context(*, meta_extra=None, client_name=None, client_version=None, session_id="sid"):
-    meta = SimpleNamespace(model_extra=meta_extra or {}) if meta_extra is not None else None
-    client_info = SimpleNamespace(name=client_name, version=client_version) if client_name else None
-    return SimpleNamespace(
-        request_context=SimpleNamespace(meta=meta),
-        session=SimpleNamespace(client_params=SimpleNamespace(clientInfo=client_info)),
-        session_id=session_id,
-    )
+class TestCommentBuiltPerRequest:
+    @patch("mcp_hydrolix.mcp_server.create_hydrolix_client")
+    async def test_sub_and_agent_from_request(self, mock_create_client):
+        mock_ctx, mock_client = _mock_client_ctx()
+        mock_create_client.return_value = mock_ctx
+        credential = _bearer_credential("user-sub-42")
+        token = request_attribution._CURRENT.set(
+            RequestAttribution(agent="claude-code/2.1.0", trace=TRACE)
+        )
+        try:
+            with patch("mcp_hydrolix.mcp_server.get_request_credential", return_value=credential):
+                await mcp_server_module.execute_query("SELECT 1")
+        finally:
+            request_attribution._CURRENT.reset(token)
+        comment = mock_client.query.call_args.kwargs["settings"]["hdx_query_admin_comment"]
+        assert comment.startswith("User: mcp-hydrolix version: ")
+        assert f" sub: user-sub-42 agent: claude-code/2.1.0 trace: {TRACE}" in comment
+
+    @patch("mcp_hydrolix.mcp_server.create_hydrolix_client")
+    async def test_client_authenticates_with_the_attributed_credential(self, mock_create_client):
+        mock_ctx, _ = _mock_client_ctx()
+        mock_create_client.return_value = mock_ctx
+        credential = _bearer_credential("user-sub-43")
+        with patch("mcp_hydrolix.mcp_server.get_request_credential", return_value=credential):
+            await mcp_server_module.execute_query("SELECT 1")
+        assert mock_create_client.call_args.args[1] is credential
+
+    @patch("mcp_hydrolix.mcp_server.create_hydrolix_client")
+    async def test_sub_from_basic_credential(self, mock_create_client):
+        mock_ctx, mock_client = _mock_client_ctx()
+        mock_create_client.return_value = mock_ctx
+        with patch(
+            "mcp_hydrolix.mcp_server.get_request_credential",
+            return_value=UsernamePassword(username="alice", password="x"),
+        ):
+            await mcp_server_module.execute_query("SELECT 1")
+        comment = mock_client.query.call_args.kwargs["settings"]["hdx_query_admin_comment"]
+        assert comment.endswith(" sub: alice")
 
 
-class TestAgentAttributionSources:
-    def test_headers_take_precedence(self, monkeypatch):
-        monkeypatch.setattr(
-            attribution,
-            "get_http_headers",
-            lambda include=None: {
-                "X-Hdx-Agent": "gateway-seen/1.0",
-                "x-hdx-model": "m1",
-                "traceparent": TRACE,
-                "mcp-session-id": "http-session",
-            },
-        )
-        monkeypatch.setattr(
-            attribution,
-            "get_context",
-            lambda: _fake_context(
-                meta_extra={"agent": "meta/9"}, client_name="init", client_version="2"
-            ),
-        )
-        got = gather_request_attribution(
-            _bearer_credential("u1"), transport="http", use_session_id=True
-        )
-        assert got.sub == "u1"
-        assert got.agent == "gateway-seen/1.0"
-        assert got.model == "m1"
-        assert got.trace == TRACE
-        assert got.session == "http-session"
+class TestCredentialSubject:
+    def test_service_account_subject_is_the_sub_claim(self):
+        assert _bearer_credential("u1").subject == "u1"
 
-    def test_meta_fallback(self, monkeypatch):
-        monkeypatch.setattr(attribution, "get_http_headers", lambda include=None: {})
-        monkeypatch.setattr(
-            attribution,
-            "get_context",
-            lambda: _fake_context(
-                meta_extra={"agent": "meta-agent/9", "model": "meta-model"},
-                client_name="init",
-                client_version="2",
-            ),
-        )
-        got = gather_request_attribution(None, transport="http", use_session_id=True)
-        assert got.sub is None
-        assert got.agent == "meta-agent/9"
-        assert got.model == "meta-model"
-        assert got.session is None
-
-    def test_client_info_fallback(self, monkeypatch):
-        monkeypatch.setattr(attribution, "get_http_headers", lambda include=None: {})
-        monkeypatch.setattr(
-            attribution,
-            "get_context",
-            lambda: _fake_context(client_name="claude-code", client_version="2.1.0"),
-        )
-        got = gather_request_attribution(None, transport="stdio", use_session_id=True)
-        assert got.agent == "claude-code/2.1.0"
-        assert got.session == "sid"
-
-    def test_sub_from_basic_credential(self, monkeypatch):
-        monkeypatch.setattr(attribution, "get_http_headers", lambda include=None: {})
-        monkeypatch.setattr(attribution, "get_context", lambda: _fake_context())
-        got = gather_request_attribution(
-            UsernamePassword(username="alice", password="x"), transport="http", use_session_id=True
-        )
-        assert got.sub == "alice"
-
-    def test_attribution_never_raises(self, monkeypatch):
-        def boom(*_args, **_kwargs):
-            raise RuntimeError("no request")
-
-        monkeypatch.setattr(attribution, "get_http_headers", boom)
-        monkeypatch.setattr(attribution, "get_context", boom)
-        got = gather_request_attribution(
-            _bearer_credential("u2"), transport="http", use_session_id=True
-        )
-        assert got.sub == "u2"
-        assert got.agent is None and got.trace is None
+    def test_basic_credential_subject_is_the_username(self):
+        assert UsernamePassword(username="alice", password="x").subject == "alice"

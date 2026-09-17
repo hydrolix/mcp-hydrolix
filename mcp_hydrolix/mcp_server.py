@@ -37,7 +37,8 @@ from mcp_hydrolix.auth import (
     UsernamePassword,
     get_request_credential,
 )
-from mcp_hydrolix.attribution import build_admin_comment, gather_request_attribution
+from mcp_hydrolix.attribution import build_admin_comment, render_admin_comment
+from mcp_hydrolix.request_attribution import RequestAttributionMiddleware, current_attribution
 from mcp_hydrolix.sa_attribution import ServiceAccountAttributionMiddleware
 from mcp_hydrolix.statement import normalize_statement
 from mcp_hydrolix import mcp_env
@@ -157,6 +158,8 @@ async def create_hydrolix_client(pool_mgr, request_credential: Optional[Hydrolix
     of properties like `server_version`, and so may throw exceptions.
     INV: clients returned by this method MUST NOT be reused across sessions, because they can close over per-session
     credentials.
+    ``request_credential`` may be the request's own credential, an already resolved one
+    (``creds_with`` is idempotent on it), or None for the environment default.
     """
     creds = HYDROLIX_CONFIG.creds_with(request_credential)
     auth_info = (
@@ -331,14 +334,6 @@ def _pool_settings() -> dict[str, Any]:
     return {"hdx_query_pool_name": pool} if pool else {}
 
 
-def _admin_comment_for_request(credential: HydrolixCredential) -> str:
-    """The per-request hdx_query_admin_comment: app identity plus who and what asked."""
-    attribution = gather_request_attribution(
-        credential, transport=HYDROLIX_CONFIG.mcp_server_transport, use_session_id=True
-    )
-    return build_admin_comment({**_APP_IDENTITY, **attribution.as_fields()})
-
-
 async def execute_query(
     query: str,
     parameters: Optional[Dict[str, Any]] = None,
@@ -349,9 +344,12 @@ async def execute_query(
     start = time.perf_counter()
     status = "success"
     try:
-        request_credential = get_request_credential()
-        async with await create_hydrolix_client(client_shared_pool, request_credential) as client:
+        credential = HYDROLIX_CONFIG.creds_with(get_request_credential())
+        async with await create_hydrolix_client(client_shared_pool, credential) as client:
             purpose = sanitize_purpose(comment)
+            # The request half was resolved once by RequestAttributionMiddleware; sub is
+            # the subject of the credential this very query authenticates with.
+            attribution = current_attribution().with_sub(credential.subject)
             settings: dict[str, Any] = (
                 {
                     "readonly": 1,
@@ -359,9 +357,7 @@ async def execute_query(
                     "hdx_query_max_attempts": HYDROLIX_CONFIG.query_max_attempts,
                     "hdx_query_max_result_rows": HYDROLIX_CONFIG.query_max_result_rows,
                     "hdx_query_max_memory_usage": HYDROLIX_CONFIG.query_max_memory_usage,
-                    "hdx_query_admin_comment": _admin_comment_for_request(
-                        HYDROLIX_CONFIG.creds_with(request_credential)
-                    ),
+                    "hdx_query_admin_comment": render_admin_comment(HDX_ADMIN_COMMENT, attribution),
                 }
                 | ({"hdx_query_comment": purpose} if purpose else {})
                 | _pool_settings()
@@ -483,6 +479,10 @@ if HYDROLIX_CONFIG.metrics_enabled:
 # Per-request SA attribution logging (HDX-11151). Unconditional; see
 # mcp_hydrolix.sa_attribution for the temporary-stopgap rationale.
 mcp.add_middleware(ServiceAccountAttributionMiddleware())
+
+# Resolves the request half of hdx_query_admin_comment once per MCP request; the
+# queries a request issues read it from the context (HDX-12008).
+mcp.add_middleware(RequestAttributionMiddleware())
 
 
 async def _query_targets_summary_table(query: str) -> bool:
