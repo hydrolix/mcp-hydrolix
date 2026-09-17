@@ -11,7 +11,7 @@
 ### Decision: reactive-defaults
 
 - **Question:** Should the default caps be argued in advance or adjusted on feedback?
-- **Answer:** On feedback. The repository maintainer said in the 2026-09-16 review that every change to these limits draws complaints and that he prefers fixing the number afterwards to predicting it; this change picks 200000 cells and 64 MiB and names the variables in the release notes.
+- **Answer:** On feedback, and not upstream. In the 2026-09-16 review the repository maintainer said every change to these limits draws complaints; in the review of the first cut he asked to keep the permissive default (fail loudly rather than return a partial result; capable agents page large output themselves) and to set 200000 in the cluster-managed deployment instead. The byte cap keeps its 64 MiB default because it fails loudly.
 - **Affects:** `specs/result-limits/spec.md → Requirement: Caller Lowerable Cell Cap`
 
 ## Verification

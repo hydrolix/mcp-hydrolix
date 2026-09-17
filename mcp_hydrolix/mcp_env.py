@@ -266,8 +266,8 @@ class HydrolixConfig:
         HYDROLIX_MAX_RESULT_CELLS: Maximum number of cells (rows × columns) to return in a
             query result before truncating (default: 50_000)
         HYDROLIX_MAX_RESULT_CELLS_LIMIT: Hard upper bound on max_cells that callers may request;
-            a caller can only lower the effective budget below it (default: 200_000). 0 disables
-            the cap and is meant for single-user stdio setups only.
+            when positive, a caller can only lower the effective budget below it, and
+            max_cells=0 is capped too (default: 0, no cap; cluster-managed deployments set it).
         HYDROLIX_QUERY_MAX_RESULT_BYTES: Max bytes a query may hold on the query head before
             it is cancelled (``hdx_query_max_result_bytes``; default: 64 MiB, minimum 10000)
         HYDROLIX_MAX_RAW_TIMERANGE: Max timerange in seconds for non-summary queries (default: 24 hours)
@@ -323,14 +323,6 @@ class HydrolixConfig:
                 global_password := brand_getenv("HYDROLIX_PASSWORD", "")
             ):
                 self._default_credential = UsernamePassword(global_username, global_password)
-
-        transport = brand_getenv("HYDROLIX_MCP_SERVER_TRANSPORT", TransportType.STDIO.value).lower()
-        if transport != TransportType.STDIO.value and self.max_result_cells_limit == 0:
-            logger.warning(
-                "HYDROLIX_MAX_RESULT_CELLS_LIMIT=0 on the %s transport: callers can disable "
-                "result truncation entirely.",
-                transport,
-            )
 
     def creds_with(self, request_credential: Optional[HydrolixCredential]) -> HydrolixCredential:
         if request_credential is not None:
@@ -555,11 +547,13 @@ class HydrolixConfig:
 
         When > 0, any per-call max_cells value above this limit (or 0, "no
         truncation") is capped to this value, so a caller can only lower the
-        effective budget. 0 disables the cap.
+        effective budget. 0, the default, leaves the caller's max_cells alone;
+        deployments whose clients must not switch truncation off set a positive
+        value (the cluster-managed deployment sets 200_000).
 
-        Configured via HYDROLIX_MAX_RESULT_CELLS_LIMIT (default: 200_000).
+        Configured via HYDROLIX_MAX_RESULT_CELLS_LIMIT (default: 0).
         """
-        return int(brand_getenv("HYDROLIX_MAX_RESULT_CELLS_LIMIT", 200_000))
+        return int(brand_getenv("HYDROLIX_MAX_RESULT_CELLS_LIMIT", 0))
 
     @property
     def query_max_result_bytes(self) -> int:
@@ -902,8 +896,8 @@ class HydrolixConfig:
                     raise ValueError()
             except (ValueError, TypeError):
                 raise ValueError(
-                    f"Invalid HYDROLIX_QUERY_MAX_RESULT_BYTES={raw_bytes!r}: must be an integer "
-                    f"of at least {QUERY_MAX_RESULT_BYTES_FLOOR} (e.g. 67108864)."
+                    f"Invalid {__env_prefix__}QUERY_MAX_RESULT_BYTES={raw_bytes!r}: must be an "
+                    f"integer of at least {QUERY_MAX_RESULT_BYTES_FLOOR} (e.g. 67108864)."
                 )
 
         # Validate the execute_query SETTINGS overrides: each must be a positive
