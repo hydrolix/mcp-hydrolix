@@ -386,10 +386,27 @@ async def execute_query(
     except Exception as err:
         logger.error(f"Error executing query: {err}")
         status = "error"
-        raise ToolError(f"Query execution failed: {str(err)}")
+        raise ToolError(f"Query execution failed: {_with_result_limit_hint(err)}")
     finally:
         metrics.METRICS.queries_total.labels(status=status).inc()
         metrics.METRICS.query_duration_seconds.observe(time.perf_counter() - start)
+
+
+# The query head raises TOO_MANY_ROWS_OR_BYTES (code 396) when a result exceeds the
+# server-set hdx_query_max_result_rows or hdx_query_max_result_bytes. The query is
+# cancelled, not truncated, and these limits are not tool arguments, so the remedy
+# belongs in this error rather than in the tool description.
+_RESULT_LIMIT_HINT: Final[str] = (
+    " The result exceeded a server-side size limit and the query was cancelled rather than "
+    "truncated; select fewer columns, add a LIMIT, or narrow the time range."
+)
+
+
+def _with_result_limit_hint(err: Exception) -> str:
+    text = str(err)
+    if "TOO_MANY_ROWS_OR_BYTES" in text or "Limit for result exceeded" in text:
+        return text + _RESULT_LIMIT_HINT
+    return text
 
 
 async def execute_cmd(query: str):
@@ -798,9 +815,7 @@ async def run_select_query(
     RESULT TRUNCATION:
 
     Query results are automatically truncated when the total cell count (rows * columns)
-    exceeds the configured limit. Separately, the cluster cancels a query whose result
-    exceeds the server's byte cap instead of truncating it; if a query fails that way,
-    select fewer columns or narrow the time range.
+    exceeds the configured limit.
 
     Response shape:
         - Always present: columns, rows, truncated (bool), row_count
