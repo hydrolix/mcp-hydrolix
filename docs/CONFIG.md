@@ -102,7 +102,7 @@ Every query the server runs carries `hdx_query_admin_comment` (the server's iden
 
 ### Tool policy
 
-Every tool the server registers is read-only. A future write tool must be listed in `WRITE_TOOLS_REQUIRING_CONFIRMATION` in `mcp_hydrolix/mcp_server.py`, declare `destructiveHint=True`, and require confirmation from the client before it runs; the test suite enforces this.
+Every tool the server registers is read-only. A future write tool must declare `destructiveHint=True`, require confirmation from the client before it runs, and be added to the allow-list in `tests/test_write_tool_policy.py`; the test suite enforces this.
 
 ### HTTP/SSE worker tuning
 

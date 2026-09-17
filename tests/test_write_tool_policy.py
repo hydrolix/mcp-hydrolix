@@ -1,13 +1,18 @@
 """Every registered tool is read-only unless it is an acknowledged write tool (HDX-12410).
 
-Scenario names mirror openspec/changes/gateway-hardening/specs/write-tool-policy.
+The allow-list below is the golden value: it names every tool permitted to write.
+Adding a write tool means adding its name here, declaring destructiveHint=True on
+it, and requiring confirmation from the client before it runs. Scenario names
+mirror openspec/changes/write-tool-policy/specs/write-tool-policy.
 """
 
 from __future__ import annotations
 
 import pytest
 
-from mcp_hydrolix.mcp_server import WRITE_TOOLS_REQUIRING_CONFIRMATION, mcp
+from mcp_hydrolix.mcp_server import mcp
+
+WRITE_TOOLS_REQUIRING_CONFIRMATION: frozenset[str] = frozenset()
 
 
 @pytest.fixture(scope="module")

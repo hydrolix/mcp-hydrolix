@@ -16,10 +16,10 @@
 
 ### Decision: write-tool-policy-test
 
-- **Choice:** `WRITE_TOOLS_REQUIRING_CONFIRMATION` (empty) plus a test over `mcp.list_tools()`.
-- **Why:** Documentation alone enforces nothing; a test fails the suite the moment a tool is registered without the right annotations or without being listed.
-- **Alternatives:** A runtime check at registration — the failure would surface at startup instead of in CI, with no gain.
-- **Binding:** A new write tool MUST be added to the set and MUST declare `destructiveHint=True`, or the suite fails.
+- **Choice:** An allow-list of write tools kept in the test module, empty today, plus a test over `mcp.list_tools()`.
+- **Why:** Documentation alone enforces nothing; a test fails the suite the moment a tool is registered without the right annotations or without being listed. The allow-list is the test's golden value, so it lives with the test rather than as a constant in the source (review feedback on the first cut).
+- **Alternatives:** A runtime check at registration — the failure would surface at startup instead of in CI, with no gain. A constant in `mcp_server.py` — a test expectation in production code, read by nothing at runtime.
+- **Binding:** A new write tool MUST be added to the test module's allow-list and MUST declare `destructiveHint=True`, or the suite fails.
 
 ## Risks / Trade-offs
 
