@@ -22,12 +22,12 @@
 - **Alternatives:** Switch to raw HTTP with JSONCompact — rewrites the execution path. Reject statements with a FORMAT clause — turns the most common agent habit into an error.
 - **Binding:** `run_select_query` MUST call `normalize_statement` before `inject_limit`, and MUST NOT change the statement in any other way here.
 
-### Decision: clickhouse-lexer-scanner
+### Decision: sqlglot-tokenizer
 
-- **Choice:** A character scanner that drops `--`, `#`, `#!` line comments and nested block comments, consumes single-quoted strings (with backslash escapes) and backtick or double-quoted identifiers whole, records parenthesis depth, and marks a keyword after `identifier.` or `AS` as an identifier.
-- **Why:** A regex on the tail mis-reads `-- FORMAT JSON` in a comment, a literal ending the statement, or a column named `format`. sqlglot cannot be used because it does not parse every valid Hydrolix statement.
-- **Alternatives:** Tail regex — the cases above. sqlglot — fails on summary-table SQL.
-- **Binding:** Only a top-level `FORMAT` followed by a bare word is removed; `format(...)`, `AS format` and `ORDER BY format` are untouched.
+- **Choice:** Use sqlglot's ClickHouse tokenizer to find the statement's last significant tokens; no hand-written scanner and no parse.
+- **Why:** The tokenizer already knows the dialect's comment forms (`--`, `#`, `#!`, nested `/* */`), string literals and quoted identifiers, and tokenizing needs no grammar, so summary-table statements that sqlglot's parser cannot read still tokenize. The maintainer does not want a SQL lexer maintained in this repository (review of the first cut, which shipped one).
+- **Alternatives:** A hand-written scanner — the first cut; correct, but a lexer to maintain. sqlglot's parser — fails on summary-table SQL. A tail regex — misreads `-- FORMAT JSON` in a comment, a literal ending the statement, or a column named `format`.
+- **Binding:** Only a trailing `FORMAT` keyword token followed by a bare word is removed; `format(...)`, `AS format` and `ORDER BY format` are untouched; text the tokenizer cannot read passes through unchanged.
 
 ## Risks / Trade-offs
 

@@ -768,9 +768,6 @@ async def run_select_query(
     """Run a SELECT query in a Hydrolix time-series database using the Clickhouse SQL dialect.
     Queries run using this tool will timeout after 30 seconds.
 
-    Do not add a FORMAT clause: the server selects the wire format, and a trailing FORMAT
-    is removed before the statement runs.
-
     PURPOSE:
 
     Pass a short `purpose` describing why the query is being run (for example "top error

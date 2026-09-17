@@ -2,18 +2,21 @@
 
 clickhouse-connect appends its own ``FORMAT Native`` to every query, so a FORMAT
 clause left in by the agent produces two and ClickHouse refuses the statement.
+Tokenizing is sqlglot's ClickHouse tokenizer; these tests pin the dialect
+behaviour the normaliser relies on.
 """
 
 from __future__ import annotations
 
 import pytest
 from fastmcp import Client
+from sqlglot.tokens import TokenType
 
 from mcp_hydrolix.statement import normalize_statement, tokenize
 
 
 class TestTokenize:
-    def test_drops_line_and_block_comments(self):
+    def test_uses_clickhouse_comment_forms(self):
         texts = [t.text for t in tokenize("/* a */ SELECT 1 -- b\n# c\n#! d\nFROM db.t")]
         assert texts == ["SELECT", "1", "FROM", "db", ".", "t"]
 
@@ -21,19 +24,23 @@ class TestTokenize:
         assert [t.text for t in tokenize("SELECT 1 /* a /* b */ ; DROP */")] == ["SELECT", "1"]
 
     def test_literal_and_quoted_identifier_are_single_tokens(self):
-        tokens = tokenize("SELECT 'it\\'s; x', `weird col`, \"q\" FROM db.t")
-        assert [t.kind for t in tokens][:4] == ["word", "literal", "punct", "quoted"]
+        types = [t.token_type for t in tokenize("SELECT 'it\\'s; x', `weird col`, \"q\" FROM db.t")]
+        assert types[:4] == [
+            TokenType.SELECT,
+            TokenType.STRING,
+            TokenType.COMMA,
+            TokenType.IDENTIFIER,
+        ]
 
     def test_apostrophe_in_hash_comment_does_not_open_a_string(self):
         assert [t.text for t in tokenize("SELECT 1 # it's\n; DROP TABLE x")][2:4] == [";", "DROP"]
 
-    def test_keyword_after_identifier_dot_or_as_is_identifier(self):
-        tokens = tokenize("SELECT a.format AS format FROM db.settings")
-        assert [t.text for t in tokens if t.is_identifier] == ["format", "format", "settings"]
-
-    def test_depth_tracks_parentheses(self):
-        tokens = tokenize("SELECT (SELECT 1) FROM db.t")
-        assert [t.depth for t in tokens if t.text in ("SELECT", "FROM")] == [0, 1, 0]
+    def test_summary_table_statement_tokenizes(self):
+        sql = (
+            "SELECT countMerge(`count(x)`) FROM db.summary "
+            "WHERE `toStartOfMinute(ts)` > now() - INTERVAL 1 HOUR FORMAT JSONCompact"
+        )
+        assert tokenize(sql)[-2].token_type is TokenType.FORMAT
 
 
 class TestNormalizeStatement:
@@ -44,6 +51,12 @@ class TestNormalizeStatement:
 
     def test_strips_format_with_trailing_comment(self):
         result = normalize_statement("SELECT a FROM db.t FORMAT JSON -- done")
+        assert result.sql == "SELECT a FROM db.t"
+        assert result.format_removed is True
+
+    @pytest.mark.parametrize("name", ["Null", "Values", "JSON", "TabSeparated"])
+    def test_strips_format_names_that_tokenize_as_keywords(self, name):
+        result = normalize_statement(f"SELECT a FROM db.t FORMAT {name}")
         assert result.sql == "SELECT a FROM db.t"
         assert result.format_removed is True
 
@@ -83,6 +96,9 @@ class TestNormalizeStatement:
 
     def test_empty_input_is_returned_empty(self):
         assert normalize_statement("  -- nothing \n").sql == ""
+
+    def test_unreadable_text_passes_through(self):
+        assert normalize_statement("SELECT 'abc").sql == "SELECT 'abc"
 
 
 @pytest.mark.integration_clickhouse

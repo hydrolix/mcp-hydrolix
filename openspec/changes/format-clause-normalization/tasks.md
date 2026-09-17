@@ -4,7 +4,7 @@
 
 ## 1. Implementation
 
-- [x] 1.1 Add `mcp_hydrolix/statement.py`: `tokenize`, `is_clause_keyword`, `normalize_statement` [implements: query-text-handling/format-clause-removed, query-text-handling/trailing-semicolon-and-comments-removed, query-text-handling/comments-read-like-clickhouse, design/clickhouse-lexer-scanner] — verify: `pytest -q tests/test_statement.py::TestTokenize tests/test_statement.py::TestNormalizeStatement` green
+- [x] 1.1 Add `mcp_hydrolix/statement.py`: `tokenize` (sqlglot's ClickHouse tokenizer) and `normalize_statement` [implements: query-text-handling/format-clause-removed, query-text-handling/trailing-semicolon-and-comments-removed, query-text-handling/comments-read-like-clickhouse, design/sqlglot-tokenizer] — verify: `pytest -q tests/test_statement.py::TestTokenize tests/test_statement.py::TestNormalizeStatement` green
 - [x] 1.2 Call `normalize_statement` at the top of `run_select_query`, before `inject_limit` [implements: query-text-handling/format-clause-removed, design/remove-not-impose] — verify: `grep -n normalize_statement mcp_hydrolix/mcp_server.py` shows the import and one call
 
 ## 2. Tests
