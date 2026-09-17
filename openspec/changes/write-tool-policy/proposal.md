@@ -8,8 +8,8 @@ The server's tools are all read-only today, and clients rely on the `readOnlyHin
 
 ## What Changes
 
-- `WRITE_TOOLS_REQUIRING_CONFIRMATION`, an empty set in `mcp_hydrolix/mcp_server.py`, names every tool allowed to write.
-- A test asserts that every registered tool not in the set declares `readOnlyHint=True` and `destructiveHint=False`, and that every name in the set is a registered tool declaring `destructiveHint=True`.
+- An allow-list in `tests/test_write_tool_policy.py`, empty today, names every tool permitted to write.
+- A test asserts that every registered tool not in the list declares `readOnlyHint=True` and `destructiveHint=False`, and that every name in the list is a registered tool declaring `destructiveHint=True`. No source file changes.
 
 ## Capabilities
 
@@ -23,7 +23,6 @@ The server's tools are all read-only today, and clients rely on the `readOnlyHin
 
 ## Impact
 
-- `mcp_hydrolix/mcp_server.py` — one constant and its comment.
-- `tests/test_write_tool_policy.py` — two tests.
+- `tests/test_write_tool_policy.py` — the allow-list and two tests.
 - `docs/CONFIG.md` — "Tool policy".
-- No runtime behaviour changes.
+- No source or runtime changes.

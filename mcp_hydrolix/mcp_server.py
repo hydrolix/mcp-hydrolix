@@ -471,13 +471,6 @@ if HYDROLIX_CONFIG.metrics_enabled:
 mcp.add_middleware(ServiceAccountAttributionMiddleware())
 
 
-# Every tool this server registers is read-only. A future write tool must be listed
-# here, declare destructiveHint=True in its ToolAnnotations, and require confirmation
-# from the client before it runs, so a gateway in front of the server (MCPKA) can
-# authorize it separately. tests/test_write_tool_policy.py enforces the rule.
-WRITE_TOOLS_REQUIRING_CONFIRMATION: Final[frozenset[str]] = frozenset()
-
-
 async def _query_targets_summary_table(query: str) -> bool:
     """Return True if any table referenced in the query is a summary table.
 
