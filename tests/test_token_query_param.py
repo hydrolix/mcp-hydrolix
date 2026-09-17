@@ -36,7 +36,7 @@ def test_only_an_explicit_false_disables(monkeypatch):
 
 def test_disabling_logs_at_startup(monkeypatch, caplog):
     monkeypatch.setenv("HYDROLIX_ALLOW_TOKEN_QUERY_PARAM", "false")
-    with caplog.at_level(logging.INFO, logger="mcp-hydrolix"):
+    with caplog.at_level(logging.DEBUG, logger="mcp-hydrolix"):
         HydrolixConfig()
     assert any("HYDROLIX_ALLOW_TOKEN_QUERY_PARAM" in r.getMessage() for r in caplog.records)
 

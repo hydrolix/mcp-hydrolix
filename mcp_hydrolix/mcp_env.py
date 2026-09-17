@@ -328,7 +328,7 @@ class HydrolixConfig:
                 self._default_credential = UsernamePassword(global_username, global_password)
 
         if not self.allow_token_query_param:
-            logger.info(
+            logger.debug(
                 "HYDROLIX_ALLOW_TOKEN_QUERY_PARAM=false: the ?token= query parameter is not "
                 "accepted; clients must send Authorization: Bearer."
             )
