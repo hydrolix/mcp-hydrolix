@@ -92,6 +92,10 @@ These map to per-query Hydrolix/ClickHouse settings sent with every query:
 * `HYDROLIX_METRICS_ENABLED`: Enable Prometheus metrics
   * Default: `"false"`
 
+### Query text handling
+
+`run_select_query` removes comments, a trailing semicolon and a trailing `FORMAT <name>` clause from the statement before running it: the driver selects the wire format itself, and a second FORMAT clause fails the statement. The text is read with sqlglot's ClickHouse tokenizer, never parsed, so comments, string literals and quoted identifiers are handled the way ClickHouse handles them, `format(...)` calls and columns named `format` are untouched, and summary-table statements are unaffected.
+
 ### Query attribution
 
 Every query the server runs carries `hdx_query_admin_comment` (the server's identity) in the query settings. `run_select_query` also records its optional `purpose` argument as `hdx_query_comment`, collapsed to single spaces and capped at 256 characters; both land in `hydro.logs` and `hdx.active_queries` with no schema change.
