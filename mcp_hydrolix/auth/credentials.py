@@ -15,6 +15,16 @@ class HydrolixCredential(ABC):
         """
         ...
 
+    @property
+    @abstractmethod
+    def subject(self) -> str:
+        """The identity the cluster authenticates this credential as.
+
+        A token's ``sub`` claim or a basic-auth username. Every credential type
+        declares one, so nothing downstream has to guess at attribute names.
+        """
+        ...
+
 
 @dataclass
 class ServiceAccountToken(HydrolixCredential):
@@ -46,6 +56,10 @@ class ServiceAccountToken(HydrolixCredential):
     def clickhouse_config_entries(self) -> dict:
         return {"access_token": self.token}
 
+    @property
+    def subject(self) -> str:
+        return self.service_account_id
+
     token: str
     service_account_id: str
     issued_at: int
@@ -58,6 +72,10 @@ class UsernamePassword(HydrolixCredential):
 
     def clickhouse_config_entries(self) -> dict:
         return {"username": self.username, "password": self.password}
+
+    @property
+    def subject(self) -> str:
+        return self.username
 
     username: str
     password: str
