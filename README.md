@@ -203,7 +203,7 @@ The server supports multiple authentication methods with the following precedenc
    - Service account token (`HYDROLIX_TOKEN`), or
    - Username and password (`HYDROLIX_USER` and `HYDROLIX_PASSWORD`)
 
-When multiple authentication methods are configured, the server will use the first available method in the precedence order above. Per-request authentication is only available when using HTTP or SSE transport modes.
+When multiple authentication methods are configured, the server will use the first available method in the precedence order above. Per-request authentication is only available when using HTTP or SSE transport modes. The `?token=` form exists for clients that cannot send headers; set `HYDROLIX_ALLOW_TOKEN_QUERY_PARAM=false` on deployments where every client sends the `Authorization` header (see [Per-request credentials](docs/CONFIG.md#per-request-credentials)).
 
 **Note: Using a service account token with a readonly role is recommended.**
 

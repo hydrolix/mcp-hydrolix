@@ -137,7 +137,9 @@ def startup_banner() -> str:
 
 mcp = FastMCP(
     name=MCP_SERVER_NAME,
-    auth=HydrolixCredentialChain(None),
+    auth=HydrolixCredentialChain(
+        None, allow_token_query_param=HYDROLIX_CONFIG.allow_token_query_param
+    ),
     # External deployments with deprecated config get an LLM-visible nudge via the
     # MCP ``instructions`` channel; internal/clean configs advertise no instructions.
     instructions=(
