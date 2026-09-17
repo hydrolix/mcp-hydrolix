@@ -22,4 +22,4 @@ The server MUST accept a service-account token from the `?token=` query paramete
 #### Scenario: Disabling Logs
 
 - **WHEN** `HYDROLIX_ALLOW_TOKEN_QUERY_PARAM=false` and the configuration is built
-- **THEN** an info log naming the variable is emitted
+- **THEN** a debug log naming the variable is emitted
