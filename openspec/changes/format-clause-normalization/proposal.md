@@ -8,7 +8,7 @@ clickhouse-connect appends `FORMAT Native` to every query it sends. When an agen
 
 ## What Changes
 
-- New module `mcp_hydrolix/statement.py`: a comment-, literal- and quote-aware scanner that follows ClickHouse's lexer, and `normalize_statement`, which drops comments, one trailing semicolon and one trailing top-level `FORMAT <name>`.
+- New module `mcp_hydrolix/statement.py`: `normalize_statement`, built on sqlglot's ClickHouse tokenizer (no parsing), drops comments, one trailing semicolon and one trailing top-level `FORMAT <name>`.
 - `run_select_query` normalises the statement before the LIMIT rewrite; nothing else about the statement changes, and inner semicolons are left alone.
 
 ## Capabilities

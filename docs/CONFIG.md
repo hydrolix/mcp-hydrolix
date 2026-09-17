@@ -94,7 +94,7 @@ These map to per-query Hydrolix/ClickHouse settings sent with every query:
 
 ### Query text handling
 
-`run_select_query` removes comments, a trailing semicolon and a trailing `FORMAT <name>` clause from the statement before running it: the driver selects the wire format itself, and a second FORMAT clause fails the statement. Comments, string literals and quoted identifiers are read the way ClickHouse reads them, so `format(...)` calls and columns named `format` are untouched.
+`run_select_query` removes comments, a trailing semicolon and a trailing `FORMAT <name>` clause from the statement before running it: the driver selects the wire format itself, and a second FORMAT clause fails the statement. The text is read with sqlglot's ClickHouse tokenizer, never parsed, so comments, string literals and quoted identifiers are handled the way ClickHouse handles them, `format(...)` calls and columns named `format` are untouched, and summary-table statements are unaffected.
 
 ### Query attribution
 

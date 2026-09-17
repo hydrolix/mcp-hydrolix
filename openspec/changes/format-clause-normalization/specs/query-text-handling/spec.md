@@ -42,7 +42,12 @@ Before executing a statement, `run_select_query` MUST remove a trailing top-leve
 
 ### Requirement: Comments Read Like ClickHouse
 
-The scanner MUST treat `--`, `#` and `#!` as line comments, MUST nest block comments, and MUST consume string literals and quoted identifiers whole.
+Tokenizing MUST treat `--`, `#` and `#!` as line comments, MUST nest block comments, and MUST consume string literals and quoted identifiers whole (sqlglot's ClickHouse tokenizer does); text the tokenizer cannot read MUST pass through unchanged.
+
+#### Scenario: Unreadable Text Passes Through
+
+- **WHEN** the text is `SELECT 'abc` (an unterminated literal)
+- **THEN** the statement is unchanged
 
 #### Scenario: Apostrophe In Hash Comment
 
