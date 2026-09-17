@@ -37,6 +37,8 @@ from mcp_hydrolix.auth import (
     UsernamePassword,
     get_request_credential,
 )
+from mcp_hydrolix.attribution import build_admin_comment, render_admin_comment
+from mcp_hydrolix.request_attribution import RequestAttributionMiddleware, current_attribution
 from mcp_hydrolix.sa_attribution import ServiceAccountAttributionMiddleware
 from mcp_hydrolix.statement import normalize_statement
 from mcp_hydrolix import mcp_env
@@ -104,11 +106,15 @@ def _resolve_server_version() -> str:
 
 SERVER_VERSION: Final[str] = _resolve_server_version()
 
-HDX_ADMIN_COMMENT: Final[str] = (
-    f"User: {MCP_SERVER_NAME} "
-    f"version: {SERVER_VERSION} "
-    f"transport: {HYDROLIX_CONFIG.mcp_server_transport}"
-)
+# The static half of hdx_query_admin_comment: which server, at which version, on
+# which transport. execute_query appends the per-request half (sub, agent, model,
+# session, trace); mcp_hydrolix.attribution owns the vocabulary (HDX-12008).
+_APP_IDENTITY: Final[dict[str, str]] = {
+    "User": MCP_SERVER_NAME,
+    "version": SERVER_VERSION,
+    "transport": HYDROLIX_CONFIG.mcp_server_transport,
+}
+HDX_ADMIN_COMMENT: Final[str] = build_admin_comment(_APP_IDENTITY)
 
 # Leading token of the outbound User-Agent on every HTTP request the server
 # makes to the configured cluster (e.g. the /version probe). Sourced from the
@@ -152,6 +158,8 @@ async def create_hydrolix_client(pool_mgr, request_credential: Optional[Hydrolix
     of properties like `server_version`, and so may throw exceptions.
     INV: clients returned by this method MUST NOT be reused across sessions, because they can close over per-session
     credentials.
+    ``request_credential`` may be the request's own credential, an already resolved one
+    (``creds_with`` is idempotent on it), or None for the environment default.
     """
     creds = HYDROLIX_CONFIG.creds_with(request_credential)
     auth_info = (
@@ -332,7 +340,7 @@ async def execute_query(
     extra_settings: Optional[Dict[str, Any]] = None,
     comment: Optional[str] = None,
 ) -> HdxQueryResult:
-    """Run a query with the server's guardrail settings attached.
+    """Run a query with the server's guardrail settings and attribution attached.
 
     ``comment`` is the caller's stated purpose; it is recorded as ``hdx_query_comment``
     so operators can see what an agent was doing (HDX-12008).
@@ -340,10 +348,12 @@ async def execute_query(
     start = time.perf_counter()
     status = "success"
     try:
-        async with await create_hydrolix_client(
-            client_shared_pool, get_request_credential()
-        ) as client:
+        credential = HYDROLIX_CONFIG.creds_with(get_request_credential())
+        async with await create_hydrolix_client(client_shared_pool, credential) as client:
             purpose = sanitize_purpose(comment)
+            # The request half was resolved once by RequestAttributionMiddleware; sub is
+            # the subject of the credential this very query authenticates with.
+            attribution = current_attribution().with_sub(credential.subject)
             settings: dict[str, Any] = (
                 {
                     "readonly": 1,
@@ -351,7 +361,7 @@ async def execute_query(
                     "hdx_query_max_attempts": HYDROLIX_CONFIG.query_max_attempts,
                     "hdx_query_max_result_rows": HYDROLIX_CONFIG.query_max_result_rows,
                     "hdx_query_max_memory_usage": HYDROLIX_CONFIG.query_max_memory_usage,
-                    "hdx_query_admin_comment": HDX_ADMIN_COMMENT,
+                    "hdx_query_admin_comment": render_admin_comment(HDX_ADMIN_COMMENT, attribution),
                 }
                 | ({"hdx_query_comment": purpose} if purpose else {})
                 | _pool_settings()
@@ -473,6 +483,10 @@ if HYDROLIX_CONFIG.metrics_enabled:
 # Per-request SA attribution logging (HDX-11151). Unconditional; see
 # mcp_hydrolix.sa_attribution for the temporary-stopgap rationale.
 mcp.add_middleware(ServiceAccountAttributionMiddleware())
+
+# Resolves the request half of hdx_query_admin_comment once per MCP request; the
+# queries a request issues read it from the context (HDX-12008).
+mcp.add_middleware(RequestAttributionMiddleware())
 
 
 async def _query_targets_summary_table(query: str) -> bool:
