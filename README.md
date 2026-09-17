@@ -150,7 +150,7 @@ Click the **Install in VS Code** badge at the top of this README for a one-click
 * `run_select_query`
   * Execute SQL queries on your Hydrolix cluster.
   * Input: `query` (string): The SQL query to execute.
-  * Input: `max_cells` (integer, optional): Result cell budget (rows × columns) for truncation.
+  * Input: `max_cells` (integer, optional): Result cell budget (rows × columns); when the server sets a cap, a caller can only lower it.
   * Input: `purpose` (string, optional): Why the query is being run; recorded with the query as `hdx_query_comment`.
   * A trailing `FORMAT` clause is removed; the server selects the wire format.
 

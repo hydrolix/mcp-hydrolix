@@ -360,6 +360,7 @@ async def execute_query(
                     "hdx_query_max_execution_time": HYDROLIX_CONFIG.query_timeout_sec,
                     "hdx_query_max_attempts": HYDROLIX_CONFIG.query_max_attempts,
                     "hdx_query_max_result_rows": HYDROLIX_CONFIG.query_max_result_rows,
+                    "hdx_query_max_result_bytes": HYDROLIX_CONFIG.query_max_result_bytes,
                     "hdx_query_max_memory_usage": HYDROLIX_CONFIG.query_max_memory_usage,
                     "hdx_query_admin_comment": render_admin_comment(HDX_ADMIN_COMMENT, attribution),
                 }
@@ -385,10 +386,27 @@ async def execute_query(
     except Exception as err:
         logger.error(f"Error executing query: {err}")
         status = "error"
-        raise ToolError(f"Query execution failed: {str(err)}")
+        raise ToolError(f"Query execution failed: {_with_result_limit_hint(err)}")
     finally:
         metrics.METRICS.queries_total.labels(status=status).inc()
         metrics.METRICS.query_duration_seconds.observe(time.perf_counter() - start)
+
+
+# The query head raises TOO_MANY_ROWS_OR_BYTES (code 396) when a result exceeds the
+# server-set hdx_query_max_result_rows or hdx_query_max_result_bytes. The query is
+# cancelled, not truncated, and these limits are not tool arguments, so the remedy
+# belongs in this error rather than in the tool description.
+_RESULT_LIMIT_HINT: Final[str] = (
+    " The result exceeded a server-side size limit and the query was cancelled rather than "
+    "truncated; select fewer columns, add a LIMIT, or narrow the time range."
+)
+
+
+def _with_result_limit_hint(err: Exception) -> str:
+    text = str(err)
+    if "TOO_MANY_ROWS_OR_BYTES" in text or "Limit for result exceeded" in text:
+        return text + _RESULT_LIMIT_HINT
+    return text
 
 
 async def execute_cmd(query: str):
@@ -739,8 +757,8 @@ def _build_truncation_response(
     else:
         retrieve_more = (
             "Consider refining your query with LIMIT, WHERE filters, or GROUP BY. "
-            "To retrieve more data, call run_select_query with a larger max_cells value "
-            "(e.g. max_cells=200000), or set max_cells=0 to disable truncation entirely."
+            "To retrieve more data, call run_select_query with a larger max_cells value, "
+            "up to the server's cap."
         )
 
     return RunSelectQueryResult(
