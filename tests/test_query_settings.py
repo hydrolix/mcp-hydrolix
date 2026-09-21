@@ -200,7 +200,7 @@ class TestExecuteQuerySettingsFromEnv:
         settings = await _settings_from_execute_query()
         assert settings["hdx_query_max_attempts"] == 1
         assert settings["hdx_query_max_result_rows"] == 100_000
-        assert settings["hdx_query_max_memory_usage"] == 2 * 1024 * 1024 * 1024
+        assert settings["hdx_query_max_memory_usage"] == 4 * 1024 * 1024 * 1024
 
     async def test_overrides_flow_into_settings(self, monkeypatch):
         monkeypatch.setenv("HYDROLIX_QUERY_MAX_ATTEMPTS", "5")

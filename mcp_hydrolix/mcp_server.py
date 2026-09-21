@@ -751,7 +751,7 @@ async def run_select_query(
     max_cells: Optional[int] = None,
 ) -> RunSelectQueryResult:
     """Run a SELECT query in a Hydrolix time-series database using the Clickhouse SQL dialect.
-    Queries run using this tool will timeout after 30 seconds.
+    Queries run using this tool will timeout after 120 seconds.
 
     FULLY-QUALIFIED TABLE NAMES:
 

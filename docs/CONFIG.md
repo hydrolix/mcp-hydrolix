@@ -36,7 +36,7 @@ External operators using any of these will see a one-time startup warning advisi
 * `HYDROLIX_SEND_RECEIVE_TIMEOUT`: Send/receive timeout in seconds
   * Default: `300`
 * `HYDROLIX_QUERY_TIMEOUT_SECS`: Per-query execution timeout in seconds
-  * Default: `30`
+  * Default: `120`
 * `HYDROLIX_QUERIES_POOL_SIZE`: Size of the client-side query executor thread pool (`executor_threads` passed to clickhouse-connect)
   * Default: `100`
   * Unrelated to `HYDROLIX_QUERY_POOL` / `HYDROLIX_QUERY_HEAD_POOL`, which route queries to cluster-side pools
@@ -59,7 +59,7 @@ These map to per-query Hydrolix/ClickHouse settings sent with every query:
   * Default: `"true"`
   * Only an explicit `"false"` disables the guard; any other value (including a typo) keeps it on
 * `HYDROLIX_QUERY_MAX_MEMORY_USAGE`: Max bytes of memory a single query may use (`hdx_query_max_memory_usage`)
-  * Default: `2147483648` (2 GiB)
+  * Default: `4294967296` (4 GiB)
 * `HYDROLIX_QUERY_MAX_ATTEMPTS`: Max number of times Hydrolix retries a query (`hdx_query_max_attempts`)
   * Default: `1` (no retries)
 * `HYDROLIX_QUERY_MAX_RESULT_ROWS`: Max number of rows a query may return (`hdx_query_max_result_rows`)
@@ -73,7 +73,7 @@ These map to per-query Hydrolix/ClickHouse settings sent with every query:
   * Default: `0` (no cap enforced)
   * Set to a positive integer in multi-tenant HTTP/SSE deployments to prevent a single session from materializing very large result sets
 * `HYDROLIX_MAX_RAW_TIMERANGE`: Maximum time range in seconds allowed for queries against non-summary tables
-  * Default: `21600` (6 hours)
+  * Default: `86400` (24 hours)
   * Queries targeting summary tables are not affected by this limit
 * `HYDROLIX_QUERY_POOL`: Name of the Hydrolix query pool to route queries to (sets `hdx_query_pool_name`)
   * Default: None (uses the cluster's default query pool)
