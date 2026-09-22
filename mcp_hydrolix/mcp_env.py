@@ -264,7 +264,7 @@ class HydrolixConfig:
         HYDROLIX_MAX_RESULT_CELLS_LIMIT: Hard upper bound on max_cells that callers may request.
             0 means no limit is enforced (default: 0). Set this in multi-tenant HTTP/SSE
             deployments to prevent a single session from materialising very large result sets.
-        HYDROLIX_MAX_RAW_TIMERANGE: Max timerange in seconds for non-summary queries (default: 6 hours)
+        HYDROLIX_MAX_RAW_TIMERANGE: Max timerange in seconds for non-summary queries (default: 24 hours)
         HYDROLIX_QUERY_POOL: Name of the Hydrolix query pool to route queries to. When set, every
             query the server issues carries the ``hdx_query_pool_name`` setting instead of using
             the cluster's default pool. The named pool must already exist on the cluster. In
@@ -486,9 +486,9 @@ class HydrolixConfig:
     def query_timeout_sec(self) -> int:
         """Get the per-query execution timeout in seconds.
 
-        Default: 30
+        Default: 120
         """
-        return int(brand_getenv("HYDROLIX_QUERY_TIMEOUT_SECS", 30))
+        return int(brand_getenv("HYDROLIX_QUERY_TIMEOUT_SECS", 120))
 
     @property
     def query_timerange_required(self) -> bool:
@@ -505,9 +505,9 @@ class HydrolixConfig:
         """Max bytes of memory a single query may use.
 
         Maps to the ``hdx_query_max_memory_usage`` Hydrolix query setting.
-        Default: 2 GiB.
+        Default: 4 GiB.
         """
-        return int(brand_getenv("HYDROLIX_QUERY_MAX_MEMORY_USAGE", 2 * 1024 * 1024 * 1024))
+        return int(brand_getenv("HYDROLIX_QUERY_MAX_MEMORY_USAGE", 4 * 1024 * 1024 * 1024))
 
     @property
     def query_max_attempts(self) -> int:
@@ -611,9 +611,9 @@ class HydrolixConfig:
     def max_raw_timerange(self) -> int:
         """Get the max timerange in seconds for non-summary queries.
 
-        Default: 6 hours.
+        Default: 24 hours.
         """
-        return int(brand_getenv("HYDROLIX_MAX_RAW_TIMERANGE", 6 * 60 * 60))
+        return int(brand_getenv("HYDROLIX_MAX_RAW_TIMERANGE", 24 * 60 * 60))
 
     @property
     def query_pool(self) -> Optional[str]:
@@ -874,7 +874,7 @@ class HydrolixConfig:
         # Validate the execute_query SETTINGS overrides: each must be a positive
         # integer if set (they map to Hydrolix per-query limits).
         for var_name, example in (
-            ("HYDROLIX_QUERY_MAX_MEMORY_USAGE", "2_147_483_648"),
+            ("HYDROLIX_QUERY_MAX_MEMORY_USAGE", "4_294_967_296"),
             ("HYDROLIX_QUERY_MAX_ATTEMPTS", "1"),
             ("HYDROLIX_QUERY_MAX_RESULT_ROWS", "100_000"),
         ):

@@ -102,7 +102,7 @@ class TestExecuteQuerySettings:
         assert config.query_timerange_required is expected
 
     def test_max_memory_usage_default(self, config: HydrolixConfig) -> None:
-        assert config.query_max_memory_usage == 2 * 1024 * 1024 * 1024
+        assert config.query_max_memory_usage == 4 * 1024 * 1024 * 1024
 
     def test_max_memory_usage_override(
         self, config: HydrolixConfig, monkeypatch: pytest.MonkeyPatch
