@@ -36,7 +36,7 @@ jobs:
       # mcp-trafficpeak wheel is published by the sibling repo (which checks out
       # this repo at the tag and runs the brand build), dispatched below.
       - run: MCP_BRAND=hydrolix uv build
-      - uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b  # release/v1
+      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33  # v1.14.2 (twine 7 / packaging 26: Metadata-Version 2.5)
   dispatch-trafficpeak:
     # Fire off the sibling repo's publish workflow once the Hydrolix wheel is up, so
     # mcp-trafficpeak is published at the same version from the same commit. A
