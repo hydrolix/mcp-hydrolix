@@ -1,0 +1,23 @@
+name: Release artifact check
+
+# Rehearses the release build on every merge to main: builds and verifies every
+# release artifact (both brands' wheels, docker images, MCPB bundles) without
+# publishing, so a toolchain or packaging break is caught here instead of
+# mid-release on a tag push.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: release-check-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build release artifacts
+    uses: ./.github/workflows/build-release-artifacts.yml
