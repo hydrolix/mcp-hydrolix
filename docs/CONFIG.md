@@ -98,7 +98,15 @@ These map to per-query Hydrolix/ClickHouse settings sent with every query:
 
 ### Query attribution
 
-Every query the server runs carries `hdx_query_admin_comment` (the server's identity) in the query settings. `run_select_query` also records its required `purpose` argument as `hdx_query_comment`, collapsed to single spaces and capped at 256 characters (a blank purpose sends nothing); both land in `hydro.logs` and `hdx.active_queries` with no schema change.
+Every query the server runs carries attribution in two Hydrolix query settings; both land in `hydro.logs` and `hdx.active_queries`.
+
+* `hdx_query_admin_comment` is `User: <distribution> version: <version> transport: <transport>`, the prefix every Hydrolix connector writes, followed by optional colon-separated fields in this order: `sub: <subject> agent: <client>/<version> session: <id> trace: <traceparent> model: <model>`. Values use `[A-Za-z0-9._/@-]`, 64 characters each; empty fields are omitted; the string is capped at 512 bytes by dropping fields from the end (`model` first, the join keys last) and never the three leading fields.
+  * `sub` is the subject of the credential that authenticated the query: the bearer token's `sub` claim (a service account id, or, behind a gateway that exchanges tokens per user, that user's id) or the basic-auth username. It is trustworthy by consequence, since the same credential authenticates the query and a forged value produces no log row. `hydro.logs.user` is the authoritative record when the query head fills it; `sub` is the same identity as this server saw it, and the key the gateway's audit log and the cluster's external identities join on.
+  * `agent`, `model` and `trace` are attested by whoever set them, a gateway in front of the server or any client that can set headers; sanitization bounds them, nothing verifies them.
+  * `session` is the server's session id on `stdio` and `sse`, where one session spans the client connection and so groups one agent run; the server generates it, the client never sees it. It is absent on the stateless HTTP transport, where `trace` is the join key.
+* `hdx_query_comment`: the required `purpose` argument of `run_select_query`, collapsed to single spaces and capped at 256 characters; a blank purpose sends nothing.
+
+The agent fields are resolved once per MCP request, in precedence order: the request headers `X-Hdx-Agent` (`<client>/<version>`), `X-Hdx-Model` and `traceparent`; then the `io.hydrolix/agent` and `io.hydrolix/model` keys of the request's MCP `_meta` (bare `agent` and `model` are accepted as a fallback); then the client name and version from the MCP `initialize` handshake when the transport keeps it (stdio does, the stateless HTTP transport does not). They are observability, not authorization.
 
 ### Tool policy
 
