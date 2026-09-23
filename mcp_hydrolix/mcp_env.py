@@ -21,6 +21,10 @@ from mcp_hydrolix.auth.credentials import HydrolixCredential, ServiceAccountToke
 logger = logging.getLogger("mcp-hydrolix")
 
 
+# Floor the Config API enforces for hdx_query_max_result_bytes.
+QUERY_MAX_RESULT_BYTES_FLOOR = 10_000
+
+
 # Mapping of deprecated env var names to their replacements.
 # Transitional — will be REMOVED when the deprecated aliases are dropped.
 ALIAS_RENAMES: dict[str, str] = {
@@ -261,9 +265,11 @@ class HydrolixConfig:
         HYDROLIX_MCP_MAX_KEEPALIVE 10
         HYDROLIX_MAX_RESULT_CELLS: Maximum number of cells (rows × columns) to return in a
             query result before truncating (default: 50_000)
-        HYDROLIX_MAX_RESULT_CELLS_LIMIT: Hard upper bound on max_cells that callers may request.
-            0 means no limit is enforced (default: 0). Set this in multi-tenant HTTP/SSE
-            deployments to prevent a single session from materialising very large result sets.
+        HYDROLIX_MAX_RESULT_CELLS_LIMIT: Hard upper bound on max_cells that callers may request;
+            when positive, a caller can only lower the effective budget below it, and
+            max_cells=0 is capped too (default: 0, no cap; cluster-managed deployments set it).
+        HYDROLIX_QUERY_MAX_RESULT_BYTES: Max bytes a query may hold on the query head before
+            it is cancelled (``hdx_query_max_result_bytes``; default: 64 MiB, minimum 10000)
         HYDROLIX_MAX_RAW_TIMERANGE: Max timerange in seconds for non-summary queries (default: 24 hours)
         HYDROLIX_QUERY_POOL: Name of the Hydrolix query pool to route queries to. When set, every
             query the server issues carries the ``hdx_query_pool_name`` setting instead of using
@@ -539,13 +545,25 @@ class HydrolixConfig:
     def max_result_cells_limit(self) -> int:
         """Get the hard upper bound on the max_cells value callers may request.
 
-        When > 0, any per-call max_cells value above this limit is capped to this
-        value, preventing callers from requesting unbounded result sets.
+        When > 0, any per-call max_cells value above this limit (or 0, "no
+        truncation") is capped to this value, so a caller can only lower the
+        effective budget. 0, the default, leaves the caller's max_cells alone;
+        deployments whose clients must not switch truncation off set a positive
+        value (the cluster-managed deployment sets 200_000).
 
-        Configured via HYDROLIX_MAX_RESULT_CELLS_LIMIT (default: 0, no cap enforced).
-        Set to a positive integer to enforce a cap in multi-tenant HTTP/SSE deployments.
+        Configured via HYDROLIX_MAX_RESULT_CELLS_LIMIT (default: 0).
         """
         return int(brand_getenv("HYDROLIX_MAX_RESULT_CELLS_LIMIT", 0))
+
+    @property
+    def query_max_result_bytes(self) -> int:
+        """Max bytes a query may hold on the query head before it is cancelled.
+
+        Maps to the ``hdx_query_max_result_bytes`` Hydrolix query setting, sent with
+        every query beside the row cap so a wide result cannot exhaust the executor.
+        Default: 64 MiB. The Config API floor is 10000.
+        """
+        return int(brand_getenv("HYDROLIX_QUERY_MAX_RESULT_BYTES", 64 * 1024 * 1024))
 
     @property
     def mcp_server_transport(self) -> str:
@@ -869,6 +887,17 @@ class HydrolixConfig:
                 raise ValueError(
                     f"Invalid HYDROLIX_MAX_RESULT_CELLS_LIMIT={raw_limit!r}: "
                     "must be a non-negative integer (0 means no cap)."
+                )
+
+        raw_bytes = brand_getenv("HYDROLIX_QUERY_MAX_RESULT_BYTES")
+        if raw_bytes is not None:
+            try:
+                if int(raw_bytes) < QUERY_MAX_RESULT_BYTES_FLOOR:
+                    raise ValueError()
+            except (ValueError, TypeError):
+                raise ValueError(
+                    f"Invalid {__env_prefix__}QUERY_MAX_RESULT_BYTES={raw_bytes!r}: must be an "
+                    f"integer of at least {QUERY_MAX_RESULT_BYTES_FLOOR} (e.g. 67108864)."
                 )
 
         # Validate the execute_query SETTINGS overrides: each must be a positive
