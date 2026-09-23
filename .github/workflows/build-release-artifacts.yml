@@ -1,11 +1,21 @@
 name: Build release artifacts
 
 # Builds and verifies every artifact a release ships, for every brand, without
-# publishing anything. Called by release-check.yml on every merge to main so a
-# broken build surfaces long before a tag.
+# publishing anything. Called by publish.yml (upload: true) so no publish job
+# starts until *all* artifacts have built, and by release-check.yml on every
+# merge to main (upload: false) so a broken build surfaces long before a tag.
 
 on:
   workflow_call:
+    inputs:
+      upload:
+        description: Upload the built artifacts for downstream publish jobs
+        type: boolean
+        default: false
+    outputs:
+      tag:
+        description: Release tag derived from the project version (vX.Y.Z)
+        value: ${{ jobs.docker.outputs.tag }}
 
 permissions:
   contents: read
@@ -41,10 +51,18 @@ jobs:
           docker run --rm --entrypoint twine -v "$PWD:/work:ro" -w /work \
             "ghcr.io/pypa/gh-action-pypi-publish:${refs[0]}" \
             check --strict dist/* dist-trafficpeak/*
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        if: inputs.upload
+        with:
+          name: python-dist
+          path: dist/
+          if-no-files-found: error
 
   docker:
     name: Build docker images for all brands
     runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.get_tag.outputs.tag }}
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
       - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86  # v5
@@ -81,6 +99,25 @@ jobs:
             docker image inspect "us-docker.pkg.dev/hdx-art/t/mcp-${brand}:${TAG}" >/dev/null \
               || { echo "::error::missing mcp-${brand} image at ${TAG}"; exit 1; }
           done
+      - name: Export images
+        if: inputs.upload
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.get_tag.outputs.tag }}"
+          refs=()
+          for brand in $BRANDS; do
+            img="us-docker.pkg.dev/hdx-art/t/mcp-${brand}"
+            refs+=("${img}:${TAG}" "${img}:latest")
+          done
+          docker save "${refs[@]}" | gzip > docker-images.tar.gz
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        if: inputs.upload
+        with:
+          name: docker-images
+          path: docker-images.tar.gz
+          compression-level: 0  # already gzipped
+          if-no-files-found: error
 
   mcpb:
     name: Build MCPB bundles for all brands
@@ -101,3 +138,9 @@ jobs:
             test -f "dist/mcp-${brand}-${VERSION}.mcpb" \
               || { echo "::error::missing dist/mcp-${brand}-${VERSION}.mcpb (parity)"; exit 1; }
           done
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        if: inputs.upload
+        with:
+          name: mcpb-bundles
+          path: dist/*.mcpb
+          if-no-files-found: error
