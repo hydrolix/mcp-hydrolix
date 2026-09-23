@@ -45,7 +45,7 @@ class TestQuerySettings:
         """When the query does NOT target a summary table,
         extra_settings must contain hdx_query_max_timerange_sec matching config."""
         query = "SELECT id FROM db.plain_table WHERE ts > now() - INTERVAL 1 HOUR"
-        await inspect.unwrap(run_select_query)(query)
+        await inspect.unwrap(run_select_query)(query, purpose="test")
 
         mock_execute.assert_awaited_once()
         _, kwargs = mock_execute.call_args
@@ -66,7 +66,7 @@ class TestQuerySettings:
         """When the query targets a summary table,
         hdx_query_max_timerange_sec must NOT be present."""
         query = "SELECT cnt_all FROM db.summary_table WHERE ts > now() - INTERVAL 1 DAY"
-        await inspect.unwrap(run_select_query)(query)
+        await inspect.unwrap(run_select_query)(query, purpose="test")
 
         mock_execute.assert_awaited_once()
         _, kwargs = mock_execute.call_args
@@ -91,7 +91,7 @@ class TestQuerySettings:
         mock_targets_summary.return_value = is_summary
 
         await inspect.unwrap(run_select_query)(
-            "SELECT x FROM db.t WHERE ts > now() - INTERVAL 1 HOUR"
+            "SELECT x FROM db.t WHERE ts > now() - INTERVAL 1 HOUR", purpose="test"
         )
 
         _, kwargs = mock_execute.call_args
@@ -112,7 +112,7 @@ class TestQuerySettings:
         """For non-summary queries, extra_settings should contain exactly
         hdx_query_timerange_required and hdx_query_max_timerange_sec."""
         await inspect.unwrap(run_select_query)(
-            "SELECT id FROM db.t WHERE ts > now() - INTERVAL 1 HOUR"
+            "SELECT id FROM db.t WHERE ts > now() - INTERVAL 1 HOUR", purpose="test"
         )
 
         _, kwargs = mock_execute.call_args
@@ -137,7 +137,7 @@ class TestQuerySettings:
         hdx_query_timerange_required."""
 
         await inspect.unwrap(run_select_query)(
-            "SELECT cnt_all FROM db.t WHERE ts > now() - INTERVAL 1 DAY"
+            "SELECT cnt_all FROM db.t WHERE ts > now() - INTERVAL 1 DAY", purpose="test"
         )
 
         _, kwargs = mock_execute.call_args
@@ -230,7 +230,7 @@ class TestTimerangeRequiredFromEnv:
     ):
         monkeypatch.setenv("HYDROLIX_QUERY_TIMERANGE_REQUIRED", "false")
         await inspect.unwrap(run_select_query)(
-            "SELECT cnt_all FROM db.t WHERE ts > now() - INTERVAL 1 DAY"
+            "SELECT cnt_all FROM db.t WHERE ts > now() - INTERVAL 1 DAY", purpose="test"
         )
         _, kwargs = mock_execute.call_args
         assert kwargs["extra_settings"]["hdx_query_timerange_required"] is False

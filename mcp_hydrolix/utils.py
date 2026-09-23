@@ -2,7 +2,7 @@ import ipaddress
 import logging
 from datetime import date, datetime, time
 from decimal import Decimal
-from typing import Any, Iterable, List
+from typing import Any, Final, Iterable, List, Optional
 
 import sqlglot
 import sqlglot.errors as sqlglot_errors
@@ -34,6 +34,21 @@ def coerce_cell(v: Any) -> Any:
 def coerce_rows(rows: List[List[Any]]) -> List[List[Any]]:
     """Apply `coerce_cell` to every cell in a 2D result set."""
     return [[coerce_cell(c) for c in row] for row in rows]
+
+
+PURPOSE_MAX_CHARS: Final[int] = 256
+
+
+def sanitize_purpose(purpose: Optional[str]) -> Optional[str]:
+    """Collapse whitespace and cap the caller's free-text purpose for ``hdx_query_comment``.
+
+    Returns None when there is nothing to record, so the caller can leave the
+    setting out entirely instead of sending an empty comment.
+    """
+    if purpose is None:
+        return None
+    text = " ".join(purpose.split())
+    return text[:PURPOSE_MAX_CHARS] or None
 
 
 def inject_limit(query: str, max_rows: int) -> str:

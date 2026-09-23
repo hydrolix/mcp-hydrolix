@@ -64,7 +64,10 @@ class TestStructuredContentParity:
         async with Client(mcp_server) as client:
             result = await client.call_tool(
                 "run_select_query",
-                {"query": f"SELECT id, name FROM {test_db}.{test_table} ORDER BY id"},
+                {
+                    "query": f"SELECT id, name FROM {test_db}.{test_table} ORDER BY id",
+                    "purpose": "test",
+                },
             )
             _assert_structured_matches_content(result, "run_select_query")
 
@@ -156,7 +159,7 @@ class TestRunSelectQueryBasic:
 
         async with Client(mcp_server) as client:
             query = f"SELECT id, name, age FROM {test_db}.{test_table} ORDER BY id"
-            result = await client.call_tool("run_select_query", {"query": query})
+            result = await client.call_tool("run_select_query", {"query": query, "purpose": "test"})
 
             query_result = result.structured_content
 
@@ -184,7 +187,7 @@ class TestRunSelectQueryBasic:
 
         async with Client(mcp_server) as client:
             query = f"SELECT COUNT(*) as count, AVG(age) as avg_age FROM {test_db}.{test_table}"
-            result = await client.call_tool("run_select_query", {"query": query})
+            result = await client.call_tool("run_select_query", {"query": query, "purpose": "test"})
 
             query_result = result.structured_content
 
@@ -210,7 +213,7 @@ class TestRunSelectQueryBasic:
                 COUNT(DISTINCT event_type) as event_types_count
             FROM {test_db}.{test_table2}
             """
-            result = await client.call_tool("run_select_query", {"query": query})
+            result = await client.call_tool("run_select_query", {"query": query, "purpose": "test"})
 
             query_result = result.structured_content
             assert query_result["rows"][0][0] == 3  # login, logout, purchase
@@ -225,7 +228,7 @@ class TestRunSelectQueryBasic:
 
             # Should raise ToolError
             with pytest.raises(ToolError) as exc_info:
-                await client.call_tool("run_select_query", {"query": query})
+                await client.call_tool("run_select_query", {"query": query, "purpose": "test"})
 
             assert "Query execution failed" in str(exc_info.value)
 
@@ -237,7 +240,7 @@ class TestRunSelectQueryBasic:
 
             # Should raise ToolError
             with pytest.raises(ToolError) as exc_info:
-                await client.call_tool("run_select_query", {"query": query})
+                await client.call_tool("run_select_query", {"query": query, "purpose": "test"})
 
             assert "Query execution failed" in str(exc_info.value)
 
@@ -380,7 +383,11 @@ class TestConcurrentQueries:
                 "SELECT * FROM loop  (numbers(3)) LIMIT 7000000000000 SETTINGS max_execution_time=9"
             )
             lq_f = asyncio.gather(
-                *[client.call_tool("run_select_query", {"query": lq, "max_cells": 0})]
+                *[
+                    client.call_tool(
+                        "run_select_query", {"query": lq, "purpose": "test", "max_cells": 0}
+                    )
+                ]
             )
 
             # Run multiple queries concurrently
@@ -393,7 +400,10 @@ class TestConcurrentQueries:
 
             # Execute all queries concurrently
             results = asyncio.gather(
-                *[client.call_tool("run_select_query", {"query": query}) for query in queries]
+                *[
+                    client.call_tool("run_select_query", {"query": query, "purpose": "test"})
+                    for query in queries
+                ]
             )
 
             # let mcp server handle requests
@@ -449,7 +459,8 @@ class TestConcurrentQueries:
                 return await client.call_tool(
                     "run_select_query",
                     {
-                        "query": f"select '{user}', '{password}', '{guid}' from loop(numbers(3)) LIMIT 50"
+                        "query": f"select '{user}', '{password}', '{guid}' from loop(numbers(3)) LIMIT 50",
+                        "purpose": "test",
                     },
                 )
 
@@ -478,7 +489,9 @@ class TestRunSelectQueryTruncation:
         async with Client(mcp_server) as client:
             # test_table has 4 rows × 3 selected columns = 12 cells; max_cells=100 won't truncate
             query = f"SELECT id, name, age FROM {test_db}.{test_table} ORDER BY id"
-            result = await client.call_tool("run_select_query", {"query": query, "max_cells": 100})
+            result = await client.call_tool(
+                "run_select_query", {"query": query, "purpose": "test", "max_cells": 100}
+            )
 
             query_result = result.structured_content
             assert query_result["truncated"] is False
@@ -496,7 +509,9 @@ class TestRunSelectQueryTruncation:
         async with Client(mcp_server) as client:
             # test_table has 4 rows × 3 selected columns = 12 cells; max_cells=12 must NOT truncate.
             query = f"SELECT id, name, age FROM {test_db}.{test_table} ORDER BY id"
-            result = await client.call_tool("run_select_query", {"query": query, "max_cells": 12})
+            result = await client.call_tool(
+                "run_select_query", {"query": query, "purpose": "test", "max_cells": 12}
+            )
 
             query_result = result.structured_content
             assert query_result["truncated"] is False
@@ -509,7 +524,9 @@ class TestRunSelectQueryTruncation:
         async with Client(mcp_server) as client:
             # test_table has 4 rows × 4 columns = 16 cells; max_cells=4 forces max_rows = 4//4 = 1
             query = f"SELECT id, name, age, created_at FROM {test_db}.{test_table} ORDER BY id"
-            result = await client.call_tool("run_select_query", {"query": query, "max_cells": 4})
+            result = await client.call_tool(
+                "run_select_query", {"query": query, "purpose": "test", "max_cells": 4}
+            )
 
             query_result = result.structured_content
             assert query_result["truncated"] is True
@@ -527,7 +544,9 @@ class TestRunSelectQueryTruncation:
         async with Client(mcp_server) as client:
             # 4 rows × 4 columns = 16 cells, which exceeds max_cells=4 but max_cells=0 disables truncation
             query = f"SELECT id, name, age, created_at FROM {test_db}.{test_table} ORDER BY id"
-            result = await client.call_tool("run_select_query", {"query": query, "max_cells": 0})
+            result = await client.call_tool(
+                "run_select_query", {"query": query, "purpose": "test", "max_cells": 0}
+            )
 
             query_result = result.structured_content
             assert query_result["truncated"] is False
@@ -543,7 +562,9 @@ class TestRunSelectQueryTruncation:
         async with Client(mcp_server) as client:
             query = f"SELECT id FROM {test_db}.{test_table}"
             with pytest.raises(ToolError) as exc_info:
-                await client.call_tool("run_select_query", {"query": query, "max_cells": -1})
+                await client.call_tool(
+                    "run_select_query", {"query": query, "purpose": "test", "max_cells": -1}
+                )
             assert "max_cells" in str(exc_info.value)
 
     async def test_run_select_query_truncation_max_rows_zero(self, mcp_server, setup_test_database):
@@ -553,7 +574,9 @@ class TestRunSelectQueryTruncation:
         async with Client(mcp_server) as client:
             # test_table has 4 columns; max_cells=2 → max_rows = 2//4 = 0
             query = f"SELECT id, name, age, created_at FROM {test_db}.{test_table} ORDER BY id"
-            result = await client.call_tool("run_select_query", {"query": query, "max_cells": 2})
+            result = await client.call_tool(
+                "run_select_query", {"query": query, "purpose": "test", "max_cells": 2}
+            )
 
             query_result = result.structured_content
             assert query_result["truncated"] is True
@@ -575,7 +598,9 @@ class TestRunSelectQueryTruncation:
         async with Client(mcp_server) as client:
             # 4 rows × 4 columns = 16 cells; operator cap of 4 → max_rows = 4//4 = 1
             query = f"SELECT id, name, age, created_at FROM {test_db}.{test_table} ORDER BY id"
-            result = await client.call_tool("run_select_query", {"query": query, "max_cells": 1000})
+            result = await client.call_tool(
+                "run_select_query", {"query": query, "purpose": "test", "max_cells": 1000}
+            )
 
             query_result = result.structured_content
             assert query_result["truncated"] is True
@@ -597,7 +622,9 @@ class TestRunSelectQueryTruncation:
         async with Client(mcp_server) as client:
             # 4 rows × 4 columns = 16 cells; operator cap of 4 overrides max_cells=0.
             query = f"SELECT id, name, age, created_at FROM {test_db}.{test_table} ORDER BY id"
-            result = await client.call_tool("run_select_query", {"query": query, "max_cells": 0})
+            result = await client.call_tool(
+                "run_select_query", {"query": query, "purpose": "test", "max_cells": 0}
+            )
 
             query_result = result.structured_content
             assert query_result["truncated"] is True
@@ -616,7 +643,7 @@ class TestRunSelectQueryTruncation:
         async with Client(mcp_server) as client:
             # 4 rows × 4 columns = 16 cells; operator cap of 4 → max_rows = 4//4 = 1
             query = f"SELECT id, name, age, created_at FROM {test_db}.{test_table} ORDER BY id"
-            result = await client.call_tool("run_select_query", {"query": query})
+            result = await client.call_tool("run_select_query", {"query": query, "purpose": "test"})
 
             query_result = result.structured_content
             assert query_result["truncated"] is True
@@ -638,7 +665,7 @@ class TestRunSelectQueryTruncation:
 
         async with Client(mcp_server) as client:
             query = f"SELECT id, name, age, created_at FROM {test_db}.{test_table} ORDER BY id"
-            result = await client.call_tool("run_select_query", {"query": query})
+            result = await client.call_tool("run_select_query", {"query": query, "purpose": "test"})
 
             query_result = result.structured_content
             assert query_result["truncated"] is True
@@ -678,7 +705,7 @@ class TestRunSelectQueryUnit:
                 # 100,000 rows × 2 columns = 200,000 cells; max_cells=4 → max_rows=2
                 result = await client.call_tool(
                     "run_select_query",
-                    {"query": "SELECT a, b FROM t", "max_cells": 4},
+                    {"query": "SELECT a, b FROM t", "purpose": "test", "max_cells": 4},
                 )
 
         query_result = result.structured_content

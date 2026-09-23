@@ -65,7 +65,9 @@ class TestSmokeEndToEnd:
         )
 
     async def test_run_select_query_one(self, mcp_client: Client) -> None:
-        result = await mcp_client.call_tool("run_select_query", {"query": "SELECT 1 AS smoke_test"})
+        result = await mcp_client.call_tool(
+            "run_select_query", {"query": "SELECT 1 AS smoke_test", "purpose": "test"}
+        )
         assert not result.is_error, f"run_select_query reported is_error: {result!r}"
         payload = parsed_payload(result)
         haystack = json.dumps(payload, default=str)
