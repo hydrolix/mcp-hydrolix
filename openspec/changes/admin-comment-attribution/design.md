@@ -37,11 +37,18 @@
 - **Choice:** Values are reduced to `[A-Za-z0-9._/@-]`, other characters become `_`, 64 characters each; the whole string is capped at 512 bytes by dropping request tokens from the end, with `REQUEST_FIELDS` ordered `sub, agent, session, trace, model` so `model` goes first and the join keys last.
 - **Why:** Colon and space are the separators; a value containing either would break a regex on `key: `. 64 characters fit a UUID, a `<client>/<version>` and a `traceparent`. Eight 64-character values render to 580 bytes, so the cap can bite; when it does, the descriptive `model` is the right token to lose.
 - **Alternatives:** Quote values — the existing consumers do not unquote. No cap — the setting is a log column, not a blob.
-- **Binding:** `sanitize_value` MUST enforce the alphabet and length; `render_admin_comment` MUST enforce the byte budget; a test MUST pin `RequestAttribution`'s fields to `REQUEST_FIELDS`.
+- **Binding:** `sanitize_value` MUST enforce the alphabet and length; `render_admin_comment` MUST enforce the byte budget; a test MUST pin `RequestAttribution`'s fields to `AGENT_FIELDS` and `REQUEST_FIELDS` to `sub` followed by them.
+
+### Decision: type-holds-only-the-agent-half
+
+- **Choice:** `RequestAttribution` carries `agent`, `session`, `trace` and `model`, each independently optional; `sub` is not a field. `render_admin_comment(prefix, sub, request)` takes the subject from the credential at render time.
+- **Why:** Review of #148 asked which combinations of the fields are valid. Every field the type keeps is genuinely independent: each has its own source and can be absent on its own, and `session` follows the transport. `sub` was the one field that was always empty at construction and filled in later, so a middleware-produced value carrying a subject was representable but never valid; removing the field removes the state.
+- **Alternatives:** Keep `sub` with `with_sub`: the invalid state above. Encode the transport in the type so `session` is non-optional on stdio and SSE: a sum type for one field, more machinery than two log columns justify.
+- **Binding:** `RequestAttribution` MUST NOT have a `sub` field; a test MUST pin its fields to `AGENT_FIELDS`.
 
 ### Decision: resolve-once-per-request
 
-- **Choice:** `attribution.py` is pure (vocabulary, sanitizer, renderer, a resolver over extracted inputs). `RequestAttributionMiddleware.on_request` reads the headers, the request's `_meta`, the `initialize` client info and the session id once, stores a `RequestAttribution` in a context variable, and resets it after the request; `execute_query` reads it and adds `sub`.
+- **Choice:** `attribution.py` is pure (vocabulary, sanitizer, renderer, a resolver over extracted inputs). `RequestAttributionMiddleware.on_request` reads the headers, the request's `_meta`, the `initialize` client info and the session id once, stores a `RequestAttribution` in a context variable, and resets it after the request; `execute_query` renders it together with the credential's subject.
 - **Why:** The middleware is the one place where "this is the request's `_meta`" is unambiguous; a tool call issues several queries and should not walk headers and session state for each; and the pure module is testable without faking three layers of MCP internals. `get_http_headers` never raises, so no guard is needed around it; only the session attribute chains are guarded.
 - **Alternatives:** Resolve inside `execute_query` from ambient FastMCP state (the first cut) — transport policy in the application layer, N+1 resolutions per tool call, tests that fake framework internals.
 - **Binding:** `execute_query` MUST NOT touch headers, `_meta` or the session; it MUST build the comment from `HDX_ADMIN_COMMENT`, `current_attribution()` and the credential's `subject`. Headers win over `_meta`, which wins over client info.

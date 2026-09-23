@@ -24,6 +24,6 @@ Every query from a deployment writes the same `hdx_query_admin_comment`, so `hyd
 
 ## Impact
 
-- `mcp_hydrolix/attribution.py` (new, pure), `mcp_hydrolix/request_attribution.py` (new, the middleware), `mcp_hydrolix/auth/credentials.py` (`subject`), `mcp_hydrolix/mcp_server.py` (`_APP_IDENTITY`, the middleware registration, three lines in `execute_query`).
+- `mcp_hydrolix/attribution.py` (new, pure), `mcp_hydrolix/middlewares/request_attribution.py` (new, the middleware), `mcp_hydrolix/auth/credentials.py` (`subject`), `mcp_hydrolix/mcp_server.py` (`_APP_IDENTITY`, the middleware registration, three lines in `execute_query`).
 - `docs/CONFIG.md` "Query attribution".
 - `HDX_ADMIN_COMMENT` keeps its exact legacy value, so existing tests and analytics are unaffected.

@@ -9,9 +9,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from mcp_hydrolix import request_attribution
 from mcp_hydrolix.attribution import RequestAttribution
-from mcp_hydrolix.request_attribution import (
+from mcp_hydrolix.middlewares import request_attribution
+from mcp_hydrolix.middlewares.request_attribution import (
     RequestAttributionMiddleware,
     attribution_for,
     current_attribution,
@@ -85,9 +85,9 @@ class TestAgentAttributionSources:
     def test_no_context_yields_empty_attribution(self):
         assert attribution_for(_context(ctx=None)) == RequestAttribution()
 
-    def test_sub_is_never_resolved_here(self):
+    def test_the_type_carries_no_subject(self):
         got = attribution_for(_context(ctx=_ctx(client_name="c", client_version="1")))
-        assert got.sub is None
+        assert not hasattr(got, "sub")
 
     def test_session_fields_failing_do_not_fail_attribution(self, monkeypatch):
         monkeypatch.setattr(

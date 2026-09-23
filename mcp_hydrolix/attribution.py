@@ -26,14 +26,14 @@ bounds them, nothing verifies them. All of it is observability, never
 authorization.
 
 This module is pure: vocabulary, sanitizer, renderer and a resolver over
-already-extracted inputs. ``mcp_hydrolix.request_attribution`` reads the
-transport once per request and calls in here.
+already-extracted inputs. ``mcp_hydrolix.middlewares.request_attribution``
+reads the transport once per request and calls in here.
 """
 
 from __future__ import annotations
 
 import re
-from dataclasses import asdict, dataclass, replace
+from dataclasses import dataclass
 from typing import Any, Final, Mapping, Optional
 
 ADMIN_COMMENT_MAX_BYTES: Final[int] = 512
@@ -45,7 +45,8 @@ STATIC_FIELDS: Final[tuple[str, ...]] = ("User", "version", "transport")
 # leaves room for an RFC 8693 "act" field beside it without renaming anything. The
 # order is also the drop order under the byte budget, last token first, so the
 # descriptive "model" is sacrificed before the join keys.
-REQUEST_FIELDS: Final[tuple[str, ...]] = ("sub", "agent", "session", "trace", "model")
+AGENT_FIELDS: Final[tuple[str, ...]] = ("agent", "session", "trace", "model")
+REQUEST_FIELDS: Final[tuple[str, ...]] = ("sub",) + AGENT_FIELDS
 FIELD_ORDER: Final[tuple[str, ...]] = STATIC_FIELDS + REQUEST_FIELDS
 
 # Request headers a gateway (or a client that can set headers) may use to hand the
@@ -97,31 +98,34 @@ def build_admin_comment(fields: Mapping[str, Any]) -> str:
 
 @dataclass(frozen=True)
 class RequestAttribution:
-    """The request half of the comment, resolved once per MCP request."""
+    """The agent half of the comment, resolved once per MCP request.
 
-    sub: Optional[str] = None
+    The fields are independent of one another: ``agent``, ``model`` and ``trace``
+    each come from their own header or ``_meta`` key and any of them can be
+    absent on its own; ``session`` is set on stdio and SSE, where one session
+    spans the client connection, and absent on stateless HTTP. ``sub`` is not a
+    field: it belongs to the credential the query authenticates with and is
+    rendered from it, so no value of this type can claim a subject.
+    """
+
     agent: Optional[str] = None
-    model: Optional[str] = None
     session: Optional[str] = None
     trace: Optional[str] = None
-
-    def as_fields(self) -> dict[str, Optional[str]]:
-        return asdict(self)
-
-    def with_sub(self, sub: Optional[str]) -> RequestAttribution:
-        return replace(self, sub=sub)
+    model: Optional[str] = None
 
 
-def render_admin_comment(prefix: str, request: RequestAttribution) -> str:
-    """Append the request tokens to the prebuilt static prefix, within the budget.
+def render_admin_comment(prefix: str, sub: str, request: RequestAttribution) -> str:
+    """Append ``sub`` and the agent tokens to the prebuilt static prefix, within the budget.
 
     ``prefix`` is the deployment's identity rendered once at startup, so the static
-    fields are not sanitized again per query. Request tokens are dropped from the
-    end until the string fits; the prefix is never dropped.
+    fields are not sanitized again per query. ``sub`` is the subject of the
+    credential the query runs as. Tokens are dropped from the end until the string
+    fits; the prefix is never dropped.
     """
+    values = {"sub": sub, **{key: getattr(request, key) for key in AGENT_FIELDS}}
     tokens = [prefix]
     for key in REQUEST_FIELDS:
-        value = sanitize_value(getattr(request, key))
+        value = sanitize_value(values[key])
         if value is not None:
             tokens.append(f"{key}: {value}")
     return _fit(tokens, keep=1)
@@ -145,8 +149,8 @@ def resolve_request_attribution(
 
     Headers win because a gateway in front of the server sets them; the request's
     ``_meta`` and the ``initialize`` client info are supplied by the client itself.
-    ``headers`` keys are lowercase, as FastMCP returns them. ``sub`` is not resolved
-    here: it comes from the credential that authenticates the query.
+    ``headers`` keys are lowercase, as FastMCP returns them. ``sub`` is not part of
+    the result: it comes from the credential that authenticates the query.
     """
     agent = headers.get(AGENT_HEADER) or _first_text(meta, META_AGENT_KEYS) or client_info
     model = headers.get(MODEL_HEADER) or _first_text(meta, META_MODEL_KEYS)

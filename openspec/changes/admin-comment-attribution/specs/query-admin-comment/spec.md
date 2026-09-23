@@ -2,7 +2,7 @@
 
 ### Requirement: Query Comment Composition
 
-The server MUST set `hdx_query_admin_comment` on every SQL query executed via `execute_query` to `User: <distribution> version: <version> transport: <transport>`, in that order, as space-separated `key: value` tokens (each key followed by a colon and a single space before the value), followed by the request tokens `sub`, `agent`, `session`, `trace` and `model` in that order, each present only when it has a value. Values MUST be reduced to `[A-Za-z0-9._/@-]` (other characters become `_`) and at most 64 characters. The whole string MUST be at most 512 bytes, trimmed by dropping request tokens from the end (`model` first) and never the three leading tokens. The fields of `RequestAttribution` MUST equal the request token vocabulary.
+The server MUST set `hdx_query_admin_comment` on every SQL query executed via `execute_query` to `User: <distribution> version: <version> transport: <transport>`, in that order, as space-separated `key: value` tokens (each key followed by a colon and a single space before the value), followed by the request tokens `sub`, `agent`, `session`, `trace` and `model` in that order, each present only when it has a value. Values MUST be reduced to `[A-Za-z0-9._/@-]` (other characters become `_`) and at most 64 characters. The whole string MUST be at most 512 bytes, trimmed by dropping request tokens from the end (`model` first) and never the three leading tokens. The fields of `RequestAttribution` MUST equal the request token vocabulary less `sub`, which is rendered from the authenticating credential and never stored in the type.
 
 #### Scenario: Renders Composed Comment
 
@@ -34,7 +34,8 @@ The server MUST set `hdx_query_admin_comment` on every SQL query executed via `e
 #### Scenario: Fields Match Vocabulary
 
 - **WHEN** `RequestAttribution` is inspected
-- **THEN** its field names equal the request token vocabulary
+- **THEN** its field names are `agent`, `session`, `trace`, `model`, in that order, and it has no `sub`
+- **AND** the request token vocabulary is `sub` followed by those four
 
 ### Requirement: Sub From The Authenticating Credential
 

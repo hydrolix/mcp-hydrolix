@@ -38,7 +38,10 @@ from mcp_hydrolix.auth import (
     get_request_credential,
 )
 from mcp_hydrolix.attribution import build_admin_comment, render_admin_comment
-from mcp_hydrolix.request_attribution import RequestAttributionMiddleware, current_attribution
+from mcp_hydrolix.middlewares.request_attribution import (
+    RequestAttributionMiddleware,
+    current_attribution,
+)
 from mcp_hydrolix.sa_attribution import ServiceAccountAttributionMiddleware
 from mcp_hydrolix.statement import normalize_statement
 from mcp_hydrolix import mcp_env
@@ -347,9 +350,9 @@ async def execute_query(
         credential = HYDROLIX_CONFIG.creds_with(get_request_credential())
         async with await create_hydrolix_client(client_shared_pool, credential) as client:
             purpose = sanitize_purpose(comment)
-            # The request half was resolved once by RequestAttributionMiddleware; sub is
-            # the subject of the credential this very query authenticates with.
-            attribution = current_attribution().with_sub(credential.subject)
+            # The agent half was resolved once by RequestAttributionMiddleware; sub is the
+            # subject of the credential this very query authenticates with, so the comment
+            # and the query head cannot disagree about who ran it.
             settings: dict[str, Any] = (
                 {
                     "readonly": 1,
@@ -357,7 +360,9 @@ async def execute_query(
                     "hdx_query_max_attempts": HYDROLIX_CONFIG.query_max_attempts,
                     "hdx_query_max_result_rows": HYDROLIX_CONFIG.query_max_result_rows,
                     "hdx_query_max_memory_usage": HYDROLIX_CONFIG.query_max_memory_usage,
-                    "hdx_query_admin_comment": render_admin_comment(HDX_ADMIN_COMMENT, attribution),
+                    "hdx_query_admin_comment": render_admin_comment(
+                        HDX_ADMIN_COMMENT, credential.subject, current_attribution()
+                    ),
                 }
                 | ({"hdx_query_comment": purpose} if purpose else {})
                 | _pool_settings()
