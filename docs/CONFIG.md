@@ -100,6 +100,10 @@ These map to per-query Hydrolix/ClickHouse settings sent with every query:
 
 Every query the server runs carries `hdx_query_admin_comment` (the server's identity) in the query settings. `run_select_query` also records its required `purpose` argument as `hdx_query_comment`, collapsed to single spaces and capped at 256 characters (a blank purpose sends nothing); both land in `hydro.logs` and `hdx.active_queries` with no schema change.
 
+### Tool policy
+
+Every tool the server registers is read-only. A future write tool must declare `destructiveHint=True`, require confirmation from the client before it runs, and be added to the allow-list in `tests/test_write_tool_policy.py`; the test suite enforces this.
+
 ### HTTP/SSE worker tuning
 
 Only used when `HYDROLIX_MCP_SERVER_TRANSPORT` is `"http"` or `"sse"`:
