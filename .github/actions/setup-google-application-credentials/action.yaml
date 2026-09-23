@@ -1,0 +1,29 @@
+name: Setup Google application credentials for GAR
+description: "Authenticate to GCP using Workload Identity Federation (OIDC) and configure docker for GAR"
+# Callers must grant the job `permissions: id-token: write` so the runner can
+# mint the GitHub OIDC token that GCP exchanges for short-lived credentials.
+inputs:
+  workload_identity_provider:
+    description: "Full WIF provider resource name (projects/<num>/locations/global/workloadIdentityPools/<pool>/providers/<provider>)"
+    required: true
+  service_account:
+    description: "Service account email to impersonate"
+    required: true
+runs:
+  using: "composite"
+  steps:
+    - name: Authenticate to Google Cloud
+      uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093  # v3.0.0
+      with:
+        workload_identity_provider: ${{ inputs.workload_identity_provider }}
+        service_account: ${{ inputs.service_account }}
+
+    # Must run after auth and before `gcloud auth configure-docker`.
+    - name: Setup gcloud CLI
+      uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db  # v3.0.1
+
+    - name: Configure gcloud and docker auth for GAR
+      shell: bash
+      run: |-
+        gcloud config set disable_usage_reporting true
+        gcloud auth configure-docker us-docker.pkg.dev --quiet
