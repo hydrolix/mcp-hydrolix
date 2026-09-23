@@ -19,9 +19,22 @@ jobs:
             echo "::error::Tag $GITHUB_REF_NAME points to $GITHUB_SHA which is not on main"
             exit 1
           fi
-  publish:
-    name: Upload release to PyPI
+  build:
+    # Build and verify every artifact for every brand before anything is
+    # published, so one broken build can't leave a half-published release.
+    # The same workflow runs on every merge to main (release-check.yml).
+    name: Build and verify release artifacts
     needs: prove-main
+    uses: ./.github/workflows/build-release-artifacts.yml
+    with:
+      upload: true
+  publish:
+    # PyPI goes last: a version can never be re-uploaded there, whereas GAR
+    # tags and the GitHub Release can be overwritten. The publish step itself
+    # stays in this file because the PyPI trusted publisher is registered
+    # against publish.yml + the pypi environment.
+    name: Upload release to PyPI
+    needs: [build, publish-docker, publish-mcpb]
     runs-on: ubuntu-latest
     environment:
       name: pypi
@@ -29,13 +42,13 @@ jobs:
     permissions:
       id-token: write
     steps:
-      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
-      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86  # v5
-      - run: uv python install
       # This repo publishes ONLY the Hydrolix distribution to PyPI. The
       # mcp-trafficpeak wheel is published by the sibling repo (which checks out
       # this repo at the tag and runs the brand build), dispatched below.
-      - run: MCP_BRAND=hydrolix uv build
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: python-dist
+          path: dist/
       - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33  # v1.14.2 (twine 7 / packaging 26: Metadata-Version 2.5)
   dispatch-trafficpeak:
     # Fire off the sibling repo's publish workflow once the Hydrolix wheel is up, so
@@ -102,7 +115,7 @@ jobs:
             -f tag="${GITHUB_REF_NAME}"
   publish-docker:
     name: Upload release to GAR
-    needs: prove-main
+    needs: build
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -110,20 +123,17 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
-      - name: Setup uv
-        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86  # v5
       - name: Authenticate GAR (Workload Identity Federation)
         uses: ./.github/actions/setup-google-application-credentials
         with:
           workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
           service_account: ${{ vars.GCP_WIF_SERVICE_ACCOUNT }}
-      - name: Get tag
-        id: get_tag
-        shell: bash
-        run: |
-          tag="v$(uv version --short)"
-          echo "::notice::Tag is $tag"
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      - name: Download docker images
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: docker-images
+      - name: Load docker images
+        run: gunzip -c docker-images.tar.gz | docker load
       - name: Resolve brand set from brands.toml
         shell: bash
         run: |
@@ -131,38 +141,20 @@ jobs:
           brands="$(python3 -c 'import tomllib;print(" ".join(tomllib.load(open("brands.toml","rb"))["brands"]))')"
           echo "::notice::brands = ${brands}"
           echo "BRANDS=${brands}" >> "$GITHUB_ENV"
-      - name: Build docker images for all brands
-        shell: bash
-        run: |
-          set -euo pipefail
-          TAG="${{ steps.get_tag.outputs.tag }}"
-          for brand in $BRANDS; do
-            img="us-docker.pkg.dev/hdx-art/t/mcp-${brand}"
-            docker buildx build --build-arg MCP_BRAND="${brand}" \
-              -t "${img}:${TAG}" -t "${img}:latest" --load .
-          done
-      - name: Assert brand parity before pushing
-        shell: bash
-        run: |
-          set -euo pipefail
-          TAG="${{ steps.get_tag.outputs.tag }}"
-          for brand in $BRANDS; do
-            docker image inspect "us-docker.pkg.dev/hdx-art/t/mcp-${brand}:${TAG}" >/dev/null \
-              || { echo "::error::missing mcp-${brand} image at ${TAG}"; exit 1; }
-          done
       - name: Push docker images for both brands
         shell: bash
+        env:
+          TAG: ${{ needs.build.outputs.tag }}
         run: |
           set -euo pipefail
-          TAG="${{ steps.get_tag.outputs.tag }}"
           for brand in $BRANDS; do
             img="us-docker.pkg.dev/hdx-art/t/mcp-${brand}"
             docker push "${img}:${TAG}"
             docker push "${img}:latest"
           done
   publish-mcpb:
-    name: Build and attach MCPB bundle to release
-    needs: prove-main
+    name: Attach MCPB bundles to GitHub Release
+    needs: build
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -177,20 +169,10 @@ jobs:
           # producing a by-name refspec that pulls the tag object. fetch-depth
           # stays at the default 1 -- no full history needed.
           ref: ${{ github.ref }}
-      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86  # v5
-      - run: uv python install
-      - name: Build MCPB bundles for all brands
-        run: |
-          set -euo pipefail
-          BRANDS="$(python3 -c 'import tomllib;print(" ".join(tomllib.load(open("brands.toml","rb"))["brands"]))')"
-          for brand in $BRANDS; do
-            MCP_BRAND="$brand" bash mcpb/build.sh
-          done
-          VERSION="$(uv version --short)"
-          for brand in $BRANDS; do
-            test -f "dist/mcp-${brand}-${VERSION}.mcpb" \
-              || { echo "::error::missing dist/mcp-${brand}-${VERSION}.mcpb (parity)"; exit 1; }
-          done
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: mcpb-bundles
+          path: dist/
       - name: Attach MCPB to GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
