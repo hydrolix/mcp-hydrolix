@@ -39,7 +39,7 @@ class TestHydrolixTools:
         """Test running a SELECT query successfully."""
         test_db, test_table = setup_tool_test_database
         query = f"SELECT * FROM {test_db}.{test_table}"
-        result = await inspect.unwrap(run_select_query)(query)
+        result = await inspect.unwrap(run_select_query)(query, purpose="test")
         assert len(result.rows) == 2
         assert result.rows[0][0] == 1
         assert result.rows[0][1] == "Alice"
@@ -50,7 +50,7 @@ class TestHydrolixTools:
         query = f"SELECT * FROM {test_db}.non_existent_table"
 
         with pytest.raises(ToolError) as exc_info:
-            await run_select_query(query)
+            await run_select_query(query, purpose="test")
 
         assert "Query execution failed" in str(exc_info.value)
 

@@ -2,7 +2,7 @@
 
 ### Requirement: Query Purpose Comment
 
-`run_select_query` MUST accept an optional `purpose` string and `execute_query` MUST send it as `hdx_query_comment` with whitespace collapsed to single spaces and at most 256 characters; when the sanitized purpose is empty the setting MUST be absent.
+`run_select_query` MUST require a `purpose` string and `execute_query` MUST send it as `hdx_query_comment` with whitespace collapsed to single spaces and at most 256 characters; when the sanitized purpose is empty the setting MUST be absent.
 
 #### Scenario: Purpose Sets Query Comment
 
@@ -23,3 +23,8 @@
 
 - **WHEN** `run_select_query` is called with `purpose="why"`
 - **THEN** `execute_query` receives `comment="why"`
+
+#### Scenario: Purpose Required By The Tool Schema
+
+- **WHEN** the tool list is read
+- **THEN** the input schema of `run_select_query` lists `purpose` under `required` and does not list `max_cells` there

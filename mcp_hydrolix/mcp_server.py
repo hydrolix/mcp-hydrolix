@@ -331,11 +331,7 @@ async def execute_query(
     extra_settings: Optional[Dict[str, Any]] = None,
     comment: Optional[str] = None,
 ) -> HdxQueryResult:
-    """Run a query with the server's guardrail settings attached.
-
-    ``comment`` is the caller's stated purpose; it is recorded as ``hdx_query_comment``
-    so operators can see what an agent was doing (HDX-12008).
-    """
+    """Run a query with the server's guardrail settings attached."""
     start = time.perf_counter()
     status = "success"
     try:
@@ -761,17 +757,17 @@ def _build_truncation_response(
 )
 async def run_select_query(
     query: str,
+    purpose: str,
     max_cells: Optional[int] = None,
-    purpose: Optional[str] = None,
 ) -> RunSelectQueryResult:
     """Run a SELECT query in a Hydrolix time-series database using the Clickhouse SQL dialect.
     Queries run using this tool will timeout after 120 seconds.
 
     PURPOSE:
 
-    Pass a short `purpose` describing why the query is being run (for example "top error
-    codes in the last hour for the incident review"). It is recorded with the query so
-    operators can see what an agent was doing.
+    `purpose` is required: one short sentence on why the query is being run (for example
+    "top error codes in the last hour for the incident review"). It is recorded with the
+    query so operators can see what an agent was doing.
 
     FULLY-QUALIFIED TABLE NAMES:
 

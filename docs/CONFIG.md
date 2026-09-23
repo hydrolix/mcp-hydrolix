@@ -94,7 +94,7 @@ These map to per-query Hydrolix/ClickHouse settings sent with every query:
 
 ### Query attribution
 
-Every query the server runs carries `hdx_query_admin_comment` (the server's identity) in the query settings. `run_select_query` also records its optional `purpose` argument as `hdx_query_comment`, collapsed to single spaces and capped at 256 characters; both land in `hydro.logs` and `hdx.active_queries` with no schema change.
+Every query the server runs carries `hdx_query_admin_comment` (the server's identity) in the query settings. `run_select_query` also records its required `purpose` argument as `hdx_query_comment`, collapsed to single spaces and capped at 256 characters (a blank purpose sends nothing); both land in `hydro.logs` and `hdx.active_queries` with no schema change.
 
 ### HTTP/SSE worker tuning
 

@@ -1,4 +1,4 @@
-*The purpose is observability: never a failure path, never parsed by the server.*
+*The purpose is observability: recorded as given, never parsed by the server.*
 
 **Tracking:** HDX-12008
 
@@ -16,12 +16,13 @@
 
 ### Decision: purpose-as-tool-argument
 
-- **Choice:** An optional `purpose` string on `run_select_query`, forwarded as `execute_query(comment=)`.
-- **Why:** The tool call is where the agent knows why it is querying; anything placed in the SQL text would be stripped or ignored.
-- **Alternatives:** Require the argument — breaks every existing client. Derive it from the SQL — guesswork.
+- **Choice:** A required `purpose` string on `run_select_query`, forwarded as `execute_query(comment=)`.
+- **Why:** The tool call is where the agent knows why it is querying; anything placed in the SQL text would be stripped or ignored. Required rather than optional, on the maintainer's review of #145: the dozen output tokens a value costs are fewer than the reasoning an agent spends deciding to leave an optional field empty, and a field that is always present is one operators can filter on.
+- **Alternatives:** An optional argument: the field is empty exactly when an agent is being careless, which is when operators want it. Derive it from the SQL: guesswork.
 - **Binding:** `execute_query` MUST omit `hdx_query_comment` when the sanitized purpose is empty and MUST cap it at 256 characters.
 
 ## Risks / Trade-offs
 
 - [Agents pass long or multi-line text] → collapsed to single spaces and capped; nothing fails.
-- [Agents omit the purpose] → the setting is absent, exactly as today.
+- [Agents send a blank purpose] → the setting is absent, exactly as today; a call without the argument fails the tool schema before any query runs.
+- [Clients written against the optional signature] → agents read the schema on `initialize` and adapt; a scripted caller must add the argument.

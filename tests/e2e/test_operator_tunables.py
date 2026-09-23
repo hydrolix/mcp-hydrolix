@@ -74,7 +74,9 @@ class TestOperatorTunablesEndToEnd:
         # the operator is emitting the env var) to begin with.
         async with make_client(host, bearer_token) as client:
             with pytest.raises(ToolError, match="(?i)time ?range"):
-                await client.call_tool("run_select_query", {"query": no_timerange_query})
+                await client.call_tool(
+                    "run_select_query", {"query": no_timerange_query, "purpose": "test"}
+                )
 
         # Capture the entire original mcp_hydrolix block so teardown restores the
         # CR to its exact pre-test shape (removing the block when it was absent),
@@ -89,7 +91,9 @@ class TestOperatorTunablesEndToEnd:
             wait_for_redeploy(pre_gen)
 
             async with make_client(host, bearer_token) as client:
-                result = await client.call_tool("run_select_query", {"query": no_timerange_query})
+                result = await client.call_tool(
+                    "run_select_query", {"query": no_timerange_query, "purpose": "test"}
+                )
             assert not result.is_error, (
                 "with timerange_required=False a no-timerange query should succeed, "
                 f"but run_select_query reported is_error: {result!r}"

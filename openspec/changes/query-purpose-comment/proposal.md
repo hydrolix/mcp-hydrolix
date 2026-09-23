@@ -8,8 +8,8 @@ Operators reading `hydro.logs` can see which server ran a query but not why an a
 
 ## What Changes
 
-- `run_select_query` gains an optional `purpose` argument.
-- `execute_query` sends `hdx_query_comment` when a purpose is given: whitespace collapsed, capped at 256 characters, omitted when empty.
+- `run_select_query` gains a required `purpose` argument; the tool schema rejects a call without it.
+- `execute_query` sends `hdx_query_comment` when a purpose is given: whitespace collapsed, capped at 256 characters, omitted when blank. The server's own DESCRIBE queries carry none.
 
 ## Capabilities
 

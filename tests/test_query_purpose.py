@@ -5,6 +5,8 @@ from __future__ import annotations
 import inspect
 from unittest.mock import AsyncMock, patch
 
+from fastmcp import Client
+
 import mcp_hydrolix.mcp_server as mcp_server_module
 from mcp_hydrolix.models import HdxQueryResult
 from mcp_hydrolix.utils import PURPOSE_MAX_CHARS, sanitize_purpose
@@ -65,3 +67,12 @@ class TestQueryPurposeComment:
             "SELECT a FROM db.t WHERE ts > now() - INTERVAL 1 HOUR", purpose="why"
         )
         assert mock_execute.call_args.kwargs["comment"] == "why"
+
+
+class TestPurposeRequired:
+    async def test_tool_schema_requires_purpose(self):
+        async with Client(mcp_server_module.mcp) as client:
+            tools = await client.list_tools()
+        schema = next(t for t in tools if t.name == "run_select_query").inputSchema
+        assert "purpose" in schema["required"]
+        assert "max_cells" not in schema["required"]

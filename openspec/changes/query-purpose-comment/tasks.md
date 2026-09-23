@@ -1,11 +1,12 @@
-*2 phases, 3 tasks.*
+*2 phases, 4 tasks.*
 
 **Tracking:** HDX-12008
 
 ## 1. Implementation
 
 - [x] 1.1 Add `sanitize_purpose` and `PURPOSE_MAX_CHARS` to `mcp_hydrolix/utils.py` [implements: query-admin-comment/query-purpose-comment] — verify: `pytest -q tests/test_query_purpose.py::TestSanitizePurpose` green
-- [x] 1.2 Add `comment` to `execute_query` and `purpose` to `run_select_query`, forwarding one to the other [implements: query-admin-comment/query-purpose-comment, design/purpose-as-tool-argument] — verify: `pytest -q tests/test_query_purpose.py::TestQueryPurposeComment` green
+- [x] 1.2 Add `comment` to `execute_query` and a required `purpose` to `run_select_query`, forwarding one to the other [implements: query-admin-comment/query-purpose-comment, design/purpose-as-tool-argument] — verify: `pytest -q tests/test_query_purpose.py::TestQueryPurposeComment` green
+- [x] 1.3 Pass `purpose` from every test and e2e call of the tool [implements: meta/tests] — verify: `pytest -q tests/test_query_purpose.py::TestPurposeRequired` green
 
 ## 2. Docs
 
