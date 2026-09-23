@@ -1,0 +1,103 @@
+name: Build release artifacts
+
+# Builds and verifies every artifact a release ships, for every brand, without
+# publishing anything. Called by release-check.yml on every merge to main so a
+# broken build surfaces long before a tag.
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    name: Build and check PyPI distributions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86  # v5
+      - run: uv python install
+      - name: Build mcp-hydrolix wheel + sdist
+        run: MCP_BRAND=hydrolix uv build
+      # Verification only: the sibling repo publishes mcp-trafficpeak, but it
+      # builds it from this repo at the tag, so a break shows up here first.
+      - name: Build mcp-trafficpeak wheel
+        run: MCP_BRAND=trafficpeak uv run python scripts/brand_build.py --wheel -o dist-trafficpeak
+      # Run twine inside the exact image the publish step runs: the pypa action
+      # executes as ghcr.io/pypa/gh-action-pypi-publish:<its uses: ref>, so
+      # reading that ref from publish.yml makes this check use the publish
+      # step's own twine/packaging by construction (the pin lives only there).
+      # --strict is a superset of the action's own `twine check`.
+      - name: Check distribution metadata with the publish action's twine
+        run: |
+          set -euo pipefail
+          mapfile -t refs < <(grep -oE 'pypa/gh-action-pypi-publish@[0-9a-f]{40}' \
+            .github/workflows/publish.yml | cut -d@ -f2 | sort -u)
+          if [[ ${#refs[@]} -ne 1 ]]; then
+            echo "::error::expected exactly one SHA-pinned pypa/gh-action-pypi-publish in publish.yml, found ${#refs[@]}"
+            exit 1
+          fi
+          docker run --rm --entrypoint twine -v "$PWD:/work:ro" -w /work \
+            "ghcr.io/pypa/gh-action-pypi-publish:${refs[0]}" \
+            check --strict dist/* dist-trafficpeak/*
+
+  docker:
+    name: Build docker images for all brands
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86  # v5
+      - name: Get tag
+        id: get_tag
+        shell: bash
+        run: |
+          tag="v$(uv version --short)"
+          echo "::notice::Tag is $tag"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      - name: Resolve brand set from brands.toml
+        shell: bash
+        run: |
+          set -euo pipefail
+          brands="$(python3 -c 'import tomllib;print(" ".join(tomllib.load(open("brands.toml","rb"))["brands"]))')"
+          echo "::notice::brands = ${brands}"
+          echo "BRANDS=${brands}" >> "$GITHUB_ENV"
+      - name: Build docker images for all brands
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.get_tag.outputs.tag }}"
+          for brand in $BRANDS; do
+            img="us-docker.pkg.dev/hdx-art/t/mcp-${brand}"
+            docker buildx build --build-arg MCP_BRAND="${brand}" \
+              -t "${img}:${TAG}" -t "${img}:latest" --load .
+          done
+      - name: Assert brand parity
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.get_tag.outputs.tag }}"
+          for brand in $BRANDS; do
+            docker image inspect "us-docker.pkg.dev/hdx-art/t/mcp-${brand}:${TAG}" >/dev/null \
+              || { echo "::error::missing mcp-${brand} image at ${TAG}"; exit 1; }
+          done
+
+  mcpb:
+    name: Build MCPB bundles for all brands
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86  # v5
+      - run: uv python install
+      - name: Build MCPB bundles for all brands
+        run: |
+          set -euo pipefail
+          BRANDS="$(python3 -c 'import tomllib;print(" ".join(tomllib.load(open("brands.toml","rb"))["brands"]))')"
+          for brand in $BRANDS; do
+            MCP_BRAND="$brand" bash mcpb/build.sh
+          done
+          VERSION="$(uv version --short)"
+          for brand in $BRANDS; do
+            test -f "dist/mcp-${brand}-${VERSION}.mcpb" \
+              || { echo "::error::missing dist/mcp-${brand}-${VERSION}.mcpb (parity)"; exit 1; }
+          done
