@@ -10,10 +10,13 @@ license = "Apache-2.0"
 license-files = ["LICENSE"]
 requires-python = ">=3.13"
 dependencies = [
-    "fastmcp>=3.3.0,<3.4",
+    # floor pinned to clear AIKIDO-2026-996382 (fastmcp) and AIKIDO-2026-535246
+    # (fastmcp-slim), both fixed in 3.4.0.
+    "fastmcp>=3.4.0,<3.5",
     # mcp is pulled in transitively via fastmcp; floor pinned to clear
-    # CVE-2026-59950 / 52870 / 52869 (all fixed in 1.28.1).
-    "mcp>=1.28.1,<2",
+    # CVE-2026-59950 / 52870 / 52869 (all fixed in 1.28.1) and AIKIDO-2026-639016
+    # (fixed in 1.30.0).
+    "mcp>=1.30.0,<2",
     # anyio is the transitive async runtime (fastmcp/mcp/httpx/uvicorn);
     # floor pinned to clear AIKIDO-2026-889297 (critical; fixed in 4.14.2).
     "anyio>=4.14.2,<5",
@@ -21,7 +24,9 @@ dependencies = [
     "clickhouse-connect>=0.15,<0.16",
     "truststore>=0.10",
     "uvicorn[standard]>=0.34,<1.0",
-    "pyjwt>=2.13.0,<3",
+    # floor pinned to clear CVE-2026-102268 (critical), 102273 / 102272 / 102271 /
+    # 102267 / 102266 (high) and 102274 / 101917 / 102265 / 102269 (fixed in 2.14.0).
+    "pyjwt>=2.14.0,<3",
     "sqlglot>=26.0,<27.0",
     "prometheus-client>=0.21,<1.0",
 ]
@@ -45,6 +50,17 @@ constraint-dependencies = [
     "cryptography>=50.0.0",
     # via mcp/fastmcp; CVE-2026-44681 (fixed in 1.6.12).
     "authlib>=1.6.12",
+    # via clickhouse-connect/requests; AIKIDO-2026-740601 / 499214 (high),
+    # 997635 / 193495 / 499458 (fixed in 2.8.0).
+    "urllib3>=2.8.0",
+    # via kubernetes (dev); CVE-2026-49265 / 49264 (fixed in 4.0.0).
+    "oauthlib>=4.0.0",
+    # via fastmcp-slim and virtualenv (dev); AIKIDO-2026-777134 (fixed in 4.11.11).
+    "platformdirs>=4.11.11",
+    # via rich; AIKIDO-2026-425066 (fixed in 4.1.0).
+    "markdown-it-py>=4.1.0",
+    # via anyio/httpx/requests; CVE-2026-45409 (fixed in 3.15).
+    "idna>=3.15",
 ]
 
 [tool.hatch.metadata.hooks.custom]
