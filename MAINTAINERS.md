@@ -55,11 +55,15 @@ must match the version currently on `main`.
    git push origin v0.3.4
    ```
 
-   Use an *annotated* tag (`-a`), not a lightweight tag. The tag name must match
-   `v[0-9]+.[0-9]+.[0-9]+` or the workflow will not trigger.
+   Use an *annotated* tag (`-a`), not a lightweight tag, and give it a non-empty
+   message. The tag name must match `v[0-9]+.[0-9]+.[0-9]+` or the workflow will
+   not trigger.
 
-4. **Watch the workflow.** The push fires `Publish release`, which (after
-   `prove-main` passes) runs in parallel:
+4. **Watch the workflow.** The push fires `Publish release`. Its first job,
+   `prove-main`, fails the run before anything is built or published if the
+   tagged commit is not on `main`, the tag is lightweight, or the tag annotation
+   is empty. Once `prove-main` passes, the workflow builds every artifact and
+   then publishes:
 
    - **`publish`**: `uv build` and upload to
      [PyPI](https://pypi.org/p/mcp-hydrolix) via Trusted Publishing.

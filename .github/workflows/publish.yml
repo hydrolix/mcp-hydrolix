@@ -7,7 +7,7 @@ on:
 
 jobs:
   prove-main:
-    name: Verify tag is on main
+    name: Verify release tag
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
@@ -18,6 +18,23 @@ jobs:
         run: |
           if ! git branch -r --contains "$GITHUB_SHA" | grep -qE '(^|\s)origin/main$'; then
             echo "::error::Tag $GITHUB_REF_NAME points to $GITHUB_SHA which is not on main"
+            exit 1
+          fi
+      - name: Check that tag is annotated
+        shell: bash
+        run: |
+          # The GitHub Release body comes from the tag annotation
+          # (--notes-from-tag in publish-mcpb), so nothing may ship without one.
+          TAG="$GITHUB_REF_NAME"
+          # actions/checkout can leave an annotated tag as a lightweight ref, so
+          # fetch the tag object itself before inspecting it.
+          git fetch --quiet --force origin "refs/tags/$TAG:refs/tags/$TAG"
+          if [[ "$(git cat-file -t "refs/tags/$TAG")" != "tag" ]]; then
+            echo "::error::tag $TAG is lightweight; release tags must be annotated (git tag -a)"
+            exit 1
+          fi
+          if [[ -z "$(git tag -l --format='%(contents)' "$TAG" | tr -d '[:space:]')" ]]; then
+            echo "::error::tag $TAG has an empty annotation; release tags need a message describing the release"
             exit 1
           fi
   build:
@@ -168,8 +185,8 @@ jobs:
           # Check out by tag ref (not the default SHA-pinned checkout) so the
           # annotated tag *object* lands locally. The default checkout fetches
           # `+<sha>:refs/tags/<tag>`, leaving the ref pointing at the commit, so
-          # `git cat-file -t <tag>` reports `commit` and the --notes-from-tag
-          # guard below never fires. Passing an explicit ref drops the SHA pin,
+          # `gh release create --notes-from-tag` would read the commit message
+          # instead of the annotation. Passing an explicit ref drops the SHA pin,
           # producing a by-name refspec that pulls the tag object. fetch-depth
           # stays at the default 1 -- no full history needed.
           ref: ${{ github.ref }}
@@ -185,19 +202,9 @@ jobs:
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" dist/*.mcpb --clobber
           else
-            # The Release body comes from the annotated tag message. Fall back to
-            # auto-generated notes when the tag is lightweight or its annotation
-            # has no body, so a release is never published with empty notes.
-            # `%(contents)` returns the *commit* message for a lightweight tag,
-            # so gate on the ref being a real tag object (cat-file -t == tag)
-            # before trusting its contents.
-            if [[ "$(git cat-file -t "$TAG")" == "tag" \
-                  && -n "$(git tag -l --format='%(contents)' "$TAG")" ]]; then
-              gh release create "$TAG" dist/*.mcpb --notes-from-tag --title "$TAG"
-            else
-              echo "::warning::Tag $TAG has no annotation body; falling back to --generate-notes"
-              gh release create "$TAG" dist/*.mcpb --generate-notes --title "$TAG"
-            fi
+            # The Release body comes from the annotated tag message; prove-main
+            # has already rejected lightweight tags and empty annotations.
+            gh release create "$TAG" dist/*.mcpb --notes-from-tag --title "$TAG"
           fi
   bump-version:
     name: Bump to next patch version
