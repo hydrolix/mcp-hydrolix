@@ -34,8 +34,15 @@ jobs:
       - name: Build docker image
         shell: bash
         run: |
+          set -euo pipefail
+          TAG="${{ steps.tag.outputs.tag }}"
+          created="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           docker buildx build \
-            -t us-docker.pkg.dev/hdx-art/t/mcp-hydrolix:${{ steps.tag.outputs.tag }} \
+            --label org.opencontainers.image.source="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
+            --label org.opencontainers.image.revision="$GITHUB_SHA" \
+            --label org.opencontainers.image.version="$TAG" \
+            --label org.opencontainers.image.created="$created" \
+            -t "us-docker.pkg.dev/hdx-art/t/mcp-hydrolix:$TAG" \
             .
       - name: Push docker image
         shell: bash
