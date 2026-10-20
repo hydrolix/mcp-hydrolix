@@ -69,3 +69,34 @@ def normalize_statement(raw_sql: str) -> NormalizedStatement:
     return NormalizedStatement(
         sql=raw_sql[tokens[0].start : end].rstrip(), format_removed=format_removed
     )
+
+
+_VIEW_SUFFIX = re.compile(r"#(\w+)")
+
+
+def find_unquoted_view(raw_sql: str) -> str | None:
+    """The quoted form of the first ``db.table#view`` whose ``#`` would read as a comment.
+
+    sqlglot and ClickHouse both treat ``#`` as a line comment, so an unquoted view
+    suffix silently falls away and the base table is queried (HDX-12560). Only a
+    ``#`` touching a qualified name counts; ``db.t  # note`` is a comment. Position
+    is not checked, so ``alias.col#x`` is rejected too.
+    """
+    try:
+        tokens = tokenize(raw_sql)
+    except TokenError:
+        return None
+    for i in range(2, len(tokens)):
+        tok = tokens[i]
+        # Keyword-like names (date, json, view, ...) get their own token types, so a
+        # bare word is matched on its text rather than a list of types.
+        if tokens[i - 1].token_type != TokenType.DOT or not (
+            tok.token_type == TokenType.IDENTIFIER or _BARE_WORD.fullmatch(tok.text)
+        ):
+            continue
+        view = _VIEW_SUFFIX.match(raw_sql, tok.end + 1)
+        if view is None:
+            continue
+        project = raw_sql[tokens[i - 2].start : tokens[i - 2].end + 1]
+        return f"{project}.`{tok.text}#{view.group(1)}`"
+    return None
