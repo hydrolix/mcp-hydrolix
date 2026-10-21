@@ -137,13 +137,21 @@ class TestFindUnquotedView:
             "SELECT a FROM proj.`tbl#view` WHERE x = 1",
             "SELECT a FROM `proj`.`tbl#view`\nWHERE x = 1",
             'SELECT a FROM "proj"."tbl#view"',
+        ],
+    )
+    def test_passes_quoted_view(self, sql):
+        assert find_unquoted_view(sql) is None
+
+    @pytest.mark.parametrize(
+        "sql",
+        [
             "SELECT a FROM proj.tbl  # trailing comment",
             "# leading comment\nSELECT a FROM proj.tbl",
             "SELECT 'proj.tbl#view' FROM proj.tbl",
             "SELECT 'abc",
         ],
     )
-    def test_passes_quoted_view_and_real_comments(self, sql):
+    def test_ignores_hash_outside_identifier(self, sql):
         assert find_unquoted_view(sql) is None
 
 
