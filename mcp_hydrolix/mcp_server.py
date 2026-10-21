@@ -43,7 +43,7 @@ from mcp_hydrolix.middlewares.request_attribution import (
     current_attribution,
 )
 from mcp_hydrolix.sa_attribution import ServiceAccountAttributionMiddleware
-from mcp_hydrolix.statement import normalize_statement
+from mcp_hydrolix.statement import find_unquoted_view, normalize_statement
 from mcp_hydrolix import mcp_env
 from mcp_hydrolix.mcp_env import (
     HydrolixConfig,
@@ -670,6 +670,9 @@ async def list_tables(
     - Filter tables by name pattern (like/not_like)
     - Get basic table metadata (name, engine, row counts, sizes, primary keys)
 
+    Custom views are listed as their own rows named table#view. Query one as
+    database.`table#view`, quoting the table and view together.
+
     Returns basic table information WITHOUT column details for performance.
     Tables are returned with empty columns lists and is_summary_table not set.
 
@@ -815,6 +818,12 @@ async def run_select_query(
     my_db.my_table). The connection has no default database, so an unqualified table
     name will fail to resolve.
 
+    VIEWS:
+
+    A custom view is queried as project.`table#view`, with the table and view quoted
+    together and the project outside the quotes (e.g. FROM my_db.`my_table#my_view`).
+    An unquoted # starts a comment, so such a query is rejected.
+
     RESULT TRUNCATION:
 
     Query results are automatically truncated when the total cell count (rows * columns)
@@ -944,6 +953,14 @@ async def run_select_query(
     Performance guard: date range filter.
      `SELECT app, count(*) FROM application.logs WHERE timestamp > '2024-01-01' AND timestamp < '2024-02-14' GROUP BY app ORDER BY count(*) DESC LIMIT 1`
     """
+    # Checked on the raw text: normalizing and inject_limit both drop the #view comment.
+    view_form = find_unquoted_view(query)
+    if view_form is not None:
+        raise ToolError(
+            "An unquoted '#' after a table name starts a comment, so the view would be "
+            f"ignored and the base table queried. Quote the table and view together: {view_form}"
+        )
+
     # The driver appends its own FORMAT Native; a FORMAT clause the agent left in
     # would make two and fail the statement (ClickHouse code 62).
     normalized = normalize_statement(query)

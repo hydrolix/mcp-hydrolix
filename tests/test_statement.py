@@ -8,11 +8,16 @@ behaviour the normaliser relies on.
 
 from __future__ import annotations
 
+import inspect
+from unittest.mock import AsyncMock, patch
+
 import pytest
 from fastmcp import Client
+from fastmcp.exceptions import ToolError
 from sqlglot.tokens import TokenType
 
-from mcp_hydrolix.statement import normalize_statement, tokenize
+import mcp_hydrolix.mcp_server as mcp_server_module
+from mcp_hydrolix.statement import find_unquoted_view, normalize_statement, tokenize
 
 
 class TestTokenize:
@@ -99,6 +104,96 @@ class TestNormalizeStatement:
 
     def test_unreadable_text_passes_through(self):
         assert normalize_statement("SELECT 'abc").sql == "SELECT 'abc"
+
+
+class TestFindUnquotedView:
+    """An unquoted ``#`` after a table name is a comment to sqlglot (HDX-12560)."""
+
+    @pytest.mark.parametrize(
+        "sql, suggestion",
+        [
+            ("SELECT a FROM proj.tbl#view WHERE x = 1", "proj.`tbl#view`"),
+            ("SELECT a\nFROM proj.tbl#view\nWHERE x = 1", "proj.`tbl#view`"),
+            ("SELECT a FROM proj.tbl#view", "proj.`tbl#view`"),
+            ("SELECT a FROM `proj`.`tbl`#view LIMIT 1", "`proj`.`tbl#view`"),
+            ("SELECT a FROM proj.date#view", "proj.`date#view`"),
+            ("SELECT a FROM proj.json#view", "proj.`json#view`"),
+            ("SELECT a FROM proj.table#view", "proj.`table#view`"),
+            ("SELECT a FROM proj.view#view", "proj.`view#view`"),
+            ("SELECT a FROM proj.timestamp#view", "proj.`timestamp#view`"),
+            # A comma-joined table has no FROM or JOIN before it, so a positional
+            # check would let this one through to the base table.
+            ("SELECT a FROM proj.a, proj.json#view", "proj.`json#view`"),
+            # Columns are rejected too: deliberate, the check does not parse position.
+            ("SELECT t.date#x\nFROM proj.tbl t", "t.`date#x`"),
+        ],
+    )
+    def test_flags_unquoted_view(self, sql, suggestion):
+        assert find_unquoted_view(sql) == suggestion
+
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            "SELECT a FROM proj.`tbl#view` WHERE x = 1",
+            "SELECT a FROM `proj`.`tbl#view`\nWHERE x = 1",
+            'SELECT a FROM "proj"."tbl#view"',
+        ],
+    )
+    def test_passes_quoted_view(self, sql):
+        assert find_unquoted_view(sql) is None
+
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            "SELECT a FROM proj.tbl  # trailing comment",
+            "# leading comment\nSELECT a FROM proj.tbl",
+            "SELECT 'proj.tbl#view' FROM proj.tbl",
+            "SELECT 'abc",
+        ],
+    )
+    def test_ignores_hash_outside_identifier(self, sql):
+        assert find_unquoted_view(sql) is None
+
+
+class TestRunSelectQueryRejectsUnquotedView:
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            "SELECT a FROM proj.tbl#view WHERE ts > now() - INTERVAL 1 HOUR",
+            "SELECT a\nFROM proj.tbl#view\nWHERE ts > now() - INTERVAL 1 HOUR",
+        ],
+    )
+    @patch("mcp_hydrolix.mcp_server.execute_query", new_callable=AsyncMock)
+    async def test_rejects_before_execution(self, mock_execute, sql):
+        with pytest.raises(ToolError, match=r"proj\.`tbl#view`"):
+            await inspect.unwrap(mcp_server_module.run_select_query)(sql, purpose="test")
+        mock_execute.assert_not_called()
+
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            "SELECT a FROM proj.`tbl#view` WHERE ts > now() - INTERVAL 1 HOUR",
+            'SELECT a FROM "proj"."tbl#view"\nWHERE ts > now() - INTERVAL 1 HOUR',
+        ],
+    )
+    @patch(
+        "mcp_hydrolix.mcp_server._query_targets_summary_table",
+        new_callable=AsyncMock,
+        return_value=False,
+    )
+    @patch("mcp_hydrolix.mcp_server.execute_query", new_callable=AsyncMock)
+    async def test_quoted_view_reaches_cluster(self, mock_execute, _summary, sql):
+        mock_execute.return_value = {"columns": ["a"], "rows": [[1]]}
+        await inspect.unwrap(mcp_server_module.run_select_query)(sql, purpose="test")
+        assert "tbl#view" in mock_execute.call_args.kwargs["query"]
+
+
+class TestViewGuidanceInToolDescriptions:
+    async def test_descriptions_document_view_syntax(self):
+        async with Client(mcp_server_module.mcp) as client:
+            tools = {t.name: t.description for t in await client.list_tools()}
+        assert "project.`table#view`" in tools["run_select_query"]
+        assert "table#view" in tools["list_tables"]
 
 
 @pytest.mark.integration_clickhouse
