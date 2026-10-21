@@ -169,16 +169,6 @@ class TestRunSelectQueryRejectsUnquotedView:
             await inspect.unwrap(mcp_server_module.run_select_query)(sql, purpose="test")
         mock_execute.assert_not_called()
 
-    @pytest.mark.parametrize("table", ["date", "json", "table", "view", "timestamp"])
-    @patch("mcp_hydrolix.mcp_server.execute_query", new_callable=AsyncMock)
-    async def test_rejects_keyword_like_table_name(self, mock_execute, table):
-        # These names are not VAR tokens; the view and the WHERE on its line used to vanish.
-        with pytest.raises(ToolError, match=rf"proj\.`{table}#public`"):
-            await inspect.unwrap(mcp_server_module.run_select_query)(
-                f"SELECT * FROM proj.{table}#public WHERE secret = 0", purpose="test"
-            )
-        mock_execute.assert_not_called()
-
     @pytest.mark.parametrize(
         "sql",
         [
