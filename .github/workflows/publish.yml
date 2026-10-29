@@ -165,14 +165,6 @@ jobs:
             "$archive"
           tar xzf "$archive" mcp-publisher
           rm -f "$archive" "$archive.sigstore.json"
-      - name: Set version in server.json from pyproject.toml
-        run: |
-          set -euo pipefail
-          # pyproject.toml, not the tag, is what PyPI received; bump-version keeps
-          # server.json in sync, so this only guards against a hand-edited drift.
-          version="$(python3 -c 'import tomllib;print(tomllib.load(open("pyproject.toml","rb"))["project"]["version"])')"
-          jq --arg v "$version" '.version = $v | .packages[0].version = $v' server.json > server.tmp
-          mv server.tmp server.json
       - name: Authenticate to MCP Registry
         run: ./mcp-publisher login github-oidc
       - name: Publish server to MCP Registry

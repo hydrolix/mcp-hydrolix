@@ -30,20 +30,11 @@ jobs:
           persist-credentials: false
       - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78  # v7
       - run: uv python install
-      # publish.yml only hands server.json to the MCP registry after the
-      # (irreversible) PyPI upload, so check it against the schema it names
-      # here, before any tag.
-      - name: Validate server.json against its MCP registry schema
-        run: |
-          set -euo pipefail
-          schema_url="$(jq -r '."$schema"' server.json)"
-          curl --fail --location --silent --show-error --output server.schema.json "$schema_url"
-          uv run --no-project --with 'jsonschema>=4,<5' python -I -c '
-          import json, sys, jsonschema
-          schema = json.load(open(sys.argv[1]))
-          jsonschema.validators.validator_for(schema)(schema).validate(json.load(open(sys.argv[2])))
-          ' server.schema.json server.json
-          rm server.schema.json
+      # publish.yml hands server.json to the MCP registry as committed, after
+      # the (irreversible) PyPI upload, so a drifted version or a schema error
+      # must stop the release here, before anything is published.
+      - name: Check server.json (version and schema)
+        run: uv run --no-project --with 'jsonschema>=4,<5' python scripts/check_server_json.py
       - name: Build mcp-hydrolix wheel + sdist
         run: MCP_BRAND=hydrolix uv build
       # Verification only: the sibling repo publishes mcp-trafficpeak, but it
