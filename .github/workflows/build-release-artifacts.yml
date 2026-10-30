@@ -30,6 +30,11 @@ jobs:
           persist-credentials: false
       - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78  # v7
       - run: uv python install
+      # publish.yml hands server.json to the MCP registry as committed, after
+      # the (irreversible) PyPI upload, so a drifted version or a schema error
+      # must stop the release here, before anything is published.
+      - name: Check server.json (version and schema)
+        run: uv run --no-project --with 'jsonschema>=4,<5' python scripts/check_server_json.py
       - name: Build mcp-hydrolix wheel + sdist
         run: MCP_BRAND=hydrolix uv build
       # Verification only: the sibling repo publishes mcp-trafficpeak, but it
