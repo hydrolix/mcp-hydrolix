@@ -6,12 +6,12 @@
     "url": "https://github.com/hydrolix/mcp-hydrolix",
     "source": "github"
   },
-  "version": "0.3.8",
+  "version": "0.3.9",
   "packages": [
     {
       "registryType": "pypi",
       "identifier": "mcp-hydrolix",
-      "version": "0.3.8",
+      "version": "0.3.9",
       "runtimeHint": "uvx",
       "transport": {
         "type": "stdio"
