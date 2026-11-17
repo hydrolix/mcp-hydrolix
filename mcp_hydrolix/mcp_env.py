@@ -520,9 +520,9 @@ class HydrolixConfig:
         """Max bytes of memory a single query may use.
 
         Maps to the ``hdx_query_max_memory_usage`` Hydrolix query setting.
-        Default: 4 GiB.
+        Default: 6 GiB.
         """
-        return int(brand_getenv("HYDROLIX_QUERY_MAX_MEMORY_USAGE", 4 * 1024 * 1024 * 1024))
+        return int(brand_getenv("HYDROLIX_QUERY_MAX_MEMORY_USAGE", 6 * 1024 * 1024 * 1024))
 
     @property
     def query_max_attempts(self) -> int:
@@ -924,7 +924,7 @@ class HydrolixConfig:
         # Validate the execute_query SETTINGS overrides: each must be a positive
         # integer if set (they map to Hydrolix per-query limits).
         for var_name, example in (
-            ("HYDROLIX_QUERY_MAX_MEMORY_USAGE", "4_294_967_296"),
+            ("HYDROLIX_QUERY_MAX_MEMORY_USAGE", "6_442_450_944"),
             ("HYDROLIX_QUERY_MAX_ATTEMPTS", "1"),
             ("HYDROLIX_QUERY_MAX_RESULT_ROWS", "100_000"),
         ):
