@@ -59,7 +59,7 @@ These map to per-query Hydrolix/ClickHouse settings sent with every query:
   * Default: `"true"`
   * Only an explicit `"false"` disables the guard; any other value (including a typo) keeps it on
 * `HYDROLIX_QUERY_MAX_MEMORY_USAGE`: Max bytes of memory a single query may use (`hdx_query_max_memory_usage`)
-  * Default: `4294967296` (4 GiB)
+  * Default: `6442450944` (6 GiB)
 * `HYDROLIX_QUERY_MAX_ATTEMPTS`: Max number of times Hydrolix retries a query (`hdx_query_max_attempts`)
   * Default: `1` (no retries)
 * `HYDROLIX_QUERY_MAX_RESULT_ROWS`: Max number of rows a query may return (`hdx_query_max_result_rows`)
