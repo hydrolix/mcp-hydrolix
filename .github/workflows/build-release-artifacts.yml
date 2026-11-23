@@ -25,10 +25,10 @@ jobs:
     name: Build and check PyPI distributions
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78  # v7
+      - uses: astral-sh/setup-uv@v10.4.0
       - run: uv python install
       # publish.yml hands server.json to the MCP registry as committed, after
       # the (irreversible) PyPI upload, so a drifted version or a schema error
@@ -49,16 +49,16 @@ jobs:
       - name: Check distribution metadata with the publish action's twine
         run: |
           set -euo pipefail
-          mapfile -t refs < <(grep -oE 'pypa/gh-action-pypi-publish@[0-9a-f]{40}' \
+          mapfile -t refs < <(grep -oE 'pypa/gh-action-pypi-publish@(v[0-9]+\.[0-9]+\.[0-9]+|[0-9a-f]{40})' \
             .github/workflows/publish.yml | cut -d@ -f2 | sort -u)
           if [[ ${#refs[@]} -ne 1 ]]; then
-            echo "::error::expected exactly one SHA-pinned pypa/gh-action-pypi-publish in publish.yml, found ${#refs[@]}"
+            echo "::error::expected exactly one version- or SHA-pinned pypa/gh-action-pypi-publish in publish.yml, found ${#refs[@]}"
             exit 1
           fi
           docker run --rm --entrypoint twine -v "$PWD:/work:ro" -w /work \
             "ghcr.io/pypa/gh-action-pypi-publish:${refs[0]}" \
             check --strict dist/* dist-trafficpeak/*
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+      - uses: actions/upload-artifact@v7
         if: inputs.upload
         with:
           name: python-dist
@@ -71,10 +71,10 @@ jobs:
     outputs:
       tag: ${{ steps.get_tag.outputs.tag }}
     steps:
-      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78  # v7
+      - uses: astral-sh/setup-uv@v10.4.0
       - name: Get tag
         id: get_tag
         shell: bash
@@ -125,7 +125,7 @@ jobs:
             refs+=("${img}:${TAG}" "${img}:latest")
           done
           docker save "${refs[@]}" | gzip > docker-images.tar.gz
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+      - uses: actions/upload-artifact@v7
         if: inputs.upload
         with:
           name: docker-images
@@ -137,10 +137,10 @@ jobs:
     name: Build MCPB bundles for all brands
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78  # v7
+      - uses: astral-sh/setup-uv@v10.4.0
       - run: uv python install
       - name: Build MCPB bundles for all brands
         run: |
@@ -154,7 +154,7 @@ jobs:
             test -f "dist/mcp-${brand}-${VERSION}.mcpb" \
               || { echo "::error::missing dist/mcp-${brand}-${VERSION}.mcpb (parity)"; exit 1; }
           done
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+      - uses: actions/upload-artifact@v7
         if: inputs.upload
         with:
           name: mcpb-bundles
