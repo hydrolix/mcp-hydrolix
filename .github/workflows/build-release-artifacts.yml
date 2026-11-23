@@ -25,7 +25,7 @@ jobs:
     name: Build and check PyPI distributions
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
       - uses: astral-sh/setup-uv@v10.4.0
@@ -58,7 +58,7 @@ jobs:
           docker run --rm --entrypoint twine -v "$PWD:/work:ro" -w /work \
             "ghcr.io/pypa/gh-action-pypi-publish:${refs[0]}" \
             check --strict dist/* dist-trafficpeak/*
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v7.0.2
         if: inputs.upload
         with:
           name: python-dist
@@ -71,7 +71,7 @@ jobs:
     outputs:
       tag: ${{ steps.get_tag.outputs.tag }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
       - uses: astral-sh/setup-uv@v10.4.0
@@ -125,7 +125,7 @@ jobs:
             refs+=("${img}:${TAG}" "${img}:latest")
           done
           docker save "${refs[@]}" | gzip > docker-images.tar.gz
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v7.0.2
         if: inputs.upload
         with:
           name: docker-images
@@ -137,7 +137,7 @@ jobs:
     name: Build MCPB bundles for all brands
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
       - uses: astral-sh/setup-uv@v10.4.0
@@ -154,7 +154,7 @@ jobs:
             test -f "dist/mcp-${brand}-${VERSION}.mcpb" \
               || { echo "::error::missing dist/mcp-${brand}-${VERSION}.mcpb (parity)"; exit 1; }
           done
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v7.0.2
         if: inputs.upload
         with:
           name: mcpb-bundles

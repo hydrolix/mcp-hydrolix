@@ -16,7 +16,7 @@ jobs:
       id-token: write  # mint the GitHub OIDC token exchanged for GCP credentials
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
       - name: Compute image tag
@@ -27,7 +27,7 @@ jobs:
           SHORT_SHA="${GITHUB_SHA::7}"
           echo "tag=branch-${SANITIZED}-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
       - name: Authenticate GAR (Workload Identity Federation)
-        uses: ./.github/actions/setup-google-application-credentials
+        uses: $/.github/actions/setup-google-application-credentials
         with:
           workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
           service_account: ${{ vars.GCP_WIF_SERVICE_ACCOUNT }}

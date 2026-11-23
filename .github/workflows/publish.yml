@@ -10,7 +10,7 @@ jobs:
     name: Verify release tag
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
           fetch-depth: 0
@@ -63,7 +63,7 @@ jobs:
       # This repo publishes ONLY the Hydrolix distribution to PyPI. The
       # mcp-trafficpeak wheel is published by the sibling repo (which checks out
       # this repo at the tag and runs the brand build), dispatched below.
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@v8.0.2
         with:
           name: python-dist
           path: dist/
@@ -83,7 +83,7 @@ jobs:
       id-token: write
     steps:
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v6
+        uses: aws-actions/configure-aws-credentials@v6.3.0
         with:
           role-to-assume: arn:aws:iam::471112700926:role/github-actions-lke-secrets-role
           aws-region: us-east-2
@@ -117,7 +117,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
       - name: Generate GitHub App token for the sibling repo
         id: app-token
-        uses: actions/create-github-app-token@v3
+        uses: actions/create-github-app-token@v3.4.0
         with:
           app-id: ${{ steps.get-secret.outputs.app-id }}
           private-key: ${{ steps.get-secret.outputs.private-key }}
@@ -146,7 +146,7 @@ jobs:
       # Bump deliberately; the Sigstore identity check below is tied to this tag.
       MCP_PUBLISHER_VERSION: v1.8.1
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
       - name: Install cosign
@@ -178,16 +178,16 @@ jobs:
       id-token: write  # mint the GitHub OIDC token exchanged for GCP credentials
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
       - name: Authenticate GAR (Workload Identity Federation)
-        uses: ./.github/actions/setup-google-application-credentials
+        uses: $/.github/actions/setup-google-application-credentials
         with:
           workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
           service_account: ${{ vars.GCP_WIF_SERVICE_ACCOUNT }}
       - name: Download docker images
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v8.0.2
         with:
           name: docker-images
       - name: Load docker images
@@ -217,7 +217,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
           # Check out by tag ref (not the default SHA-pinned checkout) so the
@@ -228,7 +228,7 @@ jobs:
           # producing a by-name refspec that pulls the tag object. fetch-depth
           # stays at the default 1 -- no full history needed.
           ref: ${{ github.ref }}
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@v8.0.2
         with:
           name: mcpb-bundles
           path: dist/
@@ -252,7 +252,7 @@ jobs:
       id-token: write
     steps:
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v6
+        uses: aws-actions/configure-aws-credentials@v6.3.0
         with:
           role-to-assume: arn:aws:iam::471112700926:role/github-actions-lke-secrets-role
           aws-region: us-east-2
@@ -286,12 +286,12 @@ jobs:
           } >> "$GITHUB_OUTPUT"
       - name: Generate GitHub App token
         id: app-token
-        uses: actions/create-github-app-token@v3
+        uses: actions/create-github-app-token@v3.4.0
         with:
           app-id: ${{ steps.get-secret.outputs.app-id }}
           private-key: ${{ steps.get-secret.outputs.private-key }}
       - name: Checkout main
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
         with:
           # The Push version bump step below runs `git push`.
           persist-credentials: true
